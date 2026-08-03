@@ -11,12 +11,12 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">146 papers/posts · 23 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks</p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">22</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">19</span></a><a href="#distillation">Distillation <span class="count">8</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">16</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">6</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">6</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">10</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">6</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">19</span></a><a href="#data">Data &amp; Datasets <span class="count">4</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">13</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">17</span></a></nav><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
+<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">152 papers/posts · 25 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks</p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">23</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">20</span></a><a href="#distillation">Distillation <span class="count">8</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">18</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">6</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">7</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">10</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">6</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">19</span></a><a href="#data">Data &amp; Datasets <span class="count">4</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">14</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">17</span></a></nav><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
 <div class="card-head"><span class="title">Qwen Skill Self-Play: Co-Evolving Proposer/Solver/Controller</span><span class="badge like">like</span></div>
 <p class="snippet">Alibaba&#x27;s Qwen team releases Skill Self-Play
 
 A co-evolutionary framework where a proposer, solver, and skill controller continuously push LLM capabilities through verified, open-e…</p>
-<p class="card-meta">@HuggingPapers · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.22529">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2081669340173046110">X post</a></p>
+<p class="card-meta">@HuggingPapers, @Xudong07452910 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.22529">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2081669340173046110">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/skill-self-play.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">AREX: Recursively Self-Improving Deep-Research Agent</span><span class="badge like">like</span></div>
@@ -82,6 +82,11 @@ Tsinghua University and Huawei researchers present HiSME just for that!
 Instead…</p>
 <p class="card-meta">@jiqizhixin · added 2026-08-03 · <a href="https://arxiv.org/abs/2605.28390">arXiv</a> · <a href="https://x.com/jiqizhixin/status/2084198331111104812">X post</a> · <a href="https://anonymous.4open.science/r/HiSME-BD45">anonymous.4open.science</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/hisme-skill-meta-evolving.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">SkillRise: Curriculum Task Sequences for Transferable Agent Skills</span><span class="badge feed">feed</span></div>
+<p class="snippet">SkillRise organizes related tasks into progressively more challenging sequences, allowing agents to extract, refine, and reuse transferable skills across tasks rather than treating…</p>
+<p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.26784">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306270194946230">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/skillrise-curriculum-skills.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">Anthropic: Structure &amp; Prompting of an AI Agent (Build/Reflect/Curate/Reuse)</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">A Anthropic research team just published a 32-page PDF &quot;Structure and Prompting of an AI agent &quot;
@@ -231,7 +236,7 @@ The question is how to get it. Process l…</p>
 <p class="snippet">From RLVR to RLSVR
 
 Transforms open-ended tasks into a &quot;Who Is the Spy?&quot; game to generate verifiable rewards, enabling LLM self-improvement on summarization, creative writing, and …</p>
-<p class="card-meta">@HuggingPapers · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.23802">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2084146592257294662">X post</a></p>
+<p class="card-meta">@HuggingPapers, @_akhaliq · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.23802">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2084146592257294662">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/rlsvr-self-verifiable-rewards.html">📖 Tutorial · 10 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">GLM-5.2&#x27;s Reward-Hacking Fix: Block, Don&#x27;t Penalize</span><span class="badge bookmark">bookmark</span></div>
@@ -323,6 +328,13 @@ https://t.co/I5l65fjH9Q
 LSPO 给这些“悬崖题”临时装上 LoRA：用标准推导短暂 SFT，再采样成功轨迹，经重要性采样校正后并回 RL batch；最终只更新基础模型，脚手架即用即弃。单一 1.5B、DeepMat…</p>
 <p class="card-meta">@vintcessun · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.27787">arXiv</a> · <a href="https://x.com/vintcessun/status/2084092394992218333">X post</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">RL Infra from the prime-RL Codebase: Orchestrator Deep-Dive (Blog Series)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Been exploring RL infra a lot lately, and it&#x27;s something I want to go deep into.
+
+So I&#x27;ve been reading prime-rl codebase from @PrimeIntellect, and I&#x27;m turning that into a blog seri…</p>
+<p class="card-meta">@vivek_2332 · added 2026-08-03 · <a href="https://x.com/vivek_2332/status/2084291916221579299">X post</a> · <a href="https://vivekvkashyap.github.io/posts/rl-infra-orchestrator-part-1.html">vivekvkashyap.github.io</a></p>
+<p class="card-actions"> </p>
 </div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card">
 <div class="card-head"><span class="title">Survey: On-Policy Distillation for LLMs</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">A must-read survey on On-Policy Distillation (OPD) for LLMs
@@ -412,6 +424,11 @@ Most agent memory systems retrieve past traces as passive context. MSCE turns th
 The …</p>
 <p class="card-meta">@dair_ai · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.16621">arXiv</a> · <a href="https://x.com/dair_ai/status/2079706493495234693">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/msce-memory-to-skills.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Memory Decoder: A Swappable Parametric Memory for LLMs</span><span class="badge feed">feed</span></div>
+<p class="snippet">Decoder-only LLMs entangle long-term memory and reasoning in one parameter set. Memory Decoder separates them by pretraining a standalone parametric memory that can be scaled, swap…</p>
+<p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.27919">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306969821634798">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/memory-decoder.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">Always-On Agents: Survey on Durable Agent State</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">Great overview of always-on agents.
@@ -522,6 +539,11 @@ Four issues to be aware of:
 The paper is PlugMem, from Microsoft Research and UIUC. The failure is plain…</p>
 <p class="card-meta">@undefinedKi · added 2026-08-03 · <a href="https://arxiv.org/abs/2603.03296">arXiv</a> · <a href="https://github.com/TIMAN-group/PlugMem">GitHub</a> · <a href="https://x.com/undefinedKi/status/2084024346868076756">X post</a> · <a href="https://www.microsoft.com/en-us/research/blog/from-raw-interaction-to-reusable-knowledge-rethinking-memory-for-ai-agents/">microsoft.com</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">HierDoc: Hierarchical Evidence Acquisition with Stage-Wise GRPO</span><span class="badge feed">feed</span></div>
+<p class="snippet">Rather than treating evidence retrieval as a single step, HierDoc learns evidence acquisition hierarchically: first selecting relevant pages, then the relevant semantic regions wit…</p>
+<p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.29638">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084309823487660096">X post</a></p>
+<p class="card-actions"> </p>
 </div></section><section id="multi-agent"><h2>Multi-Agent Systems</h2><p class="cat-desc">Coordination, role drift, meta-agents, multi-agent search and exploration.</p><div class="card">
 <div class="card-head"><span class="title">AgentFlow: Trainable Agentic System with In-the-Flow RL</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">🔥Introducing #AgentFlow, a new trainable agentic system where a team of agents learns to plan and use tools in the flow of a task.
@@ -630,6 +652,13 @@ But wi…</p>
 
 basically, you combine exploration with latent reasoning models (e.g., on sudoku…</p>
 <p class="card-meta">@AlexiGlad, @KL_Div · added 2026-08-03 · <a href="https://arxiv.org/abs/2605.19376">arXiv</a> · <a href="https://x.com/AlexiGlad/status/2083714465305112967">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Progressive Pessimistic Verification: Scaling Verification, Not Reasoning</span><span class="badge feed">feed</span></div>
+<p class="snippet">Scaling verification instead of scaling reasoning.
+
+Progressive pessimistic verification starts with whole-proof verification, then progressively subdivides proofs into smaller seg…</p>
+<p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2511.21522">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084307496613695645">X post</a></p>
 <p class="card-actions"> </p>
 </div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card">
 <div class="card-head"><span class="title">Still: Amortized KV-Cache Compaction in One Forward Pass</span><span class="badge bookmark">bookmark</span></div>
@@ -1049,6 +1078,15 @@ Built with X MCP tools. Give your agent the skil…</p>
 两条真实 trajectory 分别跨越 220.7 / 272.9 小时，跨多…</p>
 <p class="card-meta">@huangruiteng · added 2026-08-03 · <a href="https://github.com/huangruiteng/loopx">GitHub</a> · <a href="https://x.com/huangruiteng/status/2083904257494024425">X post</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Qwen Computer-Use Agent: Technical Report (SOTA OSWorld-Verified)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Qwen released a SOTA computer use agent with a technical report
+
+It&#x27;s not on @arxiv, but it is on Papers with Code.
+
+You can find the evals at the bottom. The model is #2 on WebAre…</p>
+<p class="card-meta">@NielsRogge · added 2026-08-03 · <a href="https://x.com/NielsRogge/status/2084223344333721653">X post</a> · <a href="https://paperswithcode.co/paper/106032">paperswithcode.co</a></p>
+<p class="card-actions"> </p>
 </div></section><section id="roundups"><h2>Roundups &amp; Misc</h2><p class="cat-desc">Weekly digests, model releases, commentary, uncategorized.</p><div class="card">
 <div class="card-head"><span class="title">From AGI to ASI (DeepMind Position Paper)</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">&quot;From AGI to ASI&quot;
@@ -1185,6 +1223,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-08-03 16:02 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-03 16:56 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkillRise: Cross-Task RL with an Evolving Skill Document</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>SkillRise: Cross-Task RL with an Evolving Skill Document</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.26784">arXiv:2607.26784</a> · <a href="https://arxiv.org/abs/2607.26784">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306270194946230">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"SkillRise: Agentic Reinforcement Learning for Cross-Task Skill Evolution" (arXiv 2607.26784, July 2026; Zhiyuan Yao, Yuxin Chen, et al. — Zhejiang U, NUS, SJTU, Meituan) trains a <strong>single policy</strong> that alternates between solving tasks and rewriting an <strong>evolving skill document</strong>, the <em>only</em> information carried between related tasks in a curriculum-ordered sequence.</li>
+<li>The trick is <strong>decoupled cross-task credit assignment</strong>: the solving phase is rewarded by the current task outcome; the curation phase is rewarded by the <em>discounted sum of downstream task outcomes</em> — so the RL signal directly measures whether curated skills transfer. Group-relative advantages are computed only among trials at the same sequence position and phase.</li>
+<li>On ALFWorld, WebShop, and ScienceWorld with Qwen3-4B, SkillRise hits 85.9 / 84.4 / 54.6 Pass@1, beating the strongest baseline (GiGPO) by 2.3 / 7.1 / 8.5 points, shows <strong>cross-task test-time scaling</strong> (83.6% at K=2 → 87.5% at K=6 on ALFWorld, one attempt per task), and matches multi-stage skill pipelines at ~1/6 of their runtime.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Skill learning for LLM agents is currently split between two unsatisfying poles. One pole retries the same task and summarizes previous attempts (Reflexion-style; LaMer as the trained Meta-RL version) — the resulting knowledge stays instance-specific and is never optimized for transfer. The other pole builds external skill banks with extraction, storage, retrieval, and refinement stages (SkillRL, RetroAgent) — and because downstream performance is jointly determined by all those stages, you can never attribute success or failure to skill <em>quality</em>. This is the same credit-assignment complaint the tracker has hit repeatedly: multi-stage scaffolds diffuse the learning signal.</p>
+<p>SkillRise's move is to make transfer itself the training objective, with the most minimal possible machinery: no bank, no retriever, no teacher, no separate curator model. One policy, one text document, and a reward wiring that says <em>your curation is worth exactly what it does for the next tasks</em>. That is an end-to-end, weight-updating answer to the question that training-free systems (MSCE, HiSME in this tracker) attack with governance heuristics: how do you know a curated skill is actually good? Here the answer is: because RL priced it against future returns. For anyone building self-improving harnesses, this is one of the cleanest demonstrations yet that "learning to learn from experience" can be a <em>trained</em> behavior rather than a prompted one — and that the trained behavior generalizes beyond its training regime (cross-task training transfers to within-task retries).</p>
+<h2>The core idea</h2>
+<p>Standard agentic RL maximizes <span class="arithmatex">\(\mathcal{J}(\theta)=\mathbb{E}_{x\sim\mathcal{D},\tau\sim\pi_\theta}[R(\tau)]\)</span> per independent episode, discarding experience. SkillRise instead samples ordered sequences <span class="arithmatex">\(\mathbf{x}=(x_1,\ldots,x_K)\sim\mathcal{G}\)</span> of <em>distinct but related</em> instances from one task family, arranged simple-to-hard (e.g., WebShop tasks grouped by product category, ordered by number of required attributes/options). Within a sequence, a single textual skill document <span class="arithmatex">\(S_i\)</span> is the sole cross-task channel. The policy solves task <span class="arithmatex">\(i\)</span> conditioned on the current document, then switches roles (via a role-specific instruction, same parameters) and rewrites the document from the trajectory it just produced:</p>
+<div class="arithmatex">\[\tau_{i}\sim\pi_{\theta}(\cdot\mid x_{i},S_{i-1}),\quad r_{i}=R(\tau_{i});\qquad S_{i}\sim\pi_{\theta}(\cdot\mid S_{i-1},\tau_{i},r_{i}),\quad i&lt;K,\]</div>
+<p>where <span class="arithmatex">\(\tau_i\)</span> is the solving trajectory for task <span class="arithmatex">\(x_i\)</span>, <span class="arithmatex">\(r_i\)</span> its verifiable outcome reward, and <span class="arithmatex">\(S_i\)</span> the fully rewritten skill document (starting from <span class="arithmatex">\(S_0=\varnothing\)</span>). Curation preserves useful skills, consolidates successful procedures or failure modes from <span class="arithmatex">\(\tau_i\)</span>, and strips instance-specific detail. Earlier trajectories are <em>not</em> carried forward — only the document is — so later-task performance is a clean measure of skill transferability.</p>
+<p>The load-bearing design is the credit assignment. With <span class="arithmatex">\(n\)</span> indexing the <span class="arithmatex">\(N\)</span> independent trials per sequence and <span class="arithmatex">\(z\in\{\mathrm{solve},\mathrm{curate}\}\)</span> the phase:</p>
+<div class="arithmatex">\[G_{i,z}^{(n)}=\begin{cases}r_{i}^{(n)},&amp;z=\mathrm{solve},\\[2pt]\displaystyle\sum_{j=i+1}^{K}\gamma^{\,j-i}\,r_{j}^{(n)},&amp;z=\mathrm{curate},\ i&lt;K,\end{cases}\]</div>
+<p>where <span class="arithmatex">\(\gamma\in[0,1]\)</span> is a cross-task discount (0.6 in the experiments) that credits curation more for nearby tasks. Solving never gets sequence-level return; curation never gets current-task return. Advantages are group-relative but only within the same sequence, position, and phase:</p>
+<div class="arithmatex">\[\overline{G}_{i,z}=\frac{1}{N}\sum_{n=1}^{N}G_{i,z}^{(n)},\qquad A_{i,z}^{(n)}=G_{i,z}^{(n)}-\overline{G}_{i,z},\]</div>
+<p>so solving and curation returns never serve as baselines for each other, and position-dependent difficulty is normalized away. Both phases are optimized jointly with a standard PPO-style clipped objective <span class="arithmatex">\(\mathcal{J}(\theta)=\mathbb{E}_{n,i,z,t}\big[\min\big(\rho_{i,z,t}^{(n)}A_{i,z}^{(n)},\ \operatorname{clip}(\rho_{i,z,t}^{(n)},1-\epsilon,1+\epsilon)A_{i,z}^{(n)}\big)\big]\)</span>, with <span class="arithmatex">\(\rho\)</span> the token-level importance ratio and the phase advantage applied to all tokens of that phase.</p>
+<h2>How it works</h2>
+<p><img alt="SkillRise overview: curriculum sequence construction, alternating solve/curate rollout with an evolving skill document, and decoupled credit assignment" src="assets/skillrise-curriculum-skills/fig1.png" /></p>
+<p><em>Figure 1 from the paper: (a) related instances ordered simple→challenging; (b) one policy alternates Solve/Curate, with the document as the only cross-task channel; (c) solving gets the current reward, curation gets γ-discounted downstream rewards, and advantages compare only same-role, same-position trials.</em></p>
+<p><strong>Sequence construction.</strong> Tasks are partitioned by environment-provided family metadata, then diverse instances are greedily grouped within each family and ordered by difficulty attributes. The curriculum makes early experience usable by later tasks.</p>
+<p><strong>Training loop:</strong></p>
+<pre><code class="language-text">for each batch of sequences x = (x_1..x_K) ~ G:          # K=3 in training
+    for n = 1..N independent trials:                      # N=8
+        S_0 = empty document
+        for i = 1..K:
+            tau_i ~ pi_theta(. | x_i, S_{i-1})            # SOLVE phase
+            r_i   = R(tau_i)                              # verifiable outcome
+            if i &lt; K:
+                S_i ~ pi_theta(. | S_{i-1}, tau_i, r_i)   # CURATE phase:
+                #  keep useful skills, distill procedures/failure modes,
+                #  drop instance-specific details (full rewrite)
+    # decoupled credit assignment
+    for each (n, i, z):
+        G = r_i^(n)                        if z == solve
+        G = sum_{j&gt;i} gamma^(j-i) r_j^(n)  if z == curate
+    # role-aware group-relative advantages (per sequence, position, phase)
+    A^(n)_{i,z} = G^(n)_{i,z} - mean_n G^(n)_{i,z}
+    # PPO-clip update over all tokens of each phase (shared parameters)
+    theta &lt;- theta + grad of clipped objective
+</code></pre>
+<p><strong>Setup.</strong> Qwen3-1.7B/4B backbones; 16 sequences per batch, K=3, N=8 (384 task plays per update, matched across all trained baselines); actor LR 1e-6, max response 1,024 tokens, up to 150 updates, γ=0.6; FSDP + vLLM on 8×H800. Evaluation: 128 held-out instances per environment, temperature 0.7.</p>
+<p><strong>At test time</strong>, the same mechanism runs inference-only: partition held-out tasks into related sequences, carry the document forward, and performance climbs with sequence length — a <em>learned</em> test-time scaling axis that is about accumulating transferable knowledge, not resampling.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Pass@1 (Qwen3-4B):</strong> 85.9% ALFWorld, 84.4% WebShop, 54.6% ScienceWorld — beating the strongest baseline GiGPO by <strong>2.3, 7.1, and 8.5 points</strong> respectively, with prompting baselines (Zero-shot/ReAct/Reflexion), RL baselines (PPO, RLOO, GRPO, GiGPO), and Meta-RL LaMer all below.</li>
+<li><strong>Within-task generalization:</strong> retrying the same held-out task while carrying the document gives the best Pass@2/Pass@3 everywhere (92.2 / 96.1 / 61.0 Pass@3), beating LaMer — which is <em>trained</em> on repeated attempts — by 0.8, 1.6, and <strong>14.2</strong> points. The curation strategy learned across tasks transfers to the within-task regime it was never trained on.</li>
+<li><strong>Cross-task test-time scaling</strong> (Figure 2 below): on ALFWorld with one attempt per task, 83.6% at K=2 → 87.5% at K=6, monotonic; LaMer/GiGPO/GRPO are flat, and the margin over the best baseline widens from 3.9 to 8.6 points.</li>
+</ul>
+<p><img alt="Cross-task test-time scaling on ALFWorld: SkillRise improves monotonically with sequence length K while GiGPO, GRPO, and LaMer stay flat" src="assets/skillrise-curriculum-skills/fig2.png" /></p>
+<p><em>Figure 2 from the paper: Pass@1 vs. cross-task sequence length K on 128 held-out ALFWorld tasks, each attempted once.</em></p>
+<ul>
+<li><strong>Model scale:</strong> 78.1% (1.7B) → 85.9% (4B) on ALFWorld, a +7.8 jump vs. +4.7 for GRPO and +3.3 for LaMer — extra capacity helps the solve+abstract combination disproportionately.</li>
+<li><strong>Ablations:</strong> γ ∈ {0.3, 0.4, 0.6, 0.7} all converge within ~1 point of each other (robust to discounting). Removing the curation phase (same sequences, same budget) costs ~3 points at end of training; GRPO trails by &gt;6 — so both sequence-structured training <em>and</em> explicit curation contribute.</li>
+<li><strong>Efficiency:</strong> matches RetroAgent's ALFWorld success rate and beats their SkillRL reproduction (Gemini-2.5-Pro teacher) by 12.5 points, while RetroAgent/SkillRL cost 6.0×/4.3× SkillRise's end-to-end runtime.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Skill Self-Play (Qwen, this tracker)</strong> trains proposer/solver/controller roles to <em>generate</em> verified skill-training tasks; SkillRise assumes tasks exist and instead engineers the <em>transfer channel and reward wiring</em> between them. The two are composable: self-play could manufacture exactly the related-task sequences SkillRise's curriculum construction currently needs metadata for.</li>
+<li><strong>MSCE (msce-memory-to-skills)</strong> is the training-free mirror image: it also converts trajectories into reusable skill artifacts, but gates promotion with LLM-estimated counterfactual gain and governance metadata. SkillRise replaces all of that estimated machinery with <em>actual</em> downstream returns as the arbiter of skill value — at the price of weight updates and verifiable rewards.</li>
+<li><strong>HiSME (hisme-skill-meta-evolving)</strong> meta-evolves how a skill library is refined, without weight updates; SkillRise is the opposite bet — no persistent library at all, a sequence-local document plus internalization into parameters. The open question between them is persistence: SkillRise's document dies with the sequence.</li>
+<li><strong>LILO (Tenenbaum group)</strong> is the program-synthesis ancestor: compress solution code into a documented library, where compression is the value signal. SkillRise's skill document is the natural-language analogue, but valued by discounted future task reward instead of description length — RL replacing MDL as the abstraction criterion.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>How much lives in the document vs. the weights?</strong> The no-curation ablation gains most of GRPO→SkillRise's margin from sequence-structured training alone (~3 of ~6+ points come from curation). The paper itself attributes gains partly to "accelerating internalization into the model parameters." So the headline mechanism (evolving skill document) accounts for roughly half the effect — the rest is a curriculum result. Worth keeping the two claims separate when citing this.</li>
+<li><strong>The curriculum needs metadata.</strong> Sequences come from environment-provided family labels plus hand-designed difficulty attributes (acknowledged in the Limitations). In open-ended task streams — the setting that actually matters for self-improving agents — discovering "related yet distinct" structure is the hard part, and it's unsolved here.</li>
+<li><strong>Benchmarks are friendly.</strong> ALFWorld/WebShop/ScienceWorld are text games with strong intra-family regularities — the best case for a skill document. K=3 training, K≤6 evaluation, 4B-max models. Whether the curation behavior survives messier domains (SWE agents, research tasks) with sparse family structure is untested.</li>
+<li><strong>Curation reward is noisy.</strong> A curate-phase return is a γ-discounted sum over at most K−1 = 2 future outcomes, baselined over N=8 trials; with binary-ish task rewards that's a high-variance signal. The γ-insensitivity ablation suggests the signal is coarse — it may mostly be teaching "write useful documents at all" rather than finely shaping content.</li>
+<li>The SkillRL comparison uses the authors' own reproduction with a different teacher; treat the 12.5-point gap and the 4.3×/6.0× runtime multipliers as indicative, not exact.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Make transfer the objective:</strong> order related tasks into sequences, let an evolving skill document be the only cross-task channel, and reward curation by γ-discounted <em>downstream</em> task outcomes while solving is rewarded by the current task — decoupled credit assignment with role-and-position-scoped group baselines (arXiv 2607.26784).</li>
+<li>The learned curation policy is a <strong>general skill-learning behavior</strong>: trained only across distinct tasks, it beats repeat-attempt-trained LaMer at repeated attempts, and yields cross-task test-time scaling (83.6→87.5 as K goes 2→6) where all baselines are flat.</li>
+<li>One policy plus one document matches multi-stage skill pipelines (RetroAgent, SkillRL) at <strong>~1/6 the runtime</strong> — evidence that skill banks, retrievers, and teacher distillation are not where the value is; the value is in a clean transfer-priced learning signal.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 16:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

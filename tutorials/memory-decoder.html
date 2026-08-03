@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Decoder at Scale: Pretrained, Swappable Parametric Memory</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Memory Decoder at Scale: Pretrained, Swappable Parametric Memory</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.27919">arXiv:2607.27919</a> · <a href="https://arxiv.org/abs/2607.27919">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306969821634798">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Memory Decoder at Scale: A Pretrained, Parametric Long-Term Memory" (arXiv 2607.27919; Rubin Wei, Jiaqi Cao, Jiarui Wang, Junming Zhang, Qipeng Guo, Bowen Zhou, Zhouhan Lin) scales the Memory Decoder idea — a standalone transformer pretrained to imitate a kNN retriever's next-token distribution, then interpolated with a frozen base model at inference — up to <strong>6.9B-parameter memories trained on 300B tokens</strong>, enabled by a distributed Faiss pipeline over 207B keys.</li>
+<li>Headline result: allocating parameters to <em>memory</em> beats allocating them to the <em>backbone</em>. A frozen Pythia-410M + 6.9B memory scores 37.34 avg over 17 benchmarks, edging out frozen Pythia-12B (37.24) with <strong>39% fewer total parameters</strong>; at matched scores, Base+Memory configurations use 32–42% fewer parameters than backbone scaling.</li>
+<li>Memory is a swappable module: 1.7B domain memories (biology/law/finance) improve every Qwen3 Base backbone from 0.6B to 14B by <strong>&gt;9 points on average</strong>, beat CPT/LoRA/RAG baselines, and transfer across vocabularies to OLMo-2/OLMo-3 with only 20% of the training budget.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Decoder-only LLMs entangle long-term memory and reasoning in a single parameter set. You cannot scale memory without scaling everything; domain adaptation means touching all weights (CPT cost, catastrophic-forgetting risk); knowledge acquired for one model is dead weight for every other. The two standard escapes both pay at inference: RAG pays context-processing for retrieved passages every call, kNN-LMs pay storage plus nearest-neighbor search per token.</p>
+<p>The original Memory Decoder (Cao et al.) proposed a third road: <em>distill the retriever into a small parametric module offline</em>, so inference needs no retrieval at all — just a second forward pass and a logit-level interpolation. But it only showed this at ≤1B scale on WikiText-sized corpora, leaving open whether the recipe scales, whether a <em>general-purpose</em> memory can be pretrained this way, and — the interesting architectural question — how a fixed parameter budget should be split between thinking and remembering. The answer here is the reason to care: across 18 configurations, the Base+Memory curve dominates the backbone-scaling curve, with the largest gains when <em>small</em> backbones get <em>large</em> memories. That is an existence proof for functional specialization in the parameter budget — the LLM analogue of the dissociable memory/reasoning systems the intro motivates from neuroscience — and it lands squarely on this tracker's recurring question: what belongs in weights vs. context vs. external stores, and which pieces can be made modular and reusable.</p>
+<h2>The core idea</h2>
+<p>A Memory Decoder <span class="arithmatex">\(M_\psi\)</span> is a plain transformer decoder that shares the base model's tokenizer and vocabulary but never sees retrieved text. It is pretrained so that its output distribution matches what a kNN retriever <em>would have returned</em> for each context. Build a datastore from a frozen base LM <span class="arithmatex">\(M_\theta\)</span>: every corpus position <span class="arithmatex">\(t\)</span> contributes a key <span class="arithmatex">\(k_t=\phi_\theta(c_t)\)</span> (final-layer hidden state of context <span class="arithmatex">\(c_t=x_{&lt;t}\)</span>) and value <span class="arithmatex">\(x_t\)</span> (the observed next token). For a query <span class="arithmatex">\(q_t\)</span>, the <span class="arithmatex">\(K\)</span> nearest keys vote with softmax distance weights:</p>
+<div class="arithmatex">\[p_{\mathrm{ret}}(y\mid c_t)=\sum_{(k_i,x_i)\in\mathcal{N}_K(q_t)}\lambda_i(q_t)\,\mathbf{1}[x_i=y],\qquad \lambda_i(q_t)=\frac{\exp\!\left(-d(q_t,k_i)/\tau\right)}{\sum_{(k_j,x_j)\in\mathcal{N}_K(q_t)}\exp\!\left(-d(q_t,k_j)/\tau\right)},\]</div>
+<p>where <span class="arithmatex">\(\mathcal{N}_K(q_t)\)</span> is the set of <span class="arithmatex">\(K\)</span> nearest key–value pairs under distance <span class="arithmatex">\(d\)</span> and <span class="arithmatex">\(\tau\)</span> a temperature — a sparse distribution capturing the <em>diversity of plausible continuations</em>, richer supervision than a single target token. The memory is trained on a mix of distribution alignment and standard LM loss:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{mem}}=\beta\,D_{\mathrm{KL}}\!\left(p_{\mathrm{ret}}(\cdot\mid c_t)\,\Vert\,p_\psi(\cdot\mid c_t)\right)+(1-\beta)\bigl[-\log p_\psi(x_t\mid c_t)\bigr],\]</div>
+<p>with <span class="arithmatex">\(\beta\in[0,1]\)</span> weighting retrieval imitation against staying close to the corpus distribution. At inference, base and memory run <strong>in parallel</strong> on the same context and their distributions are interpolated:</p>
+<div class="arithmatex">\[p_{\mathrm{final}}(y\mid c_t)=(1-\alpha)\,p_\theta(y\mid c_t)+\alpha\,p_\psi(y\mid c_t),\]</div>
+<p>where <span class="arithmatex">\(\alpha\in[0,1]\)</span> (tuned on validation, then fixed) sets the memory's contribution. Retrieval exists only offline, as a supervision-construction step. Swapping domains = swapping which <span class="arithmatex">\(M_\psi\)</span> is loaded; the backbone stays frozen.</p>
+<h2>How it works</h2>
+<p><img alt="Overview: LLM pretraining (left), memory pretraining aligned to a retriever (right), and inference-time interpolation of a frozen base model with a swappable parametric memory (middle)" src="assets/memory-decoder/fig1.png" /></p>
+<p><em>Figure 1 from the paper: a standard LM is pretrained then frozen; a parametric memory is pretrained to align with a retriever's distribution; at inference the frozen base and an activated memory (general, law, biology, ...) process the same context in parallel and interpolate predictions.</em></p>
+<p>The paper's real contribution is making this run at pretraining scale. Constructing kNN targets for the deduplicated Pile means 207B keys <em>and</em> 207B queries — quadratic-ish search over 4096-dim Pythia-6.9B hidden states — which a standard Faiss pipeline cannot do. Their distributed pipeline:</p>
+<pre><code class="language-text"># Offline: kNN distribution construction over 207B tokens
+1  for each corpus position t: k_t = phi_theta(c_t)      # frozen Pythia-6.9B
+2  train OPQ transform: 4096-dim keys -&gt; 256-dim search vectors (OPQ256)
+3  learn IVF partition over compressed space
+     (IndexHNSW as quantizer: assigns vectors, routes queries to centroids)
+4  shard contiguous centroid ranges into independent IndexIVFPQ indices
+5  for each query batch:
+     route via HNSW -&gt; group queries by shard
+     parallel GPU search within each shard (no cross-shard random access)
+     writer workers merge candidates per query -&gt; top-K neighbors
+     drop top hit if key == query (no trivial self-retrieval)
+     cache p_ret in SPARSE form (&lt;= K token ids + probs; ~65 pairs/row,
+     ~250x smaller than dense over the 50,304-token vocab)
+# Memory pretraining (1.4B / 2.8B / 6.9B, 300B tokens, 256 A800s)
+6  distributed workers mmap sparse shards; stream only rows each batch needs
+7  loss = beta * KL(p_ret || p_psi) + (1-beta) * CE(x_t)  # renormalize in FP32
+# Inference
+8  p_final = (1-alpha) * p_theta + alpha * p_psi          # parallel forward passes
+</code></pre>
+<p><strong>General memory:</strong> 1.4B/2.8B/6.9B memories initialized from deduplicated Pythia checkpoints, trained 300B tokens (~1.5 epochs over the datastore, matching Pythia's own pretraining budget). <strong>Domain memory:</strong> same recipe on biology, law, and finance corpora up to 4.4B tokens; datastores built with a domain-CPT'd Qwen3-4B-Base; memories initialized from Qwen3-1.7B-Base, compute matched to one Qwen3-8B CPT epoch. <strong>Cross-vocabulary transfer:</strong> swap embedding layer + LM head, then continue training on an OLMo-vocabulary datastore at 20% of the standard budget.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>General memory, matched scales (17 benchmarks, frozen Pythia):</strong> equal-size memory lifts the average at every scale — 32.76→34.36 (1.4B), 33.89→35.49 (2.8B), 36.30→37.79 (6.9B); 1.4B+1.4B beats the 2.8B backbone at identical total parameters and budget. Gains concentrate on knowledge tasks (TriviaQA 8.30→17.11 at 2.8B; 2WikiMultiHopQA 16.89→22.57 at 1.4B), improving 47 of 51 task×scale combinations.</li>
+</ul>
+<p><img alt="Average score over 17 tasks vs. total parameters: the Base+Memory curve dominates the base-model scaling curve, with 33–42% parameter savings at matched scores" src="assets/memory-decoder/fig2.png" /></p>
+<p><em>Figure from the paper: zero-shot average vs. total parameter count (log scale). All 18 Base+Memory configurations beat their backbone; 410M+6.9B-memory matches Pythia-12B with 42% fewer parameters at that point of the curve.</em></p>
+<ul>
+<li><strong>Parameter allocation:</strong> the headline 410M + 6.9B-memory = 37.34 vs. Pythia-12B = 37.24 (39% fewer parameters); at matched average scores the Base+Memory curve uses 33%/32%/42% fewer parameters than the 2.8B/6.9B/12B baselines. Since the two components run in parallel, latency can also be <em>lower</em> than an equal-size monolith.</li>
+<li><strong>Domain memory (Qwen3 0.6B–14B):</strong> 1.7B memories give average gains of 9.88/9.64/10.00/9.09/9.99 points across the five backbone scales, beating the strongest of CPT/LoRA/RAG by ≥4.05 points everywhere (8.53 at 0.6B). On Qwen3-14B: +17.96 BioInst, +8.97 LawBench, +3.04 FinEval.</li>
+<li><strong>Cross-vocabulary transfer:</strong> Qwen3-trained memories moved to OLMo backbones at 20% budget still give +4.26 (OLMo-2-7B) and +7.77 (OLMo-3-7B) domain averages, improving all six evaluations.</li>
+<li><strong>Analyses:</strong> gains persist under 3-shot/5-shot prompting (+1.2–1.9 avg) — memory is complementary to in-context examples; bigger memory monotonically helps (up to +4.56 for the smallest backbone); and a compute/data/capacity-matched CPT model <em>attached via the same interpolation</em> underperforms by up to 10.21 points — the KL-to-retriever objective, not the plug-in interface, carries the gain. Memory also makes training content more extractable (verbatim EM 42.4%→49.7%; domain-anchor completion 22.6%→56.5%).</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>PlugMem (this tracker)</strong> is the closest framing sibling — task-agnostic plugin memory for agents — but stores structured facts/skills consumed through context; Memory Decoder is memory at the <em>logit</em> level, invisible to the context window. Different layers of the same modularity thesis.</li>
+<li><strong>agentic-context-management</strong> legislates what enters, stays in, and leaves context; Memory Decoder is the limiting case where domain knowledge never enters context at all — zero context tax, zero inspectability. ACM's governance questions (provenance, staleness) reappear here as "when do you retrain the memory?"</li>
+<li><strong>pro-long-programmatic-memory</strong> showed keep-everything-and-search beats bespoke harnesses for <em>episodic, within-task</em> memory. Memory Decoder is orthogonal: parametric <em>semantic</em> memory of corpus knowledge. A plausible stack: PRO-LONG for the interaction log, a domain Memory Decoder as the knowledge substrate.</li>
+<li><strong>MemHarness</strong> attacks stale retrieval by reconstructing memories before acting; Memory Decoder abolishes inference-time retrieval instead — but shares the staleness failure mode, frozen into weights until retrained.</li>
+<li><strong>Self-Guided TTT (Meta/UVA)</strong> pushes knowledge into weights <em>at test time</em> by picking spans to train on; Memory Decoder amortizes the same weight-space injection offline into a reusable, swappable artifact. Per-instance adaptivity vs. train-once-reuse-everywhere is the trade.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>The retrieval cost didn't disappear — it moved.</strong> 256 A800s, a 207B-entry sharded index, and 300B tokens of KL supervision is an enormous offline bill (the Limitations section concedes this grows with corpus scale). The economics only work if one memory is reused across many backbones and deployments — the property they demonstrate — but "no retrieval at inference" means <em>amortized</em>, not free.</li>
+<li><strong>General-memory evidence lives on Pythia.</strong> The parameter-allocation curve — the paper's most-quotable result — is built on a weak, dated family whose 12B anchor underperforms modern 1B models. Whether a general memory still buys anything on a strong backbone whose pretraining already absorbed the Pile is untested; the Qwen3 results are domain-memory only, where the corpus is genuinely novel. Discount the 39%-fewer-parameters headline accordingly.</li>
+<li><strong>Fixed α is a blunt instrument.</strong> One global interpolation weight per (backbone, memory) pairing, tuned on validation; the paper flags adaptive weighting as future work. On reasoning-heavy inputs a static memory vote is noise — few-shot robustness is reassuring, but averages could hide per-task regressions.</li>
+<li><strong>Name collision warning:</strong> this is not agent memory. Nothing here stores experience or anything written at inference time; it is corpus-knowledge distillation into a module — closest to modular continued-pretraining, not to memory harnesses.</li>
+<li>The <strong>extractable-memorization result cuts both ways</strong>: 56.5% vs. 22.6% verbatim domain-anchor completion is presented as traceability, but it equally says the memory objective memorizes training text far more verbatim than CPT — a copyright/privacy liability if the corpus isn't clean.</li>
+<li>Cross-model reuse is qualified: same-vocabulary transfer is free; cross-vocabulary needs embedding/head surgery plus 20% retraining on a datastore built for the target family's representations (inferred from the setup description — verify in the paper).</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Memory can be a pretrained, swappable module</strong>: train a decoder to imitate a kNN retriever's distribution (<span class="arithmatex">\(\beta\,\mathrm{KL}(p_{\mathrm{ret}}\Vert p_\psi)+(1-\beta)\,\mathrm{CE}\)</span>), then interpolate with a frozen base at the logits — retrieval-quality knowledge with no inference-time retrieval (arXiv 2607.27919).</li>
+<li><strong>Parameters spent on memory beat parameters spent on backbone</strong> (on Pythia): 410M base + 6.9B memory ≥ 12B base at 39% fewer parameters, and the whole Base+Memory curve dominates backbone scaling — evidence that memory/reasoning disentanglement is a real architectural axis, not just an engineering convenience.</li>
+<li>The enabling systems work is <strong>kNN supervision at 207B-key scale</strong>: OPQ compression (4096→256 dims), HNSW-routed IVFPQ shards with parallel GPU search, and ~250× sparse distribution storage with streaming loads — the recipe that turns kNN-LM distillation from a WikiText trick into a pretraining-scale method.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 16:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
