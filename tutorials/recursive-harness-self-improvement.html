@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recursive Harness Self-Improvement (Sakana/Berkeley)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Recursive Harness Self-Improvement (Sakana/Berkeley)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.15524">arXiv:2607.15524</a> · <a href="https://arxiv.org/abs/2607.15524">arXiv</a> · <a href="https://x.com/fly51fly/status/2079315187988066568">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>Recursive Harness Self-Improvement (RHI)</strong> (Lee, Xu, Seely, Lee, Zaharia, Tang — Sakana AI &amp; UC Berkeley, arXiv 2607.15524) represents the agent harness as a <strong>prompt-level specification of the agent loop</strong> and iteratively refines that specification using <strong>pairwise feedback over its own revision history</strong> — no gradient updates, no code edits to a provider scaffold.</li>
+<li>On 30 synthetic ML-research tasks (quantitative finance, robotics, pharmacy), a few RHI iterations raise the performance ceiling of <strong>low-reasoning-effort</strong> agents above the <strong>maximum-reasoning-effort</strong> setting of the same model, while cutting inference cost by up to <strong>60%</strong>.</li>
+<li>The mechanism, per the authors' analysis, is not longer reasoning traces but <strong>better task-specific context management</strong> — more effective inter-agent information flow — which they formalize as an information-theoretic hypothesis about RHI's implicit objective.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The dominant framing of harnesses (Claude Code, Codex, and their open clones) has been inference-time scaffolding: prompts, tools, and control flow wrapped around a frozen model. This paper adopts the newer <strong>model–harness co-evolution</strong> view: harnesses are also <em>data-generating components</em>, because their execution traces feed the training corpora of future foundation models. Under that view, a harness has two objectives — immediate task performance <em>and</em> the quality of the traces it emits for future training. The authors explicitly position RHI as addressing "the first half of the model–harness coevolution loop" (the harness-optimization half; the model-training half is what OpenForgeRL-style work addresses — see below).</p>
+<p>The practical gap RHI fills: provider-built scaffolds are expensive and labor-intensive to update continually, and most users cannot modify them anyway. So the question becomes whether <strong>user-constructed, task-specific harnesses</strong> can be optimized cheaply — computationally lightweight, only a few update iterations — while still improving trace quality. That is a much more accessible regime than end-to-end RL on the model, and it is complementary to it.</p>
+<p>This sits inside a fast-moving 2026 thread in this reading list: the Harness Handbook makes hand-editing harness <em>code</em> tractable; the harness-generalization paper shows no fixed harness wins across model–problem pairs (so per-task adaptation is not optional, it is forced); the long-horizon-agents survey frames the whole area as Harness × Optimization co-evolution. RHI is the "optimize the harness automatically, per task, at inference time" corner of that space.</p>
+<h2>The core idea</h2>
+<p>The single key insight: <strong>if the harness is expressed as text, harness optimization becomes a text-refinement problem the model can do to itself.</strong> RHI represents the whole agent loop — roles, hand-offs, what each sub-agent sees, how information flows between them — as a prompt-level specification. Improvement is then recursive: run the harness, gather pairwise comparisons between the current revision and earlier revisions in its own history, and use that feedback to write the next revision. The optimization signal is <em>relative</em> (this revision beats that one), which avoids needing calibrated absolute scores of harness quality — notoriously noisy in this setting.</p>
+<p><img alt="RHI loop: run harness, self-compare outputs, store preference feedback, rewrite harness" src="assets/recursive-harness-self-improvement/fig1.png" /></p>
+<p><em>Figure from the paper: Recursive Harness Self-Improvement. At iteration <span class="arithmatex">\(i\)</span> the agent solves the task with harness <span class="arithmatex">\(H^{(i)}\)</span>; an LLM evaluator compares output[i] with output[i-1]; the preference is stored in the self-comparison history; an LLM harness optimizer updates <span class="arithmatex">\(H^{(i)} \to H^{(i+1)}\)</span>.</em></p>
+<p>The second, less obvious part of the idea is <em>what</em> gets optimized in practice. The authors argue the gains arise primarily from improved <strong>task-specific context management</strong> — the revisions restructure which information reaches which component of the loop — rather than from eliciting longer chains of thought. They elevate this to an information-theoretic hypothesis about RHI's implicit optimization objective: roughly, RHI is doing continual learning by reshaping the harness's internal information channels (the precise formalization is in the paper; the abstract states the claim but not the functional form).</p>
+<h2>How it works</h2>
+<p>From the abstract and thread, the pipeline is:</p>
+<ol>
+<li><strong>Harness-as-prompt.</strong> Author the agent loop as a prompt-level specification. This is a user-constructed, task-specific harness — not a fork of a provider scaffold — so it is fully readable and rewritable by an LLM.</li>
+<li><strong>Execute.</strong> Run the current harness revision on tasks from the target domain, producing execution traces and outcomes.</li>
+<li><strong>Pairwise feedback over revision history.</strong> Compare the current revision against its predecessors — the feedback signal is pairwise preferences over the harness's own revision history rather than an absolute score. (The exact comparison protocol — which pairs, judged by outcome metrics vs. an LLM judge — is not specified in the abstract; verify in the paper.)</li>
+<li><strong>Refine.</strong> Generate a revised harness specification conditioned on that feedback; the revision is appended to the history.</li>
+<li><strong>Recurse.</strong> Repeat for a small number of iterations — the abstract emphasizes that <em>a few</em> iterations suffice, which is what keeps the method computationally lightweight.</li>
+</ol>
+<p><strong>The objective and the update rule (from the paper's full text).</strong> The ideal harness-optimization objective is the expected pairwise win rate against a reference population of competing harnesses:</p>
+<div class="arithmatex">\[f_x(H)=\mathbb{E}_{H'\sim\mu,\; y\sim\mathcal{A}(H,x),\; y'\sim\mathcal{A}(H',x)}\big[\mathbf{1}\{\mathcal{L}_{\mathrm{eval}}(y,y';x_{\mathrm{eval}})=y\succ y'\}\big],\qquad H_x^{*}\in\arg\max_{H\in\mathcal{H}} f_x(H)\]</div>
+<p>where <span class="arithmatex">\(\mathcal{A}(H,x)\)</span> is the coding agent running harness <span class="arithmatex">\(H\)</span> on task <span class="arithmatex">\(x\)</span>, <span class="arithmatex">\(y\)</span> is the produced repository, <span class="arithmatex">\(\mathcal{L}_{\mathrm{eval}}\)</span> is an LLM judge conditioned on evaluation prompt <span class="arithmatex">\(x_{\mathrm{eval}}\)</span>, and <span class="arithmatex">\(\mu\)</span> is a reference distribution over competitors. Population methods approximate this with <span class="arithmatex">\(\Theta(m^2)\)</span> pairwise evaluations per iteration; RHI instead uses a <strong>trajectory-local relaxation</strong> that compares only against the immediately previous revision:</p>
+<div class="arithmatex">\[\widetilde f_x^{(i)}(H)=\mathbb{E}_{y\sim\mathcal{A}(H,x),\; y^{-}\sim\mathcal{A}(H_x^{(i-1)},x)}\big[\mathbf{1}\{\mathcal{L}_{\mathrm{eval}}(y,y^{-};x_{\mathrm{eval}})=y\succ y^{-}\}\big]\]</div>
+<p>which costs exactly one new agent execution and one pairwise evaluation per iteration (<span class="arithmatex">\(\Theta(1)\)</span>); under a Bradley–Terry-style latent-utility model this preserves the same utility ordering, so each comparison is a noisy local ascent signal. Because a single comparison is noisy, updates condition on the whole self-comparison history</p>
+<div class="arithmatex">\[\mathcal{D}_x^{(i)}=\big\{\mathcal{L}_{\mathrm{eval}}(y_x^{(k)},y_x^{(k-1)};x_{\mathrm{eval}})\big\}_{k=1}^{i},\qquad H_x^{(i+1)}=\mathcal{L}_{\mathrm{harness}}\big(H_x^{(i)},\mathcal{D}_x^{(i)}\big)\]</div>
+<p>where <span class="arithmatex">\(y_x^{(k)}\)</span> is the output of the <span class="arithmatex">\(k\)</span>-th revision and <span class="arithmatex">\(\mathcal{L}_{\mathrm{harness}}\)</span> is an LLM harness optimizer that never sees <span class="arithmatex">\(x_{\mathrm{eval}}\)</span> directly — the evaluation criteria reach it only implicitly through accumulated preferences.</p>
+<pre><code class="language-text">Algorithm (RHI, condensed from Algorithm 1 in the paper):
+Input: tasks {x_j}, agent A, evaluator L_eval, harness optimizer L_harness,
+       eval prompt x_eval, stopping threshold eps
+Initialize harness H(0) per task; history D &lt;- {}; run A(H(0), x) once
+for i = 1, 2, ...:
+    for each task x_j:
+        y(i) &lt;- A(H(i), x_j)                          # run current harness
+        D_j  &lt;- D_j U {L_eval(y(i), y(i-1); x_eval)}  # compare vs. predecessor
+    s_i &lt;- (1/n) * #{tasks where y(i) beats y(i-1)}   # improvement rate
+    if s_i &lt; eps: break                                # revisions stopped winning
+    H(i+1) &lt;- L_harness(H(i), D)                       # rewrite spec from history
+return task-specific harnesses H*
+</code></pre>
+<p>The harness itself is decomposed into <strong>agent design</strong> (roles + instructions) and <strong>agent workflow</strong>, with the workflow split into <strong>contracts</strong> (what information each sub-agent returns to the orchestrator) and <strong>hops</strong> (the interaction structure). RHI prioritizes rewriting contracts and hops — the paper's stated hypothesis is that task-specific contracts act like a learned sparsity pattern on inter-agent information flow (dense shared history ≈ dense attention; a contract ≈ task-specific sparse communication), which is where the context-management gains come from.</p>
+<p>Two properties are worth flagging. First, this is <strong>hill-climbing in harness-space with the model as the mutation operator</strong>, structurally similar to evolutionary prompt/program optimization but with the search object being the entire agent loop, not a single prompt. Second, because the harness is the unit of optimization, improvements persist across tasks in the domain without touching model weights — it is a continual-learning mechanism that lives entirely in the scaffold. (How much cross-task transfer occurs within a domain vs. per-task re-optimization is inferred from the thread — verify in the paper.)</p>
+<h2>Results</h2>
+<p><img alt="RHI vs test-time scaling: win counts across 30 tasks" src="assets/recursive-harness-self-improvement/fig2.png" /></p>
+<p><em>Figure from the paper: few-shot RHI raises the performance plateaus of test-time scaling — across 30 synthetic ML research tasks, high-reasoning agents with RHI-improved harnesses achieve higher pairwise win counts than test-time-scaling baselines (mean over two LLM judges, three seeds).</em></p>
+<p>Numbers actually present in the abstract:</p>
+<ul>
+<li><strong>Benchmark:</strong> 30 synthetic machine-learning research tasks spanning quantitative finance, robotics, and pharmacy.</li>
+<li><strong>Headline:</strong> a few RHI iterations "substantially raise the performance ceiling of low-reasoning-effort agents, exceeding the corresponding maximum-reasoning-effort setting" — i.e., a cheap model configuration plus an optimized harness beats the same model at max reasoning effort with the unoptimized harness.</li>
+<li><strong>Cost:</strong> inference cost reduced by up to <strong>60%</strong> relative to the maximum-reasoning-effort setting.</li>
+<li><strong>Mechanism analysis:</strong> gains attributed to improved inter-agent information flow / context management rather than longer reasoning traces (qualitative claim plus the information-theoretic formalization).</li>
+</ul>
+<p>No per-task numbers, baselines, or model identities are given in the abstract; do not quote finer-grained figures without reading the paper.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Training Agents Inside Their Harnesses (OpenForgeRL, this list):</strong> the literal other half of the co-evolution loop. OpenForgeRL trains the <em>model</em> inside a fixed real harness via RL; RHI improves the <em>harness</em> around a fixed model. A full co-evolution system would alternate the two, with RHI-style optimization also curating the traces OpenForgeRL-style training consumes.</li>
+<li><strong>Harness Handbook (this list):</strong> attacks the same "harnesses must evolve" problem from the code side — behavior localization in large production harness repos. RHI sidesteps that entirely by keeping the harness in prompt-space, which is exactly why it only applies to user-constructed harnesses, not to Claude Code-scale codebases.</li>
+<li><strong>No Universally Best Harness (this list):</strong> provides the empirical justification for RHI's premise. If harness choice is a model–problem-specific hyperparameter with no universal winner, then per-task harness adaptation (RHI) or online harness selection (their adaptive-allocation experiment) are the two natural responses.</li>
+<li><strong>Long-Horizon Agents survey (this list):</strong> RHI is a clean instance of the survey's "self-evolution" cell in the optimization pillar, and its trace-quality objective matches the survey's claim that harness capabilities get internalized into future models.</li>
+<li>Also related in this list: <strong>AREX</strong> (recursively self-improving deep-research agent), <strong>evolving-benchmarks</strong> (if the harness self-improves, the eval must too), and <strong>agentic-context-management</strong> (RHI's gains are, per the authors, mostly a context-management story).</li>
+<li><strong>Well-known prior work:</strong> ADAS (Hu et al., 2024) searched over agentic system designs in code with an LLM meta-agent; Sakana's own Darwin Gödel Machine (2025) had agents rewrite their own scaffold code with empirical validation; DSPy and reflective prompt-evolution methods (e.g., GEPA-style pairwise/textual feedback) optimize prompts programmatically. RHI's distinguishing bets are the prompt-level representation of the <em>whole loop</em>, pairwise feedback over <em>revision history</em>, and the trace-quality/co-evolution framing.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Synthetic tasks.</strong> All 30 tasks are synthetic ML-research tasks. Whether RHI's gains survive contact with messy real workloads (real repos, real data, underspecified goals) is untested here.</li>
+<li><strong>Variance.</strong> The harness-generalization paper in this list shows discovery/agent-harness comparisons are extremely high-variance and often under-replicated. The abstract does not say how many seeds/repeats back the "exceeds max-reasoning-effort" claim — check the paper's statistical protocol before leaning on it.</li>
+<li><strong>Cost accounting.</strong> The 60% figure is inference cost; the abstract does not state whether the cost of RHI's own refinement iterations (running comparisons, generating revisions) is amortized into it. For few iterations this is plausibly small, but verify.</li>
+<li><strong>Trace quality is asserted, not closed-loop tested.</strong> The motivation is better training data for future models, but "first half of the loop" means no experiment here shows a model actually trained on RHI-optimized traces improving. That is the load-bearing claim of the co-evolution framing and it remains open.</li>
+<li><strong>Overfitting to the judge.</strong> Pairwise feedback over one's own revision history can drift toward whatever the comparison signal rewards (Goodharting the judge), especially if the judge is an LLM. The information-theoretic hypothesis is a post-hoc explanation, labeled as a hypothesis by the authors themselves.</li>
+<li><strong>Scope.</strong> By construction, RHI applies to prompt-level, user-constructed harnesses. Production harnesses with real code, state machines, and tool infrastructure are out of scope — that is Harness Handbook territory.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>RHI = the agent loop written as a prompt, recursively rewritten via pairwise comparisons against its own revision history — harness optimization as self-refinement in text-space.</li>
+<li>A few iterations let a cheap low-reasoning configuration beat the same model at max reasoning effort, at up to 60% lower inference cost, and the gains come from better context/information flow, not longer thinking.</li>
+<li>It is explicitly the <em>harness half</em> of model–harness co-evolution: pair it mentally with OpenForgeRL (model half) and the harness-generalization result (why per-task adaptation is necessary at all).</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

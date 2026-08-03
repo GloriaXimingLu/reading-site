@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PRO-LONG: Programmatic Memory for Long-Horizon Reasoning</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>PRO-LONG: Programmatic Memory for Long-Horizon Reasoning</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.20064">arXiv:2607.20064</a> · <a href="https://arxiv.org/abs/2607.20064">arXiv</a> · <a href="https://x.com/dair_ai/status/2080345957204697261">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><p>Paper: "PRO-LONG: Programmatic Memory Enables Long-Horizon Reasoning" (arXiv 2607.20064). Authors: Alexis Fox, Junlin Wang, Paul Rosu, Bhuwan Dhingra (Duke). Code and experiment logs are public per the abstract.</p>
+<h2>TL;DR</h2>
+<ul>
+<li>PRO-LONG is an almost embarrassingly minimal memory system for long-horizon agents: append every interaction (plan, action, resulting state, score) to a structured <code>logs.txt</code>, and let a coding agent query that log on demand with grep/sed/awk/Python. No summarization, no vector store, no learned memory module, no world-model prompt scaffolding.</li>
+<li>The design premise: the compression-retrieval tradeoff (save more → find the right detail less reliably) is best sidestepped by not compressing at all — keep history <em>accessible</em> (searchable external memory) rather than <em>accessed</em> (in the ~250K context window), and rely on the agent's existing code-tool competence for retrieval.</li>
+<li>On the 25 public ARC-AGI-3 games it improves over a no-log coding-agent baseline by 18.0 points pass@1 on average across frontier models, and matches or approaches specialized harnesses (WorldModeler, Arcgentica, Schema) while using 4.2-5.8x fewer tokens; with Fable 5 on a 2,000-action budget it reaches 97.4% best@2 for $1,750 total (vs. $6,447 partial cost for Schema's 99.0%).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Long-horizon agents accumulate far more observation than fits in context, and the standard responses are all forms of lossy compression: rolling summaries, self-authored note files, bespoke memory hierarchies, learned retrieval. Each buys token headroom by gambling that nothing discarded becomes decisive later — the classic accessed-vs-accessible tradeoff. For interactive environments like ARC-AGI-3 (unseen video-game-like puzzles where an agent must discover mechanics through hundreds of actions), that gamble is often lost: the observation that mattered is the one summarized away 300 actions ago.</p>
+<p>The field's other response has been increasingly elaborate harnesses: WorldModeler makes the agent maintain a Python simulator of the game with a ~600-line prompt and subagents; Arcgentica runs four subagents (Explorer/Theorist/Tester/Solver) over a shared hypothesis database; Schema exposes twelve custom MCP tools and BFS planning. These work but are expensive, game-specialized, and hard to attribute — is the gain from the memory design or the scaffolding?</p>
+<p>PRO-LONG is the deflationary baseline this space needed: lossless append-only logging plus the retrieval tools coding agents already have. If that matches specialized harnesses at a fraction of the tokens, most of the machinery in bespoke memory systems is overhead. This resonates with a pattern showing up across this reading list (Continual Learning Bench finding naive ICL beats purpose-built memory systems; "Coding Agents Are Effective Long-Context Processors").</p>
+<h2>The core idea</h2>
+<p><strong>Treat history as a database, not as context.</strong> The distinction the paper draws is between <em>accessed</em> information — the active context window (~250K tokens) — and <em>accessible</em> information — external memory reachable through tools. Compression-based approaches try to keep everything relevant inside the accessed set. PRO-LONG keeps the accessed set small and makes the accessible set complete and cheaply queryable: a structured, append-only, plain-text log that a coding agent can grep, slice, and analyze with Python exactly the way it navigates a large repo. Retrieval intelligence lives in the agent's existing tool-use policy, not in a retrieval subsystem. Nothing is ever thrown away, so no decision about what will matter later ever has to be made.</p>
+<h2>How it works</h2>
+<p><strong>Log structure.</strong> After each action, the harness appends a structured entry to <code>logs.txt</code>: a header (action number, level, attempt, score), the agent's summarized plan, the selected action, and the resulting board state. The log is append-only and complete — in one game (g50t) it exceeded 320,000 lines.</p>
+<p>The harness cycle, end to end:</p>
+<pre><code class="language-text"># PRO-LONG loop (per turn, within a 500- or 2,000-action budget)
+loop:
+    context &lt;- system prompt + recent turns + workspace     # logs.txt NOT in context
+    agent (Claude Code / Codex) may, any number of times:
+        grep/sed/awk logs.txt        # e.g. find every score-change line
+        run Python over logs.txt     # diff board states, search action seqs
+        read/write workspace notes
+    agent emits actions.json         # 1-20 actions to execute
+    environment applies actions; board updates
+    harness appends one structured entry to logs.txt:
+        header: action number, level, attempt, score
+        agent's summarized plan
+        selected action
+        resulting board state (+ animation frames [frame N/M], [settled])
+</code></pre>
+<p><strong>Query layer.</strong> No custom tooling: the agent uses standard coding-agent affordances — grep/regex, sed/awk, <code>cat/head/tail</code>, and arbitrary Python — against the log file. Example patterns the paper highlights: grep for score-change lines to find the consequential actions of a level; write Python to diff board states around those actions; in game m0r0 the agent spontaneously wrote a world model and ran breadth-first search over 50+ action sequences — i.e., WorldModeler-style behavior emerged from generic tools when useful, rather than being imposed by the harness.</p>
+<p><strong>Context policy.</strong> Only query results enter the active context; the log itself never does. The agent's own workspace notes turn out to be nearly irrelevant: clearing the workspace between attempts costs 0.5 points (41.2% → 40.7%), so the load-bearing component is the searchable log, not self-authored memory.</p>
+<p><strong>Evaluation protocol.</strong> 25 public ARC-AGI-3 games; 500-action budget (2,000 for extended Fable 5 runs); 20 actions per turn; scoring via Relative Human Action Efficiency (RHAE, per-level cap 115%); bootstrap confidence intervals.</p>
+<p>The scoring and cost metrics are the paper's only formalism (Eqs. 1-2):</p>
+<div class="arithmatex">\[
+S_{l,e} = \min\!\left(\left(\frac{h_{l,e}}{a_{l,e}}\right)^{2},\, 1.15\right),
+\qquad
+T = \frac{1}{|D|}\sum_{e \in D}\frac{\sum_{l=1}^{n} l\, S_{l,e}}{\,n(n+1)/2\,}
+\]</div>
+<p>where <span class="arithmatex">\(h_{l,e}\)</span> and <span class="arithmatex">\(a_{l,e}\)</span> are the human-baseline and agent action counts for level <span class="arithmatex">\(l\)</span> of game <span class="arithmatex">\(e\)</span>: each level's score is the squared human/agent efficiency ratio capped at 115%, and the aggregate <span class="arithmatex">\(T\)</span> over game set <span class="arithmatex">\(D\)</span> weights later levels linearly (weight <span class="arithmatex">\(l\)</span>, normalized by <span class="arithmatex">\(n(n+1)/2\)</span>).</p>
+<div class="arithmatex">\[
+\mathrm{billed} = \mathrm{input} + 5\cdot\mathrm{output} + 0.1\cdot\mathrm{cache\_read} + 2\cdot\mathrm{cache\_write}
+\]</div>
+<p>the billed-token formula for Claude models (Codex analogue: <span class="arithmatex">\((\mathrm{input}-\mathrm{cached}) + 6\cdot\mathrm{output} + 0.1\cdot\mathrm{cached}\)</span>), which is what the 4.2-5.8x cost comparisons are computed in. Agents: GPT-5.5 in Codex, Opus 4.6 and Fable 5 in Claude Code. Compared harnesses: no-log baseline, WorldModeler, Arcgentica, Schema.</p>
+<h2>Results</h2>
+<p><img alt="PRO-LONG vs. prior harnesses on ARC-AGI-3, and score vs. billed tokens per game" src="assets/pro-long-programmatic-memory/fig1-results-cost.png" /></p>
+<p><em>Figure from the paper: "PRO-LONG matches or exceeds state-of-the-art ARC-AGI-3 results at 4.2-5.8x lower token cost. Left: results on the public game set with a 500-action limit, grouped by model and harness. Right: performance versus billed tokens per game."</em></p>
+<p>Numbers from the paper (v2):</p>
+<ul>
+<li><strong>Headline</strong>: +18.0 points pass@1 average improvement over the no-log baseline across frontier models (per-model gains for GPT-5.5: 15.7-21.0 points).</li>
+<li><strong>GPT-5.5/Codex</strong>: PRO-LONG 41.2% pass@1 vs. WorldModeler 45.1% — while using <strong>5.8x fewer tokens</strong>. best@5 reaches 60.1% (+18.9 over pass@1), exposing large run-to-run variance.</li>
+<li><strong>Opus 4.6/Claude Code</strong>: 42.4% pass@1 — reported as the best public result for that model.</li>
+<li><strong>Fable 5/Claude Code</strong>: 82.1% best@2 at the 500-action budget vs. Schema's 84.4%, at <strong>4.2x fewer tokens</strong> than Schema; at the 2,000-action budget, <strong>97.4% best@2</strong> (a lower bound — some games ran once) for $1,750 total (~150M billed tokens), vs. Schema's partial cost of $6,447 for 99.0% best@2 — more than 3x the cost.</li>
+<li><strong>Aggregate token savings</strong>: ~400M tokens across the full game set.</li>
+<li><strong>Tool-capability ladder</strong> (GPT-5.5): read-only 23.1% → +grep/regex 27.2% → +Python 38.3% → full read/write/edit 41.2%. Programmatic (Python) access to history, not mere retrieval, carries most of the gain.</li>
+<li><strong>Tool-use distribution</strong>: with PRO-LONG, 60.6% of calls are Python and 20.3% log-parsing; the no-log agent spends 59.2% of calls on workspace management — i.e., the baseline burns its budget maintaining its own lossy memory.</li>
+<li><strong>Per-game</strong>: matches or exceeds no-log on nearly all 25 games; largest gains on long-horizon-dependency games (m0r0: 100% vs. 34.2%); minimal gains where dynamics are immediately visible.</li>
+</ul>
+<h2>How it connects</h2>
+<p>This paper is one pole of the memory-and-context-engineering thread in this reading list. Its philosophical opposite is <strong>Agentic Context Management</strong> (Maximem Synap): ACM says context is a lifecycle problem requiring architected schemas, scoped ingestion, prefetching, and validated compaction; PRO-LONG says for a single long-horizon task, skip the lifecycle — store everything raw and search it. The tension is partly resolved by regime: ACM targets persistent multi-tenant assistants where cost grows across sessions and compaction is unavoidable; PRO-LONG targets bounded-but-long tasks where lossless logs fit on disk and the agent is the retriever. <strong>Continual Learning Bench</strong> supplies independent evidence for the deflationary view (naive ICL beating memory architectures), as does <strong>"Coding Agents Are Effective Long-Context Processors."</strong> <strong>PageIndex</strong> shares the vectorless, structure-plus-reasoning retrieval stance; <strong>Memoria</strong> (git-versioned memory) and <strong>MemPalace</strong> are the kind of engineered systems PRO-LONG implicitly challenges to beat a grep baseline. On the other side of the stack, <strong>Still</strong> and <strong>End-to-End Context Compression</strong> attack the same accessed/accessible boundary at the KV-cache/architecture level rather than the harness level. There's also a natural RL hook: the paper itself suggests RL to close the pass@1-vs-best@k gap, connecting to the list's agentic-RL cluster (AgentGym-RL, TRACE) — a lossless queryable log is arguably the right substrate for exploration-heavy RL environments too.</p>
+<p>Prior-work anchors: this is the ReAct-era coding agent (Claude Code / Codex) repurposed as a memory system; the contrast set is world-model harnesses and multi-agent hypothesis-testing scaffolds on ARC-AGI-3. The "external memory + programmatic access" idea has ancestry in tool-augmented LMs and in neuro-symbolic working-memory systems, but the specific claim — that frontier coding agents make raw logs <em>sufficient</em> — is only testable now that the agents are this good.</p>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Single benchmark, and an unusual one.</strong> ARC-AGI-3 games have compact, fully-observable board states, deterministic dynamics, and dense score feedback — close to the best case for "grep the log for score changes." Whether raw-log-plus-Python matches engineered memory on messy long-horizon work (multi-day SWE tasks, web research with huge noisy observations) is untested here. The board state's small serialization is doing quiet work: logging "everything" is cheap when observations are 1-2 KB.</li>
+<li><strong>Confounded model/harness comparisons.</strong> PRO-LONG-on-Codex vs. WorldModeler numbers pair different harnesses with the same model, but cross-harness comparisons (Schema vs. PRO-LONG best@2) involve different budgets, partial runs, and — as the authors note — models released after the benchmark, so treat "matches specialized harnesses" as approximately right, not precisely established. The 97.4% is explicitly a lower bound with some single-run games; the 99.0% Schema figure it's compared against cost 3x more.</li>
+<li><strong>Variance is large.</strong> An 18.9-point pass@1→best@5 gap for GPT-5.5 means single-run numbers are noisy and exploration failure, not memory, may dominate residual errors. The authors are upfront about this and report both.</li>
+<li><strong>It's a harness result, not a learning result.</strong> Nothing is trained; gains ride entirely on frontier models' code-tool competence. Weaker models presumably benefit less (the paper evaluates only frontier agents), and the approach inherits frontier-API costs — $1,750 for one benchmark sweep is "cheap" only relative to $6,447.</li>
+<li>Open questions: where does the log-scan cost curve cross compaction's? (At 320K lines, grep is fine; at 100M lines of browser DOM dumps, less clear.) Can the log schema itself be learned or task-adapted? Does combining a lossless log with light consolidation (indexes, not summaries) dominate both poles?</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Lossless, structured, append-only logs + a coding agent's native query tools</strong> beat or match bespoke memory harnesses on ARC-AGI-3 at 4.2-5.8x fewer tokens — +18.0 pass@1 over a no-log baseline across frontier models.</li>
+<li>The mechanism is the <strong>accessed/accessible split</strong>: keep context small, keep history complete and <em>programmatically</em> queryable — the tool-ladder ablation shows Python access (not just retrieval) carries the gain (23.1% → 38.3% → 41.2%).</li>
+<li>Before building a memory architecture, <strong>run the grep baseline</strong> — this paper, Continual Learning Bench, and the long-context-processor results all point the same direction: much of current memory-system machinery is overhead that frontier tool-using agents no longer need in bounded-task regimes.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

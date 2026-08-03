@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survey: Self-Improvement in Modern Agentic Systems (239 papers)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Survey: Self-Improvement in Modern Agentic Systems (239 papers)</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.13104">arXiv:2607.13104</a> · <a href="https://arxiv.org/abs/2607.13104">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2078937898175377479">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Self-Improvements in Modern Agentic Systems: A Survey" (arXiv 2607.13104, July 2026; the items.json entry lacks the id, but the paper was located via search) curates 239 papers on how agents improve themselves, with Jürgen Schmidhuber as senior author. It is 97 pages with 12 figures, plus a living project hub at selfimproving-agent.github.io.</li>
+<li>The organizing formalism: a modern agent is a <strong>configuration</strong> coupling a foundation model with an operational <strong>scaffold</strong> (prompts, memory, tools, control logic), and self-improvement is a <strong>self-induced update operator</strong> that obtains and commits updates to either the model parameters or the scaffold components.</li>
+<li>Per the project hub's description, the corpus splits into 73 papers on foundation-model improvement and 166 on scaffold improvement across 15 fine-grained sections — a 2:1 tilt toward scaffold-side improvement that itself says something about where the field's practical action is.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The self-improving-agents literature has been fragmenting into subcommunities that barely cite each other. On one side: weight-updating methods — self-training, RL from self-generated tasks, on-policy distillation, self-play. On the other: scaffold-updating methods — prompt evolution, memory systems, skill libraries, tool synthesis, and agents that rewrite their own harness code. This reading list is a microcosm of the split: AREX and Skill Self-Play update weights; MSCE, OpenSpace, CORE, and the recursive-harness papers update scaffolds. Papers in each camp claim "self-improvement" while meaning operationally different things, with different cost profiles, different failure modes, and different guarantees.</p>
+<p>A survey that forces both camps into one formal frame is therefore genuinely useful, not just bibliographic housekeeping. The choice of update target is the single most consequential design decision in this space: weight updates are expensive, compounding, and hard to roll back; scaffold updates are cheap, inspectable, and reversible, but bounded by the frozen model's capability. Having Schmidhuber on the author list also closes a historical loop — his Gödel machine (2003) is the canonical formalization of a system that provably rewrites its own code, and the modern scaffold-rewriting agents (Darwin Gödel Machine, recursive harness self-improvement) are its empirical descendants. The survey positions today's engineering-driven work inside that older theoretical lineage.</p>
+<h2>The core idea</h2>
+<p>The insight is definitional, and it is sharper than it looks. Define an agent not as a model but as a configuration <strong>c = (foundation model, scaffold)</strong>, where the scaffold comprises prompts, memory, tools, and control logic. Then self-improvement is not "the agent gets better" but a specific mechanism: a <strong>self-induced update operator</strong> — the system itself, not an external engineer, obtains an update (from its own experience, feedback, or generated data) and commits it to some component of c.</p>
+<p>This yields a clean two-axis taxonomy: <strong>what is updated</strong> (model parameters vs. each scaffold component) crossed with <strong>what signal drives the update</strong> (per the hub's breakdown: intrinsic demonstrations, intrinsic evaluative feedback, extrinsic experience). Every paper in the 239 lands in a cell. Crucially, the operator view makes "the agent edits its own control logic" (recursive scaffolding) a first-class category rather than an exotic afterthought — the category where the update operator can modify the very machinery that performs updates, which is where recursive self-improvement in the strong sense lives.</p>
+<p><img alt="Overview of the survey's two self-improvement pathways: foundation-model updates vs. scaffold updates" src="assets/self-improvement-survey/fig1.png" /></p>
+<p><em>Figure from the paper: Overview of self-improvement paradigms for modern AI agents, categorized into two primary pathways by what is modified — Foundation Model Improvement (parameters <span class="arithmatex">\(\theta_t \to \theta_{t+1}\)</span>) and Scaffolding Improvement (<span class="arithmatex">\(\Sigma_t \to \Sigma_{t+1}\)</span>).</em></p>
+<h2>How it works</h2>
+<p>As a survey there is no method pipeline, but the document's architecture is the contribution, so it is worth mapping (structure below follows the abstract and the project hub's section listing; the fine-grained sub-organization is inferred from the thread — verify in the paper).</p>
+<p><strong>The formalism, in the paper's own notation.</strong> An agent at improvement step <span class="arithmatex">\(t\)</span> is a configuration</p>
+<div class="arithmatex">\[\mathcal{A}_{t}=(\theta_{t},\;\Sigma_{t}),\qquad \Sigma_{t}:=(p_{t},\,m_{t},\,\mathcal{T}_{t},\,g_{t}),\]</div>
+<p>where <span class="arithmatex">\(\theta_t\)</span> are the foundation-model parameters and the scaffold <span class="arithmatex">\(\Sigma_t\)</span> bundles prompts <span class="arithmatex">\(p_t\)</span>, memory <span class="arithmatex">\(m_t\)</span>, tools <span class="arithmatex">\(\mathcal{T}_t\)</span>, and control logic <span class="arithmatex">\(g_t\)</span>. Self-improvement is one generic update:</p>
+<div class="arithmatex">\[\mathcal{A}_{t+1}=\mathcal{U}\Big(\mathcal{A}_{1:t},\;\mathcal{E}\big(\pi_{\theta_{t},\Sigma_{t}};\Sigma_{t},\mathcal{C}_{t}\big)\Big),\]</div>
+<p>the operator <span class="arithmatex">\(\mathcal{U}\)</span> consumes the agent's own history plus experience <span class="arithmatex">\(\mathcal{E}\)</span> gathered by the current policy <span class="arithmatex">\(\pi_{\theta_t,\Sigma_t}\)</span> in context <span class="arithmatex">\(\mathcal{C}_t\)</span>. The two branches of the taxonomy are exactly which argument the specialized operator commits to, given a self-induced signal <span class="arithmatex">\(\mathcal{S}_t\)</span> (demonstrations <span class="arithmatex">\(\mathcal{D}_t\)</span>, evaluative feedback <span class="arithmatex">\(e_t\)</span>, or exploratory experience <span class="arithmatex">\(\tau_t\)</span>):</p>
+<div class="arithmatex">\[\theta_{t+1}=\operatorname{\mathtt{IMPROVE}}_{\theta}(\theta_{1:t};\mathcal{S}_{t}),\ \ \Sigma_{t+1}=\Sigma_{t}\qquad\text{vs.}\qquad \Sigma_{t+1}=\operatorname{\mathtt{IMPROVE}}_{\Sigma}(\Sigma_{1:t};\mathcal{S}_{t}),\ \ \theta_{t+1}=\theta_{t}.\]</div>
+<p>A pseudocode-style decision tree for placing any paper in the taxonomy:</p>
+<pre><code class="language-text">What does the self-induced update commit to?
+├─ model parameters θ            → Branch 1: foundation-model improvement
+│    which signal S_t drives it?
+│    ├─ self-generated data D_t   → intrinsic demonstrations (self-instruct, STaR lineage)
+│    ├─ own judgments e_t         → intrinsic evaluative feedback (self-reward, verifiers)
+│    └─ environment rollouts τ_t  → extrinsic experience (agentic RL, on-policy distillation)
+└─ scaffold Σ = (p, m, T, g)     → Branch 2: scaffolding improvement
+     which component?
+     ├─ prompts p                 → prompt evolution (GEPA/ADAS-style search)
+     ├─ memory m                  → traces, reflections, playbooks (MSCE, CORE)
+     ├─ tools T                   → tool/skill synthesis (Voyager, OpenSpace)
+     └─ control logic g           → recursive scaffolding (DGM, harness rewriting)
+Updates both θ and a scaffold component?  → hybrid (e.g. Skill Self-Play)
+Also updates the evaluator/benchmark?     → coevolution (2607.17352, Red Queen)
+</code></pre>
+<p><img alt="Timeline and taxonomy of self-improvement methods, 2023-2026, split into a model lane and a scaffold lane" src="assets/self-improvement-survey/fig2.png" /></p>
+<p><em>Figure from the paper: Timeline and taxonomy of self-improvement in foundation-model-based agents (2023–2026); the left lane is foundation-model improvement (<span class="arithmatex">\(\theta\)</span>), the right lane scaffolding improvement (<span class="arithmatex">\(\Sigma\)</span>).</em></p>
+<p><strong>Branch 1 — Foundation-model improvement (73 papers).</strong> Agents that commit updates to weights, driven by:
+- <strong>Model updates from intrinsic demonstrations</strong>: the agent generates its own training data — self-instruct-style data generation, rejection-sampling loops in the STaR lineage, self-play task generation.
+- <strong>Intrinsic evaluative feedback</strong>: the model's own judgments (self-consistency, self-reward, internal verifiers) become the training signal.
+- <strong>Extrinsic experience</strong>: environment interaction converted into gradient updates — agentic RL, on-policy distillation, tool-use RL.</p>
+<p><strong>Branch 2 — Scaffold improvement (166 papers).</strong> Agents that commit updates to the harness around a frozen model:
+- <strong>Prompt evolution</strong>: system-prompt and instruction optimization loops (the GEPA/ADAS-style search family).
+- <strong>Memory</strong>: experience stores that alter future behavior — episodic traces, reflection archives, evolving playbooks.
+- <strong>Tool use / tool creation</strong>: agents that synthesize, verify, and register new tools or skills for later invocation.
+- <strong>Recursive scaffolding</strong>: agents that rewrite their own workflow/control code, up to full harness self-modification.</p>
+<p>The survey then covers applications, evaluation methodology, and open challenges. The evaluation chapter matters most for practitioners: measuring self-improvement requires separating <em>capability gained from experience</em> from <em>capability the base model already had</em> — exactly the confound the CL-Bench entry in this reading list shows most memory-system papers fail to control for.</p>
+<p>The GitHub/hub companion is maintained as a living index, which is the right call for a field moving this fast — 15 sections' worth of taxonomy will need new cells within months.</p>
+<h2>Results</h2>
+<p>There are no experimental numbers to report; the quantifiable content is the corpus itself: <strong>239 papers</strong>, split <strong>73 model-side / 166 scaffold-side</strong>, organized into <strong>15 sections</strong>, in a <strong>97-page</strong> document. The 2.3:1 scaffold-to-model ratio is the survey's most interesting implicit finding: most self-improvement research today avoids touching weights. That is partly economics (no gradients, no GPUs, works on frontier APIs) and partly epistemics (scaffold updates are inspectable and revertible). Whether scaffold-only improvement has a lower ceiling than weight updates is the open empirical question the survey frames but — as a survey — cannot settle.</p>
+<h2>How it connects</h2>
+<p>This survey is effectively the index page for the self-improving thread of this reading list:</p>
+<ul>
+<li><strong>Model-parameter branch</strong>: AREX (agentic mid-training + long-horizon RL for a recursively self-improving research agent) and Qwen's Skill Self-Play (proposer/solver/controller RL loop) are current instances of extrinsic-experience-driven model updates.</li>
+<li><strong>Scaffold branch</strong>: MSCE (memory crystallized into callable skills), OpenSpace (self-evolving shared skill libraries), CORE (contrastive reflection distilled into reusable insights), and the Anthropic Build/Reflect/Curate/Reuse playbook pattern are all memory/skill-cell citizens.</li>
+<li><strong>Recursive scaffolding</strong>: Recursive Harness Self-Improvement (Sakana/Berkeley, 2607.15524), the Harness Handbook, A-Evolve (Amazon's evolve-any-agent infrastructure), and UNC's AutoResearchClaw building a SOTA memory system autonomously.</li>
+<li><strong>The missing axis</strong>: the Co-Evolving Evaluation Criteria paper (Cambridge/NVIDIA, 2606.26294) and "Self-Improving Agents Should Evolve Their Benchmarks" (2607.17352) argue the <em>evaluator</em> must also be an update target — a component the configuration formalism can host but which fixed-benchmark self-improvement work ignores.</li>
+<li><strong>Prior work</strong>: the Gödel machine (Schmidhuber, 2003) for the theory; STaR (Zelikman et al., 2022) and SPIN for model-side bootstrapping; Reflexion (Shinn et al., 2023), Voyager (Wang et al., 2023), and ExpeL for scaffold-side experience reuse; ADAS (Hu et al., 2024) and Sakana's Darwin Gödel Machine (2025) for scaffold search; AlphaEvolve (DeepMind, 2025) for evolutionary code improvement.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Taxonomies of fast-moving fields decay quickly.</strong> The model/scaffold boundary is already blurring: context distilled into weights, LoRA adapters treated as swappable "memory," continual-learning agents that fine-tune nightly. A binary update-target axis will strain against hybrids like Skill Self-Play, where RL updates weights <em>and</em> a skill library evolves simultaneously.</li>
+<li><strong>The operator formalism is descriptive, not analytic.</strong> Defining a self-induced update operator organizes papers but does not by itself yield guarantees — nothing like the Gödel machine's proof-based self-modification criterion survives into the empirical taxonomy. Expect classification, not theory.</li>
+<li><strong>Survey counts are not evidence.</strong> 166 scaffold papers do not mean scaffold methods work; CL-Bench's finding that naive in-context learning beats purpose-built memory systems suggests a nontrivial fraction of that 166 adds overhead, not learning. A critical survey should weigh papers by evidence quality; verify whether this one does.</li>
+<li><strong>Safety treatment unknown.</strong> Self-induced updates to control logic are precisely where alignment risk concentrates (cf. reward hacking of self-evaluators in the Red Queen paper's motivation). How deeply the challenges chapter engages this is worth checking in the full text.</li>
+<li>Details of the 15-section structure beyond the hub's category list are inferred from the thread — verify in the paper.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>Agent = model + scaffold; self-improvement = a <em>self-induced update operator</em> over either — this vocabulary lets you place any paper in this literature in one sentence.</li>
+<li>The field's center of gravity is scaffold-side (166 of 239 papers): cheap, inspectable, gradient-free — but its ceiling relative to weight updates is unresolved.</li>
+<li>Use the survey (arXiv 2607.13104, hub: selfimproving-agent.github.io) as the map for this reading list's self-improving thread; the evaluation confound it highlights — experience-driven gain vs. latent base capability — is the first question to ask of any self-improvement claim.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-Policy Distillation Isn&#x27;t a Free Lunch (MOPD)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>On-Policy Distillation Isn&#x27;t a Free Lunch (MOPD)</h1><p class="meta">11 min read · <a href="https://x.com/BhavinJawade/status/2079604860287431061">X post</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Tracker note: this item is not a single paper — it is a synthesis thread by @BhavinJawade cataloguing four failure modes of on-policy distillation (OPD) and on-policy self-distillation (OPSD), each anchored to a recent paper. I verified the four underlying papers exist: Trajectory-Refined Distillation / TRD (arXiv 2606.08432), "Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe" (arXiv 2604.13016), "The Many Faces of On-Policy Distillation: Pitfalls, Mechanisms, and Fixes" (arXiv 2605.11182; Zhu, Ye, Lu, Shi, Liu), and "Diagnosing and Mitigating Thinking Collapse in On-Policy Self-Distillation" (arXiv 2607.10805). The per-paper claims below follow the thread's summary of them; verify against each paper before load-bearing use.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>OPD has become a default post-training stage in open-source frontier recipes (the thread cites DeepSeek v4, MiMO, and Nemotron-Cascade-2 using MOPD, and GLM 5.x using on-policy cross-stage self-distillation — unverified claims of the thread), on the pitch that it combines RL's on-policy nature with SFT's dense token-level supervision.</li>
+<li>The thread's thesis: that pitch hides four structural failure modes — (1) per-token KL on a frozen student rollout <strong>cannot correct early wrong turns</strong>, (2) <strong>stronger teachers can transfer less</strong> than weaker ones when distributional overlap is low, (3) privileged-information OPSD <strong>fails when the privileged info is instance-specific</strong> (student collapses to a generic averaged policy), and (4) answer-conditioned dense supervision <strong>suppresses the student's own deliberation tokens</strong> ("thinking collapse").</li>
+<li>None of these is a noisy-gradient artifact; each is argued to be built into the objective, and each has a paper-specific fix: teacher-refined trajectories (TRD), teacher selection by distributional closeness, restricting OPSD's privileged info to shared rules, and protecting high-entropy fork tokens.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This is the critique piece of your OPD cluster, and the right lens for everything else in it. The survey (opd-survey) gives the optimistic organizing story: on-policy feedback turns quadratic exposure-bias compounding into linear, so put the teacher's signal on student-visited states and win. This thread is the catalogue of where that story's fine print bites. Two of your other saved items are best read as responses to entries in this catalogue: ReOPD's "prefix trap" is a multi-turn cousin of failure mode 1, and OPD²'s delta signal is plausibly relevant to modes 2 and 4 (it reshapes what the teacher's per-token target pushes on).</p>
+<p>The meta-point for practitioners is that OPD's dense token-level supervision — its main selling point over sparse-reward RL — is also the source of every failure here. Dense supervision means every token of every student rollout gets a gradient, including tokens where the target is anchored to a context the student should never have entered (mode 1), tokens outside the student-teacher overlap (mode 2), tokens whose correct value depends on information the student will never have (mode 3), and tokens where the student's hesitation is functional but the teacher's confidence pushes it down (mode 4). Density is not automatically signal.</p>
+<h2>The core idea</h2>
+<p>The unifying insight across the four failure modes: <strong>on-policy distillation's per-token objective silently assumes that the teacher's conditional distribution at every student-visited state is a valid target for the student at that state.</strong> Each failure mode is one way that assumption breaks:</p>
+<ol>
+<li><strong>Broken context</strong> — the state itself is unrecoverable, so <em>any</em> faithful target there is wrong for learning.</li>
+<li><strong>Unreachable target</strong> — the target is fine for the teacher but sits outside the student's accessible distribution, so nothing transfers.</li>
+<li><strong>Unavailable conditioning</strong> — the target depends on privileged input the student lacks at test time, so matching it in expectation produces a degenerate average.</li>
+<li><strong>Miscalibrated confidence</strong> — the target is <em>too good</em>: an answer-conditioned teacher never deliberates, so matching it erases the student's own useful deliberation.</li>
+</ol>
+<h2>How it works</h2>
+<p><strong>Background: the objective under attack.</strong> All four failure modes target the standard OPD formulation — this is the textbook objective, <em>not</em> an equation from the thread. (Copied here from OPD², arXiv 2607.15161, Eqs. 1–2, where it appears as the conventional-OPD baseline; the same form underlies MiniLLM, GKD's on-policy corner, and the Thinking Machines recipe.) Reverse KL to the teacher, evaluated on the student's own rollouts, with its per-token dense-reward reading:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{x,\ y\sim\pi_{\theta}}\Big[D_{\mathrm{KL}}\big(\pi_{\theta}(y\mid x)\,\|\,\pi^{*}(y\mid x)\big)\Big],\qquad R_{t}=\log\pi^{*}(y_{t}\mid x,y_{&lt;t})-\log\pi_{\theta}(y_{t}\mid x,y_{&lt;t})\]</div>
+<p>where <span class="arithmatex">\(\pi_\theta\)</span> is the student, <span class="arithmatex">\(\pi^*\)</span> the teacher, and every token <span class="arithmatex">\(y_t\)</span> of every student rollout receives a gradient toward the teacher's conditional at that state — which is exactly the assumption ("the teacher's conditional at every student-visited state is a valid target") that each failure mode below breaks.</p>
+<p>The thread's four failure modes, in its own technical terms:</p>
+<p><strong>1. Early mistakes are structurally uncorrectable (TRD).</strong> When the student's rollout takes an early wrong turn, per-token KL computed along that frozen rollout can't pull it back to a correct path. Per the thread, TRD proves that even with a perfect teacher, the gradient from token-level KL on the student's own rollout agrees with the ideal corrective gradient at <strong>exactly one point — the first divergence token —</strong> and disagrees everywhere after it: every later supervision target is anchored to a context the student should never have entered. Because reweighting or clipping only rescales gradient magnitudes, and the terms point in the wrong <em>direction</em>, no per-token adjustment recovers the correct update. TRD's fix: distill along a <strong>teacher-refined trajectory</strong> (the teacher revises the student's rollout, guided by reference solutions) rather than the raw rollout, restoring a target the student can actually follow.</p>
+<p><strong>2. A stronger teacher can be a worse teacher (Rethinking OPD).</strong> OPD teaches only at student-visited states, and the usable signal lives in the <strong>overlap between student and teacher next-token distributions</strong> there. A bigger, higher-scoring teacher whose mass sits on tokens the student rarely produces transfers almost nothing, while a weaker but distributionally closer teacher succeeds. The predictive quantity is early <strong>top-k thinking-pattern overlap</strong>: in runs that work, the shared top-k tokens carry <strong>97–99% of probability mass</strong> and the overlap ratio climbs during training; runs starting from low overlap never recover. The thread adds a subtle corollary: a teacher trained on the same recipe as the student converges toward the student's own distribution, so its higher benchmark score reflects no transferable new knowledge. Practical rule: <strong>pick teachers by distributional closeness, not leaderboard rank.</strong></p>
+<p><strong>3. Privileged-information OPSD fails on instance-specific PI (The Many Faces of OPD).</strong> In OPSD you distill a teacher conditioned on privileged information — e.g., the gold answer — into a student that will never see it. When the PI is per-instance, the student can't recover the teacher's instance-specific reasoning and instead learns a single answer-free policy that <strong>averages the teacher's behavior across all problems</strong> — too generic to solve any particular one. The signature: initial gains, then collapse — rollouts grow long, fill with hedging tokens, accuracy craters toward zero. The setup works only when the PI is a <strong>shared rule across instances</strong> (a system prompt, an alignment preference), not a per-problem answer.</p>
+<p><strong>4. Thinking collapse: dense supervision suppresses deliberation (Diagnosing and Mitigating Thinking Collapse).</strong> An answer-conditioned teacher has no reason to hesitate, backtrack, or explore, so its per-token targets quietly push down the student's deliberation tokens — "wait," "maybe," "alternatively" become progressively rarer. The mechanism is local: damage concentrates at <strong>high-entropy decision forks</strong>, where the student's top-1 token is often an exploratory marker while the answer-conditioned teacher's top-1 is not; the mismatch produces a strong gradient suppressing exactly the tokens that make reasoning work, and downstream accuracy falls in step. (The paper's mitigation, per my search: anchoring suppression-prone tokens to a frozen-base reference prior via an asymmetric divergence gate — verify in the paper.)</p>
+<p>For orientation, here is the shape of the pipeline the thread says frontier recipes run — MOPD-style mixed distillation. The thread never expands the acronym or gives a loss; this sketch is <strong>(reconstruction from the thread — verify against the recipes it names)</strong>, assuming "mixed on-policy distillation" = interleaving off-policy imitation of teacher data with on-policy dense-KL supervision:</p>
+<pre><code class="language-text"># MOPD-style mixed distillation (reconstruction from the thread)
+Require: student pi_s, teacher pi_t, teacher demo corpus D_t, mix rate beta
+for each training step:
+    with probability beta:                       # off-policy branch (SFT-like)
+        (x, y) ~ D_t                             # teacher-generated demonstration
+        loss = -sum_t log pi_s(y_t | x, y&lt;t)     # cross-entropy on teacher tokens
+    otherwise:                                   # on-policy branch (OPD)
+        x ~ D;  y ~ pi_s(.|x)                    # STUDENT rollout
+        loss = sum_t KL( pi_s(.|x,y&lt;t) || pi_t(.|x,y&lt;t) )   # dense reverse KL
+    update pi_s;  optionally anneal beta down over training
+# the thread's four failure modes all live in the on-policy branch:
+#   (1) broken context      - KL anchored to an unrecoverable student prefix
+#   (2) unreachable target  - teacher mass outside student's top-k overlap
+#   (3) unavailable conditioning - teacher saw privileged info (OPSD)
+#   (4) miscalibrated confidence - answer-conditioned teacher suppresses
+#       the student's deliberation tokens at high-entropy forks
+</code></pre>
+<h2>Results</h2>
+<p>No new experiments — this is a synthesis. Quantitative specifics carried by the thread: the <strong>97–99% top-k probability-mass overlap</strong> signature of successful OPD runs (mode 2), and the exactly-one-token agreement result for the KL gradient (mode 1, a theoretical claim attributed to TRD). Modes 3 and 4 are supported by qualitative dynamics: gain-then-collapse curves with lengthening, hedging rollouts (mode 3), and declining frequencies of exploratory tokens tracking declining reasoning accuracy (mode 4). The thread explicitly flags what it does <em>not</em> have: head-to-head comparisons across fixes. Benchmark numbers for TRD's improvements exist in the TRD paper but are not in the thread; I did not verify them.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>The exposure-bias story, complicated.</strong> MiniLLM, GKD, and the Thinking Machines writeup motivated OPD as the fix for off-policy compounding error. This catalogue shows the fix has its own compounding problem (mode 1 is exposure bias's mirror image: now the <em>supervision</em> is trapped in the student's bad prefix), which is a genuinely non-obvious symmetry.</li>
+<li><strong>GKD's mixed sampling</strong> and <strong>MiniLLM's teacher-mixed rollouts</strong> were early, partial answers to mode 1 — blending teacher continuations into rollouts keeps some supervision on recoverable paths. TRD's teacher-refined trajectories are the principled version. <strong>ReOPD</strong> (your multi-turn-opd-replay item) is the multi-turn version: its prefix trap generalizes mode 1 to interaction histories and adds teacher-reliability as the second jaw of the trap.</li>
+<li><strong>OPD²</strong> (your on-policy-delta-distillation item) reshapes the per-token target to the teacher-minus-base delta; whether that helps with modes 2 and 4 (overlap, deliberation suppression) is an open, testable question — nothing in my sources runs it.</li>
+<li><strong>Speculative KD</strong> sits interestingly here: student proposes, teacher verifies/replaces — a mechanism that naturally keeps supervision on recoverable trajectories, prefiguring the TRD idea in a decoding-level form.</li>
+<li><strong>The survey</strong> (opd-survey) lists uncertainty as an open problem; modes 2 and 3 are concrete instances — knowing <em>when the teacher's target is trustworthy at this state</em> is the missing primitive underlying all four fixes.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>This is a thread, not a paper.</strong> It is an unusually technical and well-sourced one, but the per-paper summaries are one author's readings; the "exactly one token" gradient claim and the 97–99% figures should be re-derived/checked from TRD and Rethinking OPD directly before citing.</li>
+<li><strong>The industrial-adoption claims are unverified.</strong> DeepSeek v4 / MiMO / Nemotron-Cascade-2 "use MOPD" and GLM 5.x "uses on-policy cross-stage self-distillation" are stated without sources, and the MOPD acronym is never expanded in the thread (likely mixed on-policy distillation — inferred from the thread, verify). Treat the framing "OPD is now a default stage" as plausible but unaudited.</li>
+<li><strong>Failure modes may be less independent than the taxonomy suggests.</strong> Modes 3 and 4 are both consequences of answer-conditioned teachers; modes 1 and 2 both reduce to supervision landing outside the student's recoverable/reachable set. A unified account (e.g., in terms of teacher-target validity at student-visited states) might subsume all four — the thread gestures at this but doesn't formalize it.</li>
+<li><strong>The missing experiment the thread itself asks for</strong>: no head-to-head under matched conditions of the proposed fixes — refined trajectories vs closeness-based teacher selection vs PI restrictions vs fork protection — so there's no guidance yet on which failure mode dominates in practice or whether the fixes compose.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>Dense per-token OPD supervision is only as good as the assumption that the teacher's conditional at each <strong>student-visited state</strong> is a valid target — four verified papers document four distinct ways that assumption fails.</li>
+<li>The two rules of thumb with teeth: after an early wrong turn, per-token KL on the frozen rollout points the wrong way everywhere past the divergence point (refine the trajectory instead); and pick teachers by <strong>top-k distributional overlap with the student</strong>, not benchmark rank — 97–99% shared-mass overlap marks runs that work.</li>
+<li>OPSD with privileged information transfers only <strong>shared rules</strong>, never per-instance answers — instance-specific PI produces average-policy collapse, and answer-conditioned teachers additionally erode the student's deliberation tokens at high-entropy forks.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

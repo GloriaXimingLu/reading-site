@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survey: Long-Horizon Agents as Harness x Optimization Co-Evolution</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Survey: Long-Horizon Agents as Harness x Optimization Co-Evolution</h1><p class="meta">9 min read · <a href="https://github.com/RUC-NLPIR/Awesome-Long-Horizon-Agents">GitHub</a> · <a href="https://x.com/kakakbibibi/status/2078076130037514640">X post</a> · <a href="https://openreview.net/pdf?id=HyhfhlbWGh">openreview.net</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>"Towards Long-Horizon Agents: A Survey"</strong> (Guanting Dong et al., ~20 authors led by Renmin University's NLPIR group, with Peking, Tsinghua, Sun Yat-sen, HKUST, NUS; OpenReview + companion GitHub) is billed as the first comprehensive survey of long-horizon agents, motivated by the exponentially growing autonomous task horizon of deployed agents.</li>
+<li>Its organizing formalism is <strong>Agent = π_θ ⊕ H</strong>: capability emerges from a base policy coupled to a harness, and progress is the <strong>co-evolution of externalized harness engineering and internalized model optimization</strong> — features proven in the harness get absorbed into the model, and stronger models enable more ambitious harnesses.</li>
+<li>The taxonomy: three nested difficulty levels (<strong>H1 intra-context, H2 cross-context, H3 cross-task</strong>), a three-era history (prompt engineering → context engineering 2023–2025 → runtime harnesses 2025–present), <strong>six harness components</strong> (loops, context/memory, tools, orchestration, hooks, verification), and a seven-part optimization stack from architecture through agentic RL, on-policy distillation, and self-evolution.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Long-horizon capability is the axis on which agents are actually improving fastest — the tweet's "task horizon is growing exponentially" framing echoes the well-known METR measurement that the task length agents can complete autonomously has been doubling on a steady clock. But the literature explaining <em>why</em> is fragmented into silos: memory papers, RL papers, scaffolding papers, multi-agent papers, each with their own vocabulary. What has been missing is a synthesis that treats the harness — the loops, memory, tools, and verification machinery around the model — as a first-class object of study rather than engineering trivia, and that explains how harness work and model training interact over time.</p>
+<p>The survey's co-evolution thesis is the connective tissue for essentially this entire reading list. It gives you the two-pillar map on which the other harness papers sit: Recursive Harness Self-Improvement lives in the harness pillar (self-evolution of the scaffold), OpenForgeRL in the optimization pillar (agentic RL inside real harnesses), the harness-generalization paper is a caution about evaluating the harness pillar, and Harness Handbook is tooling for maintaining it. If you read one framing document to organize the 2026 harness literature, this is the candidate.</p>
+<h2>The core idea</h2>
+<p>The single key insight is that <strong>long-horizon ability is a system property, not a model property</strong>, and the correct decomposition is:</p>
+<ul>
+<li><strong>Externalized harness engineering (H):</strong> capabilities implemented explicitly and symbolically around the model — agent loops and workflows, context/memory management, tools (MCP, skills), multi-agent orchestration, hooks/middleware, and verification.</li>
+<li><strong>Internalized model optimization (π_θ):</strong> capabilities baked into weights — architecture, data synthesis, pre/mid-training, fine-tuning, agentic RL, on-policy distillation, and self-evolution.</li>
+</ul>
+<p><img alt="Landscape of long-horizon agent research: harness engineering x model optimization" src="assets/long-horizon-agents-survey/fig1.png" /></p>
+<p><em>Figure from the survey (via the companion GitHub repo): the landscape of long-horizon agent research, organized around externalized harness engineering and internalized model optimization.</em></p>
+<p>The two pillars <strong>co-evolve</strong>: "capabilities first implemented explicitly in the harness may later be internalized into the model policy, while stronger policies enable more capable harnesses." This is a ratchet, and it has real predictive content: it tells you today's harness features (compaction, self-verification, retry logic) are candidate training targets for tomorrow's models, and it explains historical transitions — e.g., hand-scaffolded chain-of-thought and ReAct-style loops becoming native behaviors of reasoning models. It also implies a division-of-labor question at any moment: which capabilities <em>should</em> live in the harness (auditable, editable, cheap to iterate) versus in the weights (fast, robust, compounding)?</p>
+<p><img alt="Three nested levels of long-horizon tasks and capabilities" src="assets/long-horizon-agents-survey/fig2.png" /></p>
+<p><em>Figure from the survey (via the companion GitHub repo): three levels of long-horizon tasks and the corresponding capabilities — nested as <span class="arithmatex">\(H_1 \subset H_2 \subset H_3\)</span> with matching capability classes <span class="arithmatex">\(C_1 \subset C_2 \subset C_3\)</span>.</em></p>
+<p>The difficulty ladder sharpens "long-horizon" beyond vibes: <strong>H1</strong> tasks fit within one context window; <strong>H2</strong> tasks exceed it and force cross-context state carryover (compaction, external memory, checkpointing); <strong>H3</strong> tasks span multiple tasks, requiring experience reuse and improvement across episodes. Each level demands qualitatively different machinery, which is why single-number "long-horizon" claims mislead.</p>
+<h2>How it works</h2>
+<p>As a survey, its "method" is the taxonomy. The structure (from the GitHub companion and project site):</p>
+<ol>
+<li><strong>Foundations.</strong> Formalizes the agent as π_θ ⊕ H and defines the H1/H2/H3 difficulty levels.</li>
+<li><strong>Evolution.</strong> Three historical stages: <strong>prompt engineering</strong> (roughly 2020–2023), <strong>context engineering</strong> (2023–2025), and <strong>runtime harnesses</strong> (2025–present) — the current era treating the harness as a persistent runtime system rather than a prompt template.</li>
+<li><strong>Harness pillar.</strong> Six component families: (a) loops/workflows — the control flow of act/observe/replan; (b) context and memory — compaction, external stores, retrieval; (c) tools — function calling, MCP, skills; (d) orchestration — sub-agents and multi-agent topologies; (e) hooks/middleware — interception points for guardrails and automation; (f) verification — checking work before committing it.</li>
+<li><strong>Optimization pillar.</strong> Architecture; data synthesis; pre-training; fine-tuning; agentic RL; on-policy distillation; self-evolution — ordered roughly by distance from deployment.</li>
+<li><strong>Applications.</strong> Software engineering, information seeking, computer use, multimodal agents, general-purpose assistants.</li>
+<li><strong>Benchmarks and Frontiers.</strong> Evaluation for long horizons and open problems.</li>
+</ol>
+<p><strong>The organizing formalism.</strong> The survey's central equation-level claim (from the project site and companion repo; the PDF itself was bot-walled — reconstruction, verify against the paper) is the composition</p>
+<div class="arithmatex">\[\mathrm{Agent} = \pi_\theta \oplus H\]</div>
+<p>where <span class="arithmatex">\(\pi_\theta\)</span> is the base policy (weights) and <span class="arithmatex">\(H\)</span> the harness; capability is a property of the composed system, not of either part. The difficulty ladder is a strict nesting of task classes with matching capability classes:</p>
+<div class="arithmatex">\[H_1 \subset H_2 \subset H_3, \qquad C_1 \subset C_2 \subset C_3\]</div>
+<p>where <span class="arithmatex">\(H_1\)</span>/<span class="arithmatex">\(C_1\)</span> is intra-context, <span class="arithmatex">\(H_2\)</span>/<span class="arithmatex">\(C_2\)</span> cross-context, and <span class="arithmatex">\(H_3\)</span>/<span class="arithmatex">\(C_3\)</span> cross-task — each level strictly contains the previous, so a system certified at <span class="arithmatex">\(H_2\)</span> must already handle <span class="arithmatex">\(H_1\)</span>.</p>
+<p>The co-evolution thesis, rendered as a loop (schematic reconstruction of the survey's argument, not an algorithm from the paper):</p>
+<pre><code class="language-text">Co-evolution ratchet (schematic):
+repeat across model generations t:
+    # externalized: iterate the harness around the frozen policy
+    H_t &lt;- engineer(loops, context/memory, tools, orchestration,
+                    hooks, verification) around pi_t
+    deploy (pi_t (+) H_t); collect execution traces
+    # internalized: train the next policy on what the harness proved out
+    pi_{t+1} &lt;- optimize(pi_t) on traces + synthesis + agentic RL + distillation
+    # ratchet: proven harness features migrate into weights
+    retire harness features pi_{t+1} now does natively
+    # stronger policy enables more ambitious scaffolding
+    design H_{t+1} targeting the next difficulty level (H1 -&gt; H2 -&gt; H3)
+</code></pre>
+<p>The companion repo (RUC-NLPIR/Awesome-Long-Horizon-Agents) maintains the paper lists per taxonomy cell, making the survey a living index rather than a snapshot. Note: the OpenReview PDF was not fetchable when writing this tutorial (bot wall), so the section detail above comes from the project site and repo; exact per-section paper counts and the verbatim abstract should be checked against the PDF.</p>
+<h2>Results</h2>
+<p>No quantitative results — it is a survey. Its claimed contributions, per the sources:</p>
+<ul>
+<li>First comprehensive survey of long-horizon agents, unifying harness engineering and model optimization in one framework rather than surveying either alone.</li>
+<li>The <strong>Agent = π_θ ⊕ H</strong> formalism and the <strong>H1/H2/H3</strong> nested difficulty levels as shared vocabulary.</li>
+<li>The <strong>co-evolution thesis</strong> as an explanatory account of 2020→2026 agent progress (three-era periodization), with harness→model internalization as the recurring mechanism.</li>
+<li>A component-level decomposition of modern harnesses (six families) that maps cleanly onto real systems like Claude Code — loops, memory/compaction, tools/MCP/skills, sub-agent orchestration, hooks, verification.</li>
+<li>A curated, maintained taxonomy of the literature (companion GitHub), spanning applications and benchmarks across five domains.</li>
+</ul>
+<h2>How it connects</h2>
+<p>Within this reading list, the survey is the map and the other four harness items are territories:</p>
+<ul>
+<li><strong>Recursive Harness Self-Improvement:</strong> the survey's "self-evolution" cell applied to the harness itself — and its trace-quality objective is the co-evolution thesis operationalized (harness traces as future training data).</li>
+<li><strong>OpenForgeRL (training-agents-in-harnesses):</strong> the agentic-RL cell executed <em>inside</em> the harness pillar's artifacts — the first serious infrastructure for training π_θ and H as a joint system rather than separately.</li>
+<li><strong>No Universally Best Harness:</strong> a warning label for the harness pillar — component choices don't compose into a universal recipe, and harness claims need repeated-trial statistics.</li>
+<li><strong>Harness Handbook:</strong> maintenance tooling for the harness pillar — behavior localization so that evolving H stays tractable as it grows production-scale.</li>
+<li>Elsewhere in the list, the taxonomy slots items cleanly: <strong>agentic-context-management</strong> and <strong>PRO-LONG</strong> (context/memory, H2), <strong>MSCE</strong> and <strong>skill self-play</strong> (skills + self-evolution, H3), <strong>TRACE</strong> (turn-level rewards for the agentic-RL cell), <strong>multi-turn OPD</strong> (on-policy distillation cell), <strong>evolving-benchmarks</strong> and the <strong>self-improvement survey (239 papers)</strong> (evaluation and the adjacent survey — worth reading side by side to see where "long-horizon" and "self-improving" framings diverge).</li>
+<li><strong>Well-known prior work:</strong> the pillars' canon includes ReAct and chain-of-thought (loop/prompt era), MemGPT and Reflexion (memory and self-feedback), Voyager (skill libraries, an early H3 system), SWE-agent/SWE-bench (the software-engineering application column), MCP as the tool-standardization layer, and METR's horizon-length measurements as the empirical motivation.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Co-evolution is descriptive, not predictive.</strong> The thesis organizes history well but offers little guidance on <em>which</em> harness capabilities will internalize next, on what timescale, or when internalization is a mistake (verification arguably should stay external and auditable). Treat it as a lens, not a law.</li>
+<li><strong>Taxonomy boundaries are soft.</strong> Skills sit between tools and memory; hooks blur into orchestration; "self-evolution" appears in both pillars. Component-cell placements of individual papers are judgment calls — use the taxonomy for navigation, not adjudication.</li>
+<li><strong>Survey lag in a fast field.</strong> The runtime-harness era it describes is months old and moving; the GitHub index mitigates staleness, but synthesis-level claims (e.g., which harness components matter most) can be outdated by the time you read them.</li>
+<li><strong>"First comprehensive survey" is a marketing claim</strong> — adjacent surveys (self-improvement, memory, agentic RL, always-on agents in this very list) cover overlapping ground; its genuine novelty is the harness × optimization joint framing, not exhaustiveness.</li>
+<li><strong>Sourcing caveat:</strong> the OpenReview PDF was behind a bot wall at time of writing; author list and taxonomy were taken from the project site and repo. Era date-ranges differ slightly between the two sources (2020–2022 vs. 2020–2023 for the prompt era) — minor, but verify details against the PDF.</li>
+<li><strong>What's missing (open questions the survey should be pressed on):</strong> cost/latency as a first-class axis of harness design, safety implications of H3 cross-task learning (state accumulation is also an attack surface — cf. the always-on-agents survey in this list), and quantitative methodology for attributing capability between π_θ and H (the model-vs-harness ablation question that Agents' Last Exam, also in this list, touches empirically).</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Agent = π_θ ⊕ H:</strong> long-horizon capability is a property of the model–harness system, decomposable into six harness component families and a seven-stage model-optimization stack.</li>
+<li><strong>H1/H2/H3 — intra-context, cross-context, cross-task</strong> — is the right difficulty ladder: each level demands different machinery, so demand level-specific evidence for any "long-horizon" claim.</li>
+<li>The engine of progress is <strong>co-evolution with internalization</strong>: harness features are staging grounds for future model capabilities — so read every harness paper (RHI, Handbook, OpenForgeRL) while asking "does this belong in the scaffold or, eventually, in the weights?"</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

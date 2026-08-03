@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPD-Squared: On-Policy Delta Distillation</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>OPD-Squared: On-Policy Delta Distillation</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.15161">arXiv:2607.15161</a> · <a href="https://arxiv.org/abs/2607.15161">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2081112559831106024">X post</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Tracker note: the item has no arXiv ID, but the paper is locatable — "On-Policy Delta Distillation" (arXiv 2607.15161), by Byeongho Heo, Jaehui Hwang, Sangdoo Yun, and Dongyoon Han, submitted 16 July 2026. Grounded below in the fetched abstract and landing-page text; details beyond that are flagged.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>OPD² keeps the standard on-policy distillation loop (student rollouts, dense token-level teacher supervision) but swaps the target: instead of matching the teacher's output distribution, the student is trained on the <strong>delta signal</strong> — the difference between the reasoning-tuned teacher and <strong>that teacher's own base model</strong> from before reasoning tuning.</li>
+<li>Rationale: the raw teacher distribution mixes generic language modeling (which the student already has) with reasoning-specific changes; the delta isolates <strong>what reasoning tuning added</strong>, giving a more direct transfer signal. With centering and a joint condition, the paper says the signal concentrates on reasoning-relevant tokens while preserving the student's original abilities.</li>
+<li>Claimed results: consistent improvements over conventional OPD across mathematics, science, and code-reasoning benchmarks, with strong performance reached in a short post-training period. No specific numbers were available in my sources — verify tables in the paper.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>In your OPD reading thread, the survey (opd-survey) frames the whole field as f-divergence minimization on student-sampled trajectories, with one axis being <em>what to optimize</em>. Almost everything on that axis to date has been a choice <strong>between divergences</strong> — forward KL vs reverse KL vs generalized JSD — while the target has stayed fixed: the teacher's full next-token distribution. OPD² is interesting precisely because it questions the target itself. The abstract states this directly: on-policy distillation's "fundamental design remains underexplored," and the paper's move is to redefine the distillation reward rather than the divergence.</p>
+<p>There is also a connection to the failure modes in your no-free-lunch item. The "Rethinking OPD" result there says transfer is governed by teacher-student distributional overlap, not teacher strength — a strong teacher whose mass sits on tokens the student rarely produces transfers almost nothing. A raw teacher distribution carries all of the teacher's idiosyncrasies: style, formatting, tokenizer-level preferences, generic fluency. If most of that is either already known to the student or unreachable by it, the usable signal is a small fraction of the loss. Isolating the <em>reasoning delta</em> is one plausible way to raise the signal-to-noise ratio of each token of supervision — though note the paper itself motivates the delta as a more direct reasoning-transfer signal; the overlap framing is my connection, not the paper's claim (inferred from the thread — verify in the paper).</p>
+<h2>The core idea</h2>
+<p>Take a teacher T that was produced by reasoning-tuning a base model B (e.g., B is the pre-RL/pre-instruction-tuning checkpoint, T is the reasoning-tuned release). Conventional OPD trains the student to match T's token distribution on the student's own rollouts. OPD² instead defines the supervision from the <strong>difference between T and B</strong> — the abstract calls this the delta signal, "the difference between the teacher model and its base model prior to instruction tuning for reasoning capability," which "captures the changes induced by reasoning tuning."</p>
+<p><img alt="OPD vs OPD-squared method comparison" src="assets/on-policy-delta-distillation/fig1.png" /></p>
+<p><em>Figure from the paper: Comparison of On-Policy Distillation (OPD) and our OPD². While conventional on-policy distillation trains students to follow the teacher's outputs, our OPD² utilizes the delta signal.</em></p>
+<p>The precise insight: <strong>the teacher's distribution is not the quantity you want to transfer; the transformation that reasoning tuning applied to the teacher is.</strong> Where T and B agree, the token carries no reasoning-specific information — it is generic language modeling that any competent base model, including the student, already handles, and spending gradient there at best wastes capacity and at worst drags the student toward teacher idiosyncrasies. Where T and B disagree, that disagreement is, by construction, what reasoning tuning did. Concentrating the distillation reward there transfers the tuning, not the teacher.</p>
+<p>This is the distributional-space analogue of ideas you already know from weight space and logit space: task arithmetic transfers a fine-tuning delta as a weight difference; proxy-tuning and contrastive-decoding-style methods apply a logit difference between a tuned and untuned model at inference time. OPD² brings the same "delta, not endpoint" logic into the on-policy distillation loss (the analogy is mine; the paper's own related-work positioning should be checked).</p>
+<h2>How it works</h2>
+<p>What the sources support:</p>
+<ol>
+<li><strong>Setup</strong>: standard OPD scaffolding — this is framed as a post-training method where a teacher provides token-level supervision on student-generated rollouts, positioned as an alternative to reward-model-based RL ("alleviates the constraints imposed by reward models by providing token-level supervision," per the abstract).</li>
+<li><strong>Reward definition</strong>: the delta signal replaces the conventional distillation reward. In the RL view of OPD (per-token reward = teacher-derived score of the student's sampled token), OPD² scores tokens by the teacher-vs-base difference rather than by teacher likelihood alone. The natural instantiation is a per-token reward built from log π_T − log π_B evaluated on the student's sampled tokens — but the exact functional form is (inferred from the thread — verify in the paper); the abstract confirms only that the delta signal is "a new distillation reward."</li>
+<li><strong>Centering and a joint condition</strong>: the paper's landing page states that "with centering and the joint condition, OPD² focuses the signal on reasoning-related tokens while keeping the student's original ability." Centering plausibly normalizes the delta so that tokens where T and B agree contribute ~zero reward; the "joint condition" plausibly gates the signal on both models' assessments. Both mechanisms' exact definitions are in the paper body, which I could not fetch — treat my glosses as (inferred from the thread — verify in the paper).</li>
+<li><strong>Training loop</strong>: otherwise the standard on-policy loop — student samples, dense per-token supervision, policy-gradient or KL-style update — inherited from the MiniLLM/GKD/Thinking-Machines lineage.</li>
+</ol>
+<p><strong>Update — the paper's HTML is now fetchable, and it confirms the glosses above with exact forms.</strong> The load-bearing equations (numbering per the paper):</p>
+<p>Conventional OPD, loss and per-token reward (Eqs. 1–2):</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}\Big[D_{\mathrm{KL}}\big(\pi_{\theta}(y\mid x)\,\|\,\pi^{*}(y\mid x)\big)\Big],\qquad R_{t}^{\mathrm{OPD}}=\log\pi^{*}(y_{t}\mid x,y_{&lt;t})-\log\pi_{\theta}(y_{t}\mid x,y_{&lt;t})\]</div>
+<p>where <span class="arithmatex">\(\pi_\theta\)</span> is the student, <span class="arithmatex">\(\pi^*\)</span> the teacher, and <span class="arithmatex">\(y\)</span> is sampled from the student — the reward is teacher-vs-<strong>student</strong> log-likelihood on the student's own tokens.</p>
+<p>The delta signal (Eq. 5) replaces the student with the teacher's base model in the contrast:</p>
+<div class="arithmatex">\[R_{t}^{\Delta}=\log\pi^{*}(y_{t}\mid x,y_{&lt;t})-\log\pi^{*}_{\mathrm{base}}(y_{t}\mid x,y_{&lt;t})\]</div>
+<p>where <span class="arithmatex">\(\pi^*_{\mathrm{base}}\)</span> is the teacher's base checkpoint before reasoning tuning, so <span class="arithmatex">\(R_t^\Delta\)</span> scores each student-sampled token by how much reasoning tuning changed the teacher's preference for it.</p>
+<p>Centering (Eqs. 6–7) and the joint condition (Eq. 8):</p>
+<div class="arithmatex">\[A_{t}^{\Delta}=R_{t}^{\Delta}-\mathbb{E}\big[\log\pi^{*}-\log\pi^{*}_{\mathrm{base}}\big],\qquad A_{t}^{D^{2}}=\begin{cases}A_{t}^{\Delta} &amp; \text{if } A_{t}^{\Delta}\cdot A_{t}^{\mathrm{OPD}}&gt;0\\[2pt] 0 &amp; \text{otherwise}\end{cases}\]</div>
+<p>where <span class="arithmatex">\(A_t^{\mathrm{OPD}}\)</span> is the analogously centered conventional reward (Eq. 6): centering zeroes out tokens where teacher and base agree on average, and the joint condition keeps the delta advantage only where it agrees in sign with the conventional OPD advantage — the gate that "focuses the signal on reasoning-related tokens while keeping the student's original ability."</p>
+<p>The update is plain policy gradient on the gated advantage (Eq. 9):</p>
+<div class="arithmatex">\[\nabla_{\theta}J_{\mathrm{OPD}^{2}}(\theta)=\mathbb{E}\Big[\sum_{t}A_{t}^{D^{2}}\,\nabla_{\theta}\log\pi_{\theta}(y_{t}\mid x,y_{&lt;t})\Big]\]</div>
+<p>i.e., each token the student sampled is reinforced in proportion to its centered, agreement-gated delta advantage.</p>
+<p><img alt="Token-level distillation signals" src="assets/on-policy-delta-distillation/fig3.png" /></p>
+<p><em>Figure from the paper: Token-level distillation signals on simple reasoning examples. Blue and red indicate promoting and suppressing signals, respectively.</em></p>
+<pre><code class="language-text"># OPD^2 training loop (assembled from the paper's Eqs. 1-9;
+#  the paper has no formal algorithm box)
+Require: student pi_theta, teacher pi*, teacher's base model pi*_base
+for each training step:
+    sample prompts x; student generates rollouts y ~ pi_theta(.|x)
+    for each token y_t in each rollout:                # two teacher-side passes
+        R_OPD[t]   = log pi*(y_t|x,y&lt;t) - log pi_theta(y_t|x,y&lt;t)
+        R_delta[t] = log pi*(y_t|x,y&lt;t) - log pi*_base(y_t|x,y&lt;t)
+    # centering: agreement tokens contribute ~zero
+    A_OPD   = R_OPD   - mean(log pi* - log pi_theta)
+    A_delta = R_delta - mean(log pi* - log pi*_base)
+    # joint condition: keep delta only where both signals agree in sign
+    for each t: A_D2[t] = A_delta[t] if A_delta[t] * A_OPD[t] &gt; 0 else 0
+    # policy-gradient update on the student's own tokens
+    theta &lt;- theta + lr * sum_t A_D2[t] * grad_theta log pi_theta(y_t|x,y&lt;t)
+</code></pre>
+<p>Note the practical requirements this implies: you need <strong>white-box access to two models</strong> (the teacher and its pre-tuning base), ideally sharing a tokenizer with the student, and you pay two forward passes of teacher-side compute per rollout instead of one.</p>
+<h2>Results</h2>
+<p>My sources contain no benchmark tables or specific numbers. The abstract's claims, verbatim in substance:</p>
+<ul>
+<li>"The delta signal substantially improves on-policy distillation."</li>
+<li>"Experiments across mathematics, science, and code-reasoning benchmarks demonstrate that OPD² consistently outperforms conventional on-policy distillation."</li>
+<li>OPD² enables "reasoning LLMs to achieve strong performance with only a short post-training period."</li>
+</ul>
+<p>The tweet adds nothing quantitative ("consistently improves on-policy distillation across math, science, and code benchmarks"). Which benchmarks, which teacher/student pairs, and effect sizes: all unverified here — read the tables before citing this paper for anything specific.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Standard KD / sequence-level KD</strong>: the target has always been the teacher's distribution (soft labels). OPD² is, to my knowledge, one of the first OPD works to argue the target itself is wrong for reasoning transfer — the delta is the payload.</li>
+<li><strong>MiniLLM and GKD</strong>: supply the on-policy scaffolding (reverse-KL policy gradient; mixed-sampling stabilization). OPD² is orthogonal — you could in principle run GKD-style divergence choices against a delta-defined target. Whether the paper does this ablation is worth checking.</li>
+<li><strong>Proxy-tuning / contrastive decoding / task arithmetic</strong>: same delta-transfer intuition in logit space at inference time (proxy-tuning steers a large base with a small tuned-minus-untuned logit offset) and in weight space (task vectors). OPD² amortizes the delta into the student's weights via on-policy training rather than applying it at decode time.</li>
+<li><strong>Within your tracker</strong>: the survey (opd-survey) gives the axis this innovates on ("what to optimize"). The no-free-lunch thread's overlap result (Rethinking OPD) and thinking-collapse result both stem from raw-teacher-distribution supervision pushing students toward teacher idiosyncrasies; OPD²'s centered delta is a candidate mitigation for exactly that class of problem, though nobody has run that head-to-head as far as my sources show.</li>
+<li><strong>RL-pretraining scaling law</strong> (also in your tracker): that paper argues RL largely amplifies behaviors the SFT policy already had. If reasoning tuning = a structured shift on top of a base model, OPD²'s premise — that the shift itself is compact and transferable — is a natural complement.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Access requirements are steep.</strong> You need the teacher's pre-reasoning-tuning base checkpoint. For open releases with published intermediate checkpoints this is fine; for most frontier teachers it is unavailable, which caps the method's applicability. Tokenizer mismatch between the teacher pair and the student is an additional practical constraint the abstract doesn't address.</li>
+<li><strong>The delta is not pure reasoning.</strong> Reasoning tuning also changes style, verbosity, hedging behavior, and format compliance. The delta signal captures <em>all</em> changes induced by tuning, not just the reasoning-relevant ones; the centering/joint-condition machinery presumably tries to filter this, but how well it separates reasoning from tuning artifacts is an empirical question — and the thinking-collapse literature shows that distilling tuning-induced token preferences can actively suppress useful deliberation tokens.</li>
+<li><strong>Amplified-difference signals can be noisy.</strong> Logit/probability differences between two models are exactly the quantity contrastive decoding had to clip aggressively (small-probability regions produce wild ratios). Whatever stabilization OPD² uses deserves scrutiny.</li>
+<li><strong>No numbers verified.</strong> "Consistently outperforms conventional OPD" spans a lot of possible effect sizes; short-post-training claims especially need the compute accounting (two teacher-side models per step is not free).</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>OPD² changes the <em>target</em> of on-policy distillation: reward the student according to teacher-minus-base (the reasoning-tuning delta), not raw teacher likelihood.</li>
+<li>The premise: what you want to transfer is the transformation reasoning tuning applied, and the teacher-vs-base difference is a direct estimator of it — with centering and a joint condition to keep the signal on reasoning tokens.</li>
+<li>It requires white-box access to the teacher <em>and its base checkpoint</em>; claimed consistent gains over conventional OPD on math/science/code, but no specific numbers surfaced in my sources.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

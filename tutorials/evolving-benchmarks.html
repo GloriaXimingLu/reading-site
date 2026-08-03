@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-Improving Agents Should Evolve Their Benchmarks</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Self-Improving Agents Should Evolve Their Benchmarks</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.17352">arXiv:2607.17352</a> · <a href="https://arxiv.org/abs/2607.17352">arXiv</a> · <a href="https://x.com/omarsar0/status/2079930722232754623">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>Actual paper title: "Self-Modifying Lean Proof Agents with Verifier-Grounded Benchmark Coevolution" (Yuqing Li, Zeguan Wu, Yu Gan, Junyu Liu; arXiv 2607.17352, July 2026; 22 pages). A self-evolving Lean proof agent rewrites its own workflow, prompts, and tools inside a small fixed trusted runtime — and, unusually, also rewrites its <em>benchmark</em> between generations.</li>
+<li>The coevolution mechanism is a mastery-throttled curriculum: the champion agent adds harder proof obligations only after the current level is mastered, with a single-anchor recalibration keeping scores comparable as difficulty rises. Every reward stays grounded in Lean verification under a trusted snapshot, so self-modification cannot Goodhart the signal.</li>
+<li>After 15 active generations, the best coevolving agent reaches <strong>45.1%</strong> held-out solve rate on miniF2F, versus <strong>12.7%</strong> for the seed agent and <strong>32.0%</strong> for the best agent evolved against a fixed benchmark — a 13-point delta attributable to evolving the task distribution alongside the agent.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Nearly every self-improving-agent loop in the current literature — harness search, prompt evolution, workflow rewriting — optimizes against a <em>static</em> target: a fixed benchmark, a frozen judge, a hand-picked task set. That design has two known failure modes. First, saturation: once the agent masters the fixed distribution, the gradient of improvement vanishes and evolution stalls. Second, Goodharting: with a learned or heuristic evaluator, the loop starts optimizing the judge rather than the task (the failure catalogued at length in the Cambridge/NVIDIA Red Queen paper in this reading list). This paper attacks the first failure mode while structurally immunizing itself against the second by choosing a domain — Lean theorem proving — where the reward is a formal verifier that cannot be persuaded, only satisfied.</p>
+<p>That combination makes this one of the cleanest testbeds available for studying self-modification: the agent can rewrite essentially everything about itself (how it decomposes proof obligations, consumes compiler feedback, diagnoses failures, repairs proofs, maintains proof context), yet a "success" only ever counts if Lean certifies the proof under a trusted snapshot. Within the self-improving-agents research thread, the paper fills a specific gap: it treats the <em>task distribution</em> as an evolvable component of the system, on equal footing with prompts and tools, and measures the marginal value of doing so with a controlled fixed-benchmark baseline.</p>
+<h2>The core idea</h2>
+<p>If an agent improves while its benchmark stands still, the benchmark becomes the binding constraint on further improvement. The fix is to make evaluation part of the loop — but naively letting the agent grade itself invites collapse. The paper's resolution has two components that must be understood together:</p>
+<ol>
+<li><strong>Coevolve the curriculum, not the ground truth.</strong> The agent (specifically, the generation's champion) revises the <em>active task distribution</em> — which proof obligations count toward fitness — but never the success criterion itself. Difficulty ratchets up via a mastery-throttled schedule: harder obligations enter only after current ones are mastered, keeping the population in the zone where selection pressure is informative rather than uniformly zero (too hard) or uniformly saturated (too easy).</li>
+<li><strong>Ground every reward in an unforgeable verifier.</strong> However radically the agent rewrites its workspace, a success is only a Lean-verified proof under a trusted snapshot. Each attempt must also emit a machine-readable, Lean-grounded proof context — its representation may evolve, but its groundedness is enforced by the fixed runtime.</li>
+</ol>
+<p>The design cleanly separates the mutable (workflow, prompts, tools, task distribution, context representation) from the immutable (Lean verifier, trusted runtime, groundedness checks). Self-modification stays open-ended; reward semantics stay fixed.</p>
+<h2>How it works</h2>
+<p><img alt="Champion-driven agent-benchmark coevolution loop across generations" src="assets/evolving-benchmarks/fig1.png" /></p>
+<p><em>Figure from the paper: Champion-driven agent–benchmark coevolution — a seed agent produces first-generation children; the champion updates the benchmark, which then evaluates the next generation.</em></p>
+<p>The system architecture is a small, fixed, <strong>trusted runtime</strong> wrapping a <strong>fully mutable workspace</strong> containing the proof workflow, prompts, and tools. Evolution proceeds in generations:</p>
+<ol>
+<li><strong>Within a generation</strong>: candidate agents (mutations of the workspace) attempt the active benchmark's proof obligations. Fitness is verified solve rate — Lean-checked under the trusted snapshot, no self-grading anywhere.</li>
+<li><strong>Champion selection</strong>: the highest-scoring agent becomes the champion.</li>
+<li><strong>Benchmark update (the novel step)</strong>: between generations, the champion revises the active task distribution via the mastery-throttled curriculum update — introducing harder proof obligations only once the current level is mastered.</li>
+<li><strong>Single-anchor recalibration</strong>: the champion is re-run on the updated benchmark, so scores remain comparable across generations even as difficulty rises. Without this, "improvement" across generations would be incommensurable — a rising score could mean a better agent or an easier drifted benchmark.</li>
+<li><strong>Groundedness enforcement</strong>: every attempt emits a machine-readable proof context; the runtime enforces that it stays Lean-grounded even as the agent evolves its representation.</li>
+</ol>
+<p><strong>Key quantities (from the paper).</strong> Fitness and parent selection use a difficulty-normalized score:</p>
+<div class="arithmatex">\[q\;=\;r\times c,\qquad w\;=\;\max(q,0)\cdot\frac{1}{1+n_{c}},\]</div>
+<p>where <span class="arithmatex">\(r\)</span> is the raw Lean-verified solve rate, <span class="arithmatex">\(c\)</span> the compounding difficulty coefficient of the current benchmark, <span class="arithmatex">\(q\)</span> the normalized score, and <span class="arithmatex">\(w\)</span> the parent-selection weight discounted by the agent's existing child count <span class="arithmatex">\(n_c\)</span>. The single-anchor recalibration that keeps scores commensurable as the benchmark hardens is</p>
+<div class="arithmatex">\[c_{t+1}\;=\;c_{t}\cdot\frac{r_{t}}{\max\!\big(r_{t+1},\,\epsilon\big)},\qquad c_{0}=1,\]</div>
+<p>i.e., the champion is re-run on the updated benchmark, and its raw-rate drop <span class="arithmatex">\(r_t \to r_{t+1}\)</span> multiplicatively inflates <span class="arithmatex">\(c\)</span> so the champion's normalized score is preserved across the update. Benchmark updates fire only when the champion's raw solve rate exceeds <span class="arithmatex">\(\gamma = 0.30\)</span>, and a difficulty level graduates to the next only when champion mastery reaches <span class="arithmatex">\(\tau = 0.70\)</span>.</p>
+<pre><code class="language-text">for generation t = 1..15:
+    children &lt;- mutate(champion workspace)     # workflow, prompts, tools all mutable
+    for each agent A: r_A &lt;- Lean-verified solve rate on benchmark B_t (trusted snapshot)
+    q_A &lt;- r_A * c_t ; champion &lt;- argmax q ; parents sampled with w = max(q,0)/(1+n_c)
+
+    # mastery-throttled benchmark update (only if champion raw rate &gt; gamma = 0.30)
+    R &lt;- up to kappa tasks solved by ALL agents this generation      # retire the saturated
+    for each retired task at difficulty level l:
+        m_l &lt;- champion mastery rate at level l
+        if m_l &gt;= tau = 0.70:  replace with a harder next-level task
+        else:                  replace laterally at the same level
+        prefer replacement domains where the population failed most  # weakness-driven
+        recompute mastery after each swap                            # self-throttling
+    B_{t+1} &lt;- (B_t \ R) ∪ replacements
+
+    # single-anchor recalibration
+    re-run champion on B_{t+1};  c_{t+1} &lt;- c_t * r_t / max(r_{t+1}, eps)
+</code></pre>
+<p>The experiment runs this coevolving trajectory for <strong>15 active generations</strong> against a controlled baseline: the identical self-evolution machinery with the benchmark held fixed. Both are then evaluated on a <strong>held-out miniF2F test split</strong> — tasks neither trajectory optimized against — isolating the causal contribution of benchmark coevolution. (Population size, mutation operators, and the base model behind the agent are not specified in the abstract — verify in the paper.)</p>
+<h2>Results</h2>
+<p>The numbers present in the sources:</p>
+<ul>
+<li><strong>Coevolving agent: 45.1%</strong> held-out miniF2F solve rate.</li>
+<li><strong>Fixed-benchmark agent (best): 32.0%</strong> — self-evolution alone gives a large gain over the seed, but plateaus roughly 13 points lower.</li>
+<li><strong>Seed agent: 12.7%</strong> — the starting workflow, before any evolution.</li>
+<li>Horizon: 15 active generations; paper is 22 pages, 2 figures, 3 tables.</li>
+</ul>
+<p>Read as ratios: fixed-benchmark self-evolution gives ~2.5x over seed; adding benchmark coevolution pushes it to ~3.6x. The interesting scientific claim is not the absolute number (SOTA dedicated provers score far higher on miniF2F) but that the <em>fixed benchmark was the binding constraint</em> on an otherwise identical self-improvement loop.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Co-Evolving Evaluation Criteria (Cambridge/NVIDIA, 2606.26294)</strong> — the Red Queen Gödel Machine — is the general-form sibling: evaluation evolves at epoch boundaries while frozen within epochs. This Lean paper is the special case where an unforgeable verifier lets you evolve the task distribution aggressively because reward semantics cannot drift. Read the two together: Red Queen handles the fuzzy-evaluator regime; this paper shows the ceiling gains when a formal verifier removes the Goodhart risk entirely.</li>
+<li><strong>Recursive Harness Self-Improvement (Sakana/Berkeley, 2607.15524)</strong> and the Darwin Gödel Machine lineage supply the mutable-workspace machinery this paper builds on; its "motivated by code-level self-evolving agents" framing points directly at that line. The trusted-runtime/mutable-workspace split also echoes the Harness Handbook entry's editable-harness philosophy.</li>
+<li><strong>Skill Self-Play (Qwen)</strong> solves the same problem — a static task distribution starves the learner — with a learned proposer instead of a curriculum rule; both are instances of making the task generator a trained/evolved component.</li>
+<li><strong>Prior work</strong>: POET (Wang et al., 2019) coevolved environments and agents in the same spirit; asymmetric self-play (Sukhbaatar et al., 2017) is the two-player ancestor; curriculum learning (Bengio et al., 2009) is the classical frame. On the Lean side, miniF2F (Zheng et al., 2021) is the standard eval, and AlphaProof and the DeepSeek-Prover line represent the train-the-prover-harder alternative to evolving the workflow around a fixed model.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>The absolute number is modest.</strong> 45.1% on miniF2F is well below dedicated neural provers. The contribution is the controlled delta (45.1 vs. 32.0), not the prover. Fair, but it leaves open whether benchmark coevolution still helps when the seed system is already strong — the headroom argument may weaken near the frontier.</li>
+<li><strong>Generality is the big question.</strong> The whole design leans on Lean's verifier. In domains without formal verification — deep research, web agents, writing — "evolve your benchmark" reintroduces exactly the self-grading Goodhart problem this paper engineered away. The transferable lesson may be narrower than the tweet's framing: <em>if</em> you have a verifier, coevolve the curriculum; if you don't, you need Red-Queen-style adversarial machinery instead.</li>
+<li><strong>Champion-driven curriculum is a single point of failure.</strong> One agent decides what the population trains on next; a champion that curates tasks flattering its own idiosyncrasies could steer evolution into a corner. Mastery-throttling bounds difficulty, not direction. How task diversity is maintained is worth checking in the paper.</li>
+<li><strong>Comparability across a moving benchmark is delicate.</strong> Single-anchor recalibration re-runs one champion on the new distribution; whether that suffices to make 15 generations of scores genuinely commensurable (vs. merely roughly aligned) deserves scrutiny in the tables.</li>
+<li><strong>Compute cost is unreported in the abstract</strong> — 15 generations of population-based evolution with Lean verification in the loop is not cheap, and the fixed-benchmark baseline comparison is only fair if compute-matched. Verify in the paper.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>Fixed benchmarks are a hidden ceiling on self-improving agents: identical evolution machinery scored 32.0% with a static benchmark vs. 45.1% (held-out miniF2F) when the champion also evolved the task distribution — seed was 12.7%.</li>
+<li>The safe recipe for self-modification is a <em>fixed trusted verifier + fully mutable everything else</em>: evolve workflow, prompts, tools, even the benchmark, but let success mean only "Lean accepts the proof under a trusted snapshot."</li>
+<li>Mastery-throttled curriculum + single-anchor recalibration is the concrete mechanism to steal: ratchet difficulty only after mastery, and re-anchor scores so progress remains measurable as the benchmark moves.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

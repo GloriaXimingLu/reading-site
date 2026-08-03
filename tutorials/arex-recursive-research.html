@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AREX: Recursively Self-Improving Deep-Research Agent</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AREX: Recursively Self-Improving Deep-Research Agent</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.21461">arXiv:2607.21461</a> · <a href="https://arxiv.org/abs/2607.21461">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2080519898061500758">X post</a> · <a href="https://vectorspacelab.github.io/arex-model/">vectorspacelab.github.io</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>AREX ("AREX: Towards a Recursively Self-Improving Agent for Deep Research"; BAAI, arXiv 2607.21461, July 2026; Shuqi Lu, Chaofan Li, Kun Luo, et al., senior author Zheng Liu) builds deep-research agents around a <strong>discovery–verification asymmetry</strong>: finding an answer satisfying many constraints is expensive, but verifying a candidate decomposes into cheap constraint-wise checks.</li>
+<li>The agent alternates an <strong>inner research loop</strong> (search, read, construct a provisional answer) with an <strong>outer self-improvement loop</strong> (audit the answer constraint by constraint, keep what's verified, turn unresolved constraints into targeted follow-up research), sustained over long horizons by a <strong>learned context-update tool</strong> that compresses interaction history into a compact improvement state.</li>
+<li>Two open models — a 4B dense (AREX-Turbo) and a 122B-A10B MoE (AREX-Base) — trained via agentic mid-training plus long-horizon RL with key-step reward emphasis; claimed to substantially outperform comparable-scale baselines on BrowseComp, WideSearch, DeepSearchQA, HLE, and other benchmarks (no per-benchmark numbers were retrievable from the abstract or project page — verify in the paper).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Deep-research agents mostly scale one way: search longer, branch wider, spend more tokens. The marginal value of that decays fast, because an unstructured longer search neither knows which parts of its current answer are already right nor which specific constraint is still violated. AREX's bet is that the structure of research questions themselves — typically conjunctions of checkable constraints ("a paper from venue X, before year Y, whose first author later did Z") — licenses a fundamentally different scaling axis: iterate <em>audit-and-repair</em> on the current best answer rather than restarting or extending a blind search.</p>
+<p>Within the self-improving-agents thread of this reading list, AREX is notable for where it locates "recursive self-improvement": not in weight updates during deployment, and not in harness rewriting, but in the <em>answer state</em> across iterations at inference time — with the capability to run that loop trained into the weights via mid-training and RL. It is the thread's clearest example of turning verification asymmetry (the intuition that checking is cheaper than generating) into an explicit agent architecture and training objective. And unlike much of the deep-research literature built on closed models, BAAI released the models, making the recipe inspectable at 4B scale.</p>
+<h2>The core idea</h2>
+<p>For multi-constraint research tasks, discovery and verification have asymmetric costs and — crucially — asymmetric <em>decomposability</em>. Discovery is global: candidates must jointly satisfy all constraints, and search space grows combinatorially. Verification is local: given a candidate, each constraint can usually be checked independently and tractably. Therefore the optimal use of additional compute is not more discovery but a recursion: verify the current provisional answer constraint-wise, freeze the verified portion, and convert the <em>unverified residue</em> into a new, much smaller, targeted research problem. The partially verified state acts as both a certificate of progress and a plan for what to do next. The paper's term "recursively self-improving" refers to this: each cycle improves the answer produced by the previous cycle, using verification output as the improvement signal.</p>
+<p>The second, less obvious component: this recursion dies without context management. Each cycle appends searches, page reads, and audit results; the history outgrows any window. AREX therefore learns an <strong>autonomous context-update tool</strong> — the agent itself compresses its interaction history into a compact "improvement state" that preserves exactly the two things the recursion needs (verified evidence and unresolved constraints), with no external summarizer model in the loop.</p>
+<h2>How it works</h2>
+<p><img alt="AREX's bi-level architecture: inner research loop plus outer self-improvement loop" src="assets/arex-recursive-research/fig1.png" /></p>
+<p><em>Figure from the paper: AREX's recursive self-improvement framework — the inner research loop maintains the research state and externalizes a provisional answer with evidence and confidence; the outer loop accepts, refines, or restarts.</em></p>
+<p><strong>Inference-time loop</strong> (per the abstract and project page):</p>
+<ol>
+<li><strong>Inner research loop</strong> — gather evidence: search, read, and construct a provisional answer to the full task.</li>
+<li><strong>Outer self-improvement loop</strong> — audit: check the provisional answer constraint by constraint against gathered evidence; identify claims that are unresolved or unsupported.</li>
+<li><strong>Decide</strong> — accept, refine, or restart <em>from the improved state</em>: verified evidence is preserved; each unresolved constraint spawns targeted follow-up research rather than a from-scratch retry.</li>
+<li><strong>Context update</strong> — the learned tool compresses the growing history into the compact improvement state (verified evidence + unresolved constraints), which seeds the next cycle. The project page describes verification as the transition mechanism: it "preserves supported evidence, compresses the working context, and turns remaining uncertainty into a targeted next research problem."</li>
+</ol>
+<p><strong>The loop in the paper's notation.</strong> Within research round <span class="arithmatex">\(k\)</span>, the policy autonomously compresses its own history <span class="arithmatex">\(h_t^{(k)}\)</span> of (thought, action, observation) triples and continues from the refreshed working context:</p>
+<div class="arithmatex">\[z_{t}^{(k)}=f_{\theta}\big(h_{t}^{(k)}\big),\qquad \bar{h}_{t}^{(k)}=z_{\tau}^{(k)}\oplus\big[(m_{i}^{(k)},a_{i}^{(k)},o_{i}^{(k)})\big]_{i=\tau+1}^{t},\]</div>
+<p>where <span class="arithmatex">\(f_\theta\)</span> is the learned context-update tool (same policy, no external summarizer), <span class="arithmatex">\(z_\tau^{(k)}\)</span> the compact state produced at the last compression step <span class="arithmatex">\(\tau\)</span>, and <span class="arithmatex">\(\oplus\)</span> concatenation with the steps taken since. The round ends by externalizing a structured result and auditing it:</p>
+<div class="arithmatex">\[r^{(k)}=F_{\theta}\big(\bar{h}_{T_{k}}^{(k)}\big)=\big(y^{(k)},\mathcal{E}^{(k)},s^{(k)}\big),\qquad g^{(k)}=G_{\theta}\big(x,r^{(k)},\bar{h}_{T_{k}}^{(k)}\big)=\big(v^{(k)},\mathcal{P}^{(k)},\mathcal{I}^{(k)},q^{(k+1)}\big),\]</div>
+<p>with <span class="arithmatex">\(y^{(k)}\)</span> the provisional answer, <span class="arithmatex">\(\mathcal{E}^{(k)}\)</span> supporting evidence, <span class="arithmatex">\(s^{(k)}\)</span> confidence, <span class="arithmatex">\(v^{(k)}\)</span> a recoverability verdict, <span class="arithmatex">\(\mathcal{P}^{(k)}\)</span> preserved verified findings, <span class="arithmatex">\(\mathcal{I}^{(k)}\)</span> unresolved issues, and <span class="arithmatex">\(q^{(k+1)}\)</span> the targeted objective for the next round. The outer loop's decision rule is</p>
+<div class="arithmatex">\[d^{(k)}=\begin{cases}\textsc{Accept},&amp; s^{(k)}\geq\tau,\\ \textsc{Refine},&amp; s^{(k)}&lt;\tau\ \land\ v^{(k)}=1,\\ \textsc{Restart},&amp; s^{(k)}&lt;\tau\ \land\ v^{(k)}=0,\end{cases}\]</div>
+<p>where <span class="arithmatex">\(\tau\)</span> is the confidence threshold; a Refine seeds round <span class="arithmatex">\(k{+}1\)</span> with <span class="arithmatex">\(h_{0}^{(k+1)}=\operatorname{Refresh}(\bar{h}_{T_k}^{(k)},\mathcal{P}^{(k)},\mathcal{I}^{(k)})\)</span>, preserving what was verified and targeting the residue.</p>
+<pre><code class="language-text"># AREX inference: recursive answer improvement
+k &lt;- 0; objective q_0 &lt;- task x
+repeat:
+    # inner research loop (round k)
+    while agent has not called finish:
+        (thought m, action a) &lt;- pi_theta(x, q_k, working context)
+        o &lt;- execute tool (search / read / browse)
+        if history grows too long:
+            z &lt;- update_context(history)          # learned compression tool
+            working context &lt;- z (+) steps since compression
+    (y, E, s) &lt;- finish: provisional answer, evidence, confidence
+    # outer self-improvement loop: constraint-wise audit
+    (v, P, I, q_{k+1}) &lt;- audit(x, y, E)
+    if s &gt;= tau:   return y                        # ACCEPT
+    elif v == 1:   context &lt;- Refresh(P, I); k++   # REFINE: keep verified, chase residue
+    else:          restart from x, discard trajectory   # RESTART
+</code></pre>
+<p><strong>Training pipeline</strong>:</p>
+<ul>
+<li><strong>Data</strong>: verified synthetic tasks plus high-quality trajectories — synthetic generation presumably makes constraint-wise ground truth available for free (inferred from the thread — verify in the paper for the construction details).</li>
+<li><strong>Agentic mid-training</strong>: instills the tool-use and loop-following behavior before RL.</li>
+<li><strong>Long-horizon RL</strong>: optimizes end-task success across full multi-cycle episodes. To fight sparse terminal rewards over long horizons, training <em>emphasizes key steps</em> — moments where decisive evidence is acquired or an erroneous research direction is corrected — a targeted form of credit assignment rather than uniform per-step shaping. Concretely, the step-level advantage in the paper's clipped step-aware objective is</li>
+</ul>
+<div class="arithmatex">\[A_{i,j}=A^{\mathrm{out}}_{i}+\lambda_{\mathrm{key}}\widetilde{B}_{i,j},\qquad A^{\mathrm{out}}_{i}=\frac{R_{i}-\mu_{R}}{\sigma_{R}+\epsilon},\qquad \widetilde{B}_{i,j}=\mathbb{I}[R_{i}&gt;0]\cdot B_{i,j},\]</div>
+<p>where step <span class="arithmatex">\(j\)</span> of trajectory <span class="arithmatex">\(i\)</span> receives the group-normalized outcome advantage <span class="arithmatex">\(A^{\mathrm{out}}_i\)</span> (episode reward <span class="arithmatex">\(R_i\)</span> standardized within the rollout group) plus a bounded bonus <span class="arithmatex">\(B_{i,j}\)</span> on annotated key steps, weighted by <span class="arithmatex">\(\lambda_{\mathrm{key}}\)</span> and gated to successful trajectories only.</p>
+<p><strong>Models</strong>: AREX-Turbo, a 4B dense model, and AREX-Base, a 122B-A10B mixture-of-experts (10B activated parameters). Both are released; a live app exists at arex-research.com.</p>
+<h2>Results</h2>
+<p>No specific numbers are present in the fetched sources (abstract and project page render results as charts without readable values), so only the qualitative claims can be reported:</p>
+<ul>
+<li>Across <strong>BrowseComp, WideSearch, DeepSearchQA, Humanity's Last Exam (HLE)</strong>, and other reasoning and tool-use benchmarks (the project page adds <strong>GAIA</strong> and <strong>xbench-2510</strong>), AREX "substantially outperforms comparable-scale baselines."</li>
+<li>AREX "remains competitive with models using substantially more activated parameters" — the interesting efficiency claim, especially for the 122B-A10B MoE with only 10B active, and for the 4B dense model as a small-footprint research agent.</li>
+<li>Per-benchmark scores, baseline identities, and ablations (loop vs. no-loop, learned context tool vs. external summarizer, key-step emphasis vs. uniform reward) must be taken from the paper itself.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Within this reading list</strong>: TRACE (turn-level rewards for long-horizon agents, 2607.13988) attacks the same sparse-reward problem AREX addresses with key-step emphasis — compare their credit-assignment choices. PRO-LONG (programmatic memory, 2607.20064) and the Agentic Context Management entry are alternative answers to the same context-outgrowth problem AREX solves with its learned compression tool. The Co-Evolving Evaluation Criteria paper (Cambridge/NVIDIA) and the Lean benchmark-coevolution paper both center verification as the load-bearing signal; AREX imports that philosophy into open-web research, where the "verifier" is the agent's own constraint-wise audit rather than a formal checker — a materially weaker guarantee worth keeping in mind. The rubric-based evaluation wave (AI2's OpenScholar rubric dataset, Harvey LAB-AA's binary-criteria grading) is the eval-side mirror of AREX's constraint decomposition.</li>
+<li><strong>Prior work I'm confident about</strong>: Self-Refine (Madaan et al., 2023) and Reflexion (Shinn et al., 2023) established generate-critique-revise loops, but with unstructured natural-language critique; AREX's advance is making the critique <em>constraint-structured</em> and <em>evidence-linked</em>, and training the loop with RL rather than prompting it. CRITIC (Gou et al., 2023) argued self-correction needs external tool grounding — consistent with AREX auditing against gathered evidence rather than pure introspection. WebGPT and the OpenAI/Gemini Deep Research products define the task family; BrowseComp (OpenAI, 2025) practically canonized the multi-constraint question format AREX's architecture is shaped around.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>"Recursively self-improving" is doing heavy branding work.</strong> The system improves its <em>answer</em> recursively at inference time; weights and harness are fixed after training. This is materially different from RSI in the Gödel-machine sense used elsewhere in this reading list — useful architecture, overloaded terminology.</li>
+<li><strong>Self-audit is not verification.</strong> In Lean-style domains the verifier is unforgeable; here the constraint-wise audit is the same model reasoning over its own gathered evidence. Correlated failure is the obvious risk: an agent that misreads a source during discovery can misread it identically during audit, then "freeze" the error as verified evidence — after which the compact improvement state actively protects the mistake from re-examination. Compression that preserves "verified" claims is a ratchet, and ratchets amplify false positives.</li>
+<li><strong>Benchmark–architecture co-adaptation.</strong> BrowseComp-style tasks are conjunctive-constraint puzzles by construction, and the training data is synthetic tasks in plausibly the same format. Strong results there may overstate generalization to research questions that are open-textured, contested, or not decomposable into crisp checks — precisely the questions human deep research is for.</li>
+<li><strong>No numbers were verifiable from the fetched sources</strong>; the "competitive with much larger models" claim, baseline selection, and the contribution of each component (outer loop, context tool, key-step rewards) all need the paper's tables and ablations before citing.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>The architectural move: exploit discovery–verification asymmetry — audit answers constraint-wise, keep the verified part, and recurse only on the unresolved residue, so compute goes to targeted repair instead of longer blind search.</li>
+<li>Long-horizon loops live or die on context: AREX trains an in-house context-update tool that compresses history to exactly (verified evidence + unresolved constraints), no external summarizer.</li>
+<li>Trust boundary caveat: AREX's "verification" is model self-audit over web evidence, not a formal checker — expect the recursion to compound gains on checkable conjunctive tasks and to potentially entrench errors on fuzzy ones; get the real numbers from arXiv 2607.21461.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

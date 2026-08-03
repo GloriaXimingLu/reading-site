@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRACE: Turn-Level Rewards for Long-Horizon Agents</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>TRACE: Turn-Level Rewards for Long-Horizon Agents</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.13988">arXiv:2607.13988</a> · <a href="https://arxiv.org/abs/2607.13988">arXiv</a> · <a href="https://x.com/SharonYixuanLi/status/2078854876084502825">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "TRACE: Turn-level Reward Assignment via Credit Estimation for Long-Horizon Agents" (arXiv 2607.13988, 26 pages). Authors: Leitian Tao, Baolin Peng, Wenlin Yao, Tao Ge, Hao Cheng, Mike Hang Wang, Jianfeng Gao, Sharon Li (UW-Madison + Microsoft Research).</p>
+<h2>TL;DR</h2>
+<ul>
+<li>Outcome-only RLVR degrades as agent trajectories stretch to tens of tool calls: one terminal scalar cannot say which searches found decisive evidence and which were noise. TRACE produces <strong>dense turn-level credit with no trained critic, no process labels, no Monte Carlo continuations, and no LLM judge</strong>.</li>
+<li>The trick: a <strong>frozen reference model scores "answer readiness"</strong> — the mean log-probability of the gold answer given each trajectory prefix. A log-ratio transform turns this into a state value; one-step temporal differences of that value become per-turn rewards that <strong>telescope</strong>, so redundant or repeated tool calls cannot farm credit.</li>
+<li>Trained with GRPO plus this auxiliary signal (weight 0.2 vs. 1.0 for outcome advantage), pure RL from base models lifts Qwen3-4B from 7.2 to 35.6 and Qwen3-30B-A3B from 8.4 to 42.6 on BrowseComp-Plus, beating GRPO, GSPO, and GiGPO under matched data/tools/rewards.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The bottleneck in scaling RLVR to long-horizon agents is not reward verification — it is credit assignment. For short reasoning traces, a verifiable terminal reward plus group-relative advantage (GRPO and descendants) works because the whole trajectory is effectively one decision. But a deep-research or web agent takes 20-60 tool actions before answering; a single trajectory-level advantage smears one bit of information uniformly across every token of every turn. The gradient signal becomes sparse in successes, noisy across turns, and increasingly inefficient as horizons grow — precisely the regime this reading list's agentic-RL thread (AgentGym-RL, OSGym, online multi-turn RL for web agents) is pushing into.</p>
+<p>The known fixes all carry heavy costs: human or model-generated process labels (PRM-style) are expensive and brittle; learned critics add instability and their own training loop; Monte Carlo rollout continuations from each prefix (Math-Shepherd-style value estimation) multiply rollout cost by the horizon; strong-LLM-judge step scoring is expensive and gameable. TRACE's pitch is that for tasks with a short verifiable answer, you already have a value function sitting in the base model — you just have to ask it the right question.</p>
+<h2>The core idea</h2>
+<p><img alt="Credit assignment at tool-call boundaries: outcome-only vs. TRACE's turn-level credit" src="assets/trace-turn-level-rewards/fig1-credit-assignment.png" /></p>
+<p><em>Figure from the paper: "Credit assignment at tool-call boundaries in a search trajectory... Outcome-reward training attaches one trajectory-level advantage to all actions, whereas TRACE computes prefix values at tool boundaries and assigns turn credit from adjacent value changes."</em></p>
+<p><strong>Progress toward the answer is measurable as the gold answer's predictability under a frozen reference model.</strong> For each prefix state S_k (the context after k tool interactions), compute the length-normalized log-likelihood of the gold answer y*:</p>
+<p>ℓ̄<em>k = (1/|y<em>|) Σ_t log π_ref(y</em>_t | S_k, y*</em>&lt;t)</p>
+<p>If a tool call surfaced decisive evidence, the gold answer becomes more predictable and ℓ̄ rises; a useless call leaves it flat; a misleading detour lowers it. Crucially the reference model is frozen — it is a fixed measuring instrument, not a critic being fit — so the signal is stable across training and costs only forward passes on the (short) gold answer, not rollout continuations.</p>
+<p>Raw log-probabilities are then normalized into a <strong>log-ratio state value</strong>: with d_k = −ℓ̄_k + ε (remaining "uncertainty gap", ε = 0.1),</p>
+<p>V(S_k) = log(d_0 / d_k)</p>
+<p>so V(S_0) = 0 and halving the remaining gap always earns log 2 of value regardless of absolute probability scale. The per-turn reward is the one-step temporal difference δ_k = V(S_{k+1}) − V(S_k) = log(d_k / d_{k+1}): positive when a call moves the agent toward the answer, near-zero for redundancy, negative for detours.</p>
+<h2>How it works</h2>
+<p><img alt="TRACE reward construction: frozen reference scores each prefix, log-ratio values, TD credit, mixed with outcome advantage" src="assets/trace-turn-level-rewards/fig2-reward-construction.png" /></p>
+<p><em>Figure from the paper: "TRACE reward construction at tool-call boundaries. Each prefix state is scored by a frozen reference model, transformed into a log-ratio value, and compared with adjacent prefix values to obtain turn-level TD credit."</em></p>
+<p>The four load-bearing equations (paper Eqs. 5-7, 9-11). Answer readiness and the log-ratio state value:</p>
+<div class="arithmatex">\[
+\bar{\ell}_{k}=\frac{1}{|y^{\star}|}\sum_{t=1}^{|y^{\star}|}\log\pi_{\mathrm{ref}}\!\left(y^{\star}_{t}\mid S_{k},\,y^{\star}_{&lt;t}\right),
+\qquad
+V(S_{k})=\log\frac{d_{0}}{d_{k}}=\log\frac{-\bar{\ell}_{0}+\epsilon}{-\bar{\ell}_{k}+\epsilon}
+\]</div>
+<p>where <span class="arithmatex">\(y^{\star}\)</span> is the gold answer, <span class="arithmatex">\(S_k\)</span> the trajectory prefix after <span class="arithmatex">\(k\)</span> tool turns, <span class="arithmatex">\(\pi_{\mathrm{ref}}\)</span> the frozen reference, <span class="arithmatex">\(d_k = -\bar{\ell}_k + \epsilon\)</span> the remaining uncertainty gap (<span class="arithmatex">\(\epsilon = 0.1\)</span>).</p>
+<div class="arithmatex">\[
+\delta_{k}=V(S_{k+1})-V(S_{k})=\log\frac{d_{k}}{d_{k+1}},\quad k=0,\dots,T-1
+\]</div>
+<p>the one-step TD reward: positive when a turn shrinks the gap, near-zero for redundancy, negative for detours — and the <span class="arithmatex">\(\delta_k\)</span> telescope to <span class="arithmatex">\(V(S_T)-V(S_0)\)</span>.</p>
+<div class="arithmatex">\[
+c^{(K)}_{k}=\frac{1}{Z_{k}}\sum_{u=k}^{h_{k}}\gamma_{\mathrm{td}}^{\,u-k}\,\delta_{u},\qquad Z_{k}=\sum_{u=k}^{h_{k}}\gamma_{\mathrm{td}}^{\,u-k}
+\]</div>
+<p>the normalized K-step backup (<span class="arithmatex">\(K=3\)</span>, <span class="arithmatex">\(\gamma_{\mathrm{td}}=0.8\)</span>, window end <span class="arithmatex">\(h_k = \min(k{+}K{-}1, T{-}1)\)</span>) that lets a search collect credit when a later <code>open</code> cashes it in.</p>
+<div class="arithmatex">\[
+r^{\mathrm{turn}}_{k}=c^{(K)}_{k}+\mathbf{1}\!\left[h_{k}=T-1\right]\lambda_{\mathrm{term}}\,\gamma_{\mathrm{td}}^{\,T-k}\,A^{\mathrm{out}},
+\qquad
+\hat{A}_{t}=\alpha_{\mathrm{out}}\,A^{\mathrm{out}}+\alpha_{\mathrm{turn}}\,r^{\mathrm{turn}}_{\mathrm{turn}(t)}
+\]</div>
+<p>terminal anchoring (<span class="arithmatex">\(\lambda_{\mathrm{term}}=2.0\)</span>) injects the group-normalized outcome advantage <span class="arithmatex">\(A^{\mathrm{out}}\)</span> into windows touching the end, and the mixed per-token advantage <span class="arithmatex">\(\hat A_t\)</span> (<span class="arithmatex">\(\alpha_{\mathrm{out}}=1.0\)</span>, <span class="arithmatex">\(\alpha_{\mathrm{turn}}=0.2\)</span>) feeds the standard clipped GRPO objective.</p>
+<pre><code class="language-text"># TRACE: reward construction + policy update (per prompt x, gold answer y*)
+sample G trajectories τ_g ~ π_old(·|x)            # up to 60 tool turns each
+R_g ← verify(ŷ_g, y*);  A_out ← GroupNorm(R_1..R_G)
+for each trajectory g:
+    for k = 0..T:                                 # prefix after k tool turns
+        ℓ̄_k ← mean log π_ref(y* | S_k)           # frozen ref, forward pass only
+        d_k ← −ℓ̄_k + ε;   V_k ← log(d_0 / d_k)
+    for k = 0..T−1:
+        δ_k ← V_{k+1} − V_k                       # telescoping TD credit
+        h_k ← min(k+K−1, T−1)
+        c_k ← (Σ_{u=k..h_k} γ_td^{u−k} δ_u) / Z_k # K-step backup, K=3
+        r_k ← c_k + 1[h_k = T−1]·λ_term·γ_td^{T−k}·A_out
+map turns to token positions
+Â_t ← α_out·A_out + α_turn·r_turn(t)              # 1.0 / 0.2 mixing
+update π_θ with clipped GRPO on Â_t
+</code></pre>
+<p><strong>Telescoping.</strong> Because rewards are TD differences of a single potential-like value, they sum to V(S_T) − V(S_0) along any trajectory. Total credit depends only on endpoints: re-running the same search or reopening the same page cannot accumulate extra one-step credit. This is the classic potential-based-shaping guarantee applied at the turn level.</p>
+<p><strong>K-step look-ahead for delayed effects.</strong> A search that surfaces a promising page pays off only when a later <code>open</code> extracts the evidence. TRACE therefore assigns turn k a truncated, discounted K-step backup of downstream TDs: c_k = (1/Z_k) Σ_{u=k}^{h_k} γ_td^{u−k} δ_u, with K = 3, γ_td = 0.8, and h_k the window end. This spreads localized credit backward without full-horizon variance.</p>
+<p><strong>Terminal anchoring.</strong> When a turn's backup window touches the trajectory end, a scaled outcome advantage is injected: r_k = c_k + 1[h_k = T−1] · λ_term · γ_td^{T−k} · A_out (λ_term = 2.0). Verifiable correctness remains the ultimate arbiter; reference-model progress only shapes the interior.</p>
+<p><strong>Training objective.</strong> Standard clipped GRPO, but the per-token advantage on tool-interaction tokens mixes both signals: Â = α_out · A_out + α_turn · r_turn, with α_out = 1.0 and α_turn = 0.2. Outcome advantage is group-normalized as usual; turn rewards are used directly. Setup: Qwen3-4B-Thinking-2507 and Qwen3-30B-A3B-Thinking-2507, pure RL (no cold-start SFT, no agentic mid-training), ReAct-style loop with browser.search / browser.open / browser.find over a closed FAISS corpus (Qwen3-Embedding-8B), synthetic multi-document search tasks requiring chained retrieval over irreplaceable evidence, up to 60 tool turns, batch 128, 8 rollouts/prompt, lr 1e-6.</p>
+<h2>Results</h2>
+<p>Numbers from the paper (Table 1); all methods share models, data, tools, and outcome rewards.</p>
+<p><strong>Qwen3-4B</strong>: Base 7.2 / GRPO 30.0 / GSPO 29.7 / GiGPO 27.7 / <strong>TRACE 35.6</strong> on BrowseComp-Plus. Averages across BrowseComp-Plus, BrowseComp, GAIA, xbench-DeepSearch: TRACE 34.0 vs. GRPO 29.5, GSPO 28.2, GiGPO 26.5.</p>
+<p><strong>Qwen3-30B-A3B</strong>: Base 8.4 / GRPO 36.4 / GSPO 39.7 / GiGPO 33.0 / <strong>TRACE 42.6</strong> on BrowseComp-Plus; average 38.1 vs. 33.3 for the best baseline. Despite closed-corpus training, it transfers to open web (Serper): 12.9 BrowseComp, 52.0 GAIA, 45.0 xbench-DeepSearch — the tweet's "on par with Tongyi-DeepResearch-30B-A3B" refers to BrowseComp-Plus (42.6 vs. 44.4), though Tongyi remains well ahead on GAIA/xbench (70.9/75.0), presumably reflecting its agentic mid-training and live-web data.</p>
+<p><strong>Ablations</strong> (Qwen3-4B, BrowseComp-Plus): credit format matters — raw delta 32.4, gap-normalized 34.6, log-ratio 35.5 vs. 30.0 outcome-only. α_turn peaks at 0.2-0.3; α_turn = 1.0 collapses to 31.1 (outcome anchor weakens). K = 1-3 is the sweet spot (34.7-35.6); K = 0 recovers GRPO (30.0); K = 10 hurts (28.9). Swapping the frozen reference from the step-0 checkpoint to a step-200 one barely moves results (35.6 → 36.1) — the reference's job is stable anchoring, not being a good teacher.</p>
+<h2>How it connects</h2>
+<p>Within this reading list, TRACE is the credit-assignment node of the agentic-RL cluster. <strong>GiGPO</strong> (a baseline here) also targets turn-level advantage via grouping, and loses under matched conditions — evidence that <em>where the dense signal comes from</em> matters more than merely having per-turn structure. <strong>AgentGym-RL</strong>, <strong>OSGym</strong>, and the <strong>online multi-turn RL for visual web agents</strong> entries supply the environments and infrastructure this method presumes; <strong>Molt</strong>'s hackable trainer is the natural place to implement a custom advantage mixer like TRACE's. <strong>MiroEval</strong> (process+outcome evaluation for deep-research agents) is the evaluation-side mirror of the same conviction: outcomes alone under-specify agent quality. <strong>Rubric-Generated Feedback as Privileged Information</strong> is a sibling approach — both exploit privileged training-time information (gold answers, rubrics) to densify reward without a critic. There is also a quiet connection to the reading list's distillation thread: using a frozen model's likelihoods as a training signal is structurally close to on-policy distillation (OPD survey, MiniLLM), except the "teacher" here scores only the gold answer's predictability rather than the policy's tokens.</p>
+<p>Against well-known prior work: the telescoping construction is potential-based reward shaping (Ng et al., 1999) with a learned-for-free potential; the TD machinery is textbook Sutton-Barto. The contrast set is PRMs (Lightman et al., "Let's Verify Step by Step") which need step labels, Math-Shepherd-style MC value estimation which needs continuation rollouts, and critic-based methods (PPO/GAE) which need a trained value head — TRACE needs none of these, at the price of requiring a short gold answer to exist.</p>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Scope is genuinely narrow, and the authors say so.</strong> The state-value proxy requires a short, ground-truth-comparable final answer. For multi-file code patches, open-ended synthesis, or underspecified user goals — most of the long-horizon agent economy — "gold-answer log-likelihood" is undefined or misleading. The proposed extensions (execution-based progress signals, decomposed verifiable subgoals) are exactly the hard part and are future work.</li>
+<li><strong>Reward-model leakage risk.</strong> The reference model sees the gold answer at training time. If evidence in the corpus makes the answer string predictable for spurious reasons (surface overlap, entity frequency), the agent gets rewarded for surfacing text that resembles the answer rather than evidence that entails it. Telescoping bounds accumulation but does not prevent locally hackable δ's from shaping behavior toward likelihood-raising rather than truth-finding; the paper's closed synthetic corpus may understate this on messier data.</li>
+<li><strong>Absolute numbers are modest.</strong> 35.6/42.6 on BrowseComp-Plus and 6.7/12.9 on open-web BrowseComp are far from specialized systems with agentic mid-training (Tongyi-DS at 44.4/43.4). The claim is a controlled algorithmic delta (+5-6 points over GRPO), not SOTA — read it as such.</li>
+<li><strong>Hyperparameter surface.</strong> α_turn, K, γ_td, λ_term, ε are all tuned, and the ablations show meaningful sensitivity (α_turn = 1.0 or K = 10 underperform plain GRPO's baseline behavior). Whether the sweet spot transfers across task families and horizon lengths is untested.</li>
+<li><strong>Cost accounting is understated in the pitch.</strong> "No MC continuations" is true, but every prefix still requires reference-model forward passes over the gold answer at each of up to 60 turn boundaries per rollout — cheap relative to continuations, not free at scale.</li>
+<li>Open questions: does the same construction work when the "answer" is a verifier program's pass signal (unit tests) rather than a string? Can the reference model be much smaller than the policy? How does the signal behave under distribution shift as the policy learns to write prefixes unlike anything the frozen reference has seen?</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Dense turn-level credit can be extracted from a frozen reference model's likelihood of the gold answer</strong> — V(S_k) = log(d_0/d_k) on the remaining uncertainty gap — with no critic, labels, judges, or continuation rollouts.</li>
+<li><strong>TD differences of that value telescope</strong>, so repeated or redundant tool calls cannot farm credit, and a K-step backup (K≈3) plus terminal outcome anchoring handles delayed payoffs while keeping the verifiable reward in charge.</li>
+<li>Under matched everything, it adds <strong>+5-6 points over GRPO/GSPO/GiGPO on long-horizon search</strong> (Qwen3-4B: 7.2→35.6; 30B-A3B: 8.4→42.6 on BrowseComp-Plus) — but only for tasks with short verifiable answers; extending the value proxy beyond that regime is the open problem.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

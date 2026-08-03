@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No Universally Best Harness for Automated Discovery</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>No Universally Best Harness for Automated Discovery</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.18235">arXiv:2607.18235</a> · <a href="https://arxiv.org/abs/2607.18235">arXiv</a> · <a href="https://github.com/akshat57/harness-generalization">GitHub</a> · <a href="https://x.com/akshatgupta57/status/2079628691551006922">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>"Automated Discovery Has No Universally Superior Harness"</strong> (Gupta, Lei, Lu, Anumanchipalli, Choshen — Berkeley AI, arXiv 2607.18235) decomposes OpenEvolve-style evolutionary search and the TTT-Discover harness into their components and evaluates <strong>30 budget-matched harnesses across 12 model–problem pairs with 3.1M+ LLM rollouts</strong>, using repeated trials and statistical hypothesis testing.</li>
+<li>Findings: <strong>no fixed harness is reliably superior</strong> across model–problem pairs; more complex machinery (including OpenEvolve variants) generally <strong>underperforms simpler alternatives</strong>; harness choice behaves like a hyperparameter, not a recipe.</li>
+<li>Constructively: <strong>early discovery progress predicts final performance</strong>, enabling a budget-matched adaptive-allocation scheme — start several harnesses, prune weak partial runs, reallocate compute to survivors — that beats both committing to a random fixed harness and a non-adaptive ensemble. All run pools and null distributions are released as reusable statistical infrastructure.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Automated discovery systems — FunSearch, AlphaEvolve, and their open reimplementation OpenEvolve — are increasingly treated as general-purpose harnesses: point the evolutionary loop at a scoreable problem and let it search program space. But these systems are <strong>composites</strong>: archive design, parent selection, exploration policy, and budget allocation are bundled into one recipe, and the recipe is usually validated with a handful of expensive, highly stochastic runs. That evaluation regime cannot distinguish methodological improvements from run-to-run variance — a familiar failure mode from the deep RL reproducibility literature, now replaying in LLM-driven discovery.</p>
+<p>For the self-improving-harness thread in this reading list, this paper is the cold shower. The thread's optimistic papers (Recursive Harness Self-Improvement, AREX, the skill self-play line) propose ever more elaborate scaffolds; this paper asks whether elaborate scaffolds beat simple ones <em>at all</em> once you control budget and run enough seeds — and largely answers no, not reliably, not universally. That reframes the research question from "design the best harness" to "adapt the harness to the model–problem pair," which is precisely the door RHI-style online harness optimization walks through.</p>
+<h2>The core idea</h2>
+<p>Two ideas, one methodological and one empirical.</p>
+<p><strong>Methodological:</strong> treat harness comparison as a statistics problem. Discovery runs are expensive and stochastic, so the paper enforces <strong>budget-matched, repeated-trial protocols</strong> with explicit null distributions and hypothesis tests. Instead of comparing whole systems as monoliths, it <strong>decomposes</strong> them into constituent choices — archive structure, parent selection, exploration, budget allocation — and builds 30 harness variants incrementally from a Sequential Best-of-N baseline up through archive elite sampling with epsilon-greedy exploration, UCT and PUCT tree search, and full OpenEvolve (MAP-Elites archives, multiple islands). This makes it attributable <em>which</em> component earns its complexity.</p>
+<p><strong>Empirical:</strong> once you do this properly, <strong>the ranking of harnesses is not stable across model–problem pairs</strong>. There is no universally superior harness; simpler systems frequently match or beat elaborate ones. The correct abstraction is harness-as-hyperparameter — and since hyperparameters can be tuned online, the paper's constructive proposal is to select among harnesses <em>during</em> the run using early progress as the signal.</p>
+<h2>How it works</h2>
+<p><strong>Experimental grid.</strong>
+- <strong>Models (4):</strong> Qwen2.5-3B-Instruct, Qwen3-4B-Instruct-2507, GPT-OSS-20B, GPT-OSS-120B (3B–120B, all open-weights).
+- <strong>Problems (3):</strong> circle packing, the Heilbronn triangle problem, and a second autocorrelation inequality — score-verifiable mathematical discovery tasks of the FunSearch/AlphaEvolve genre.
+- <strong>Harnesses (30):</strong> budget-matched variants spanning the component ladder above, from sequential best-of-N to full OpenEvolve-style evolutionary search with MAP-Elites and islands.
+- <strong>Scale:</strong> 12 model–problem pairs, more than 3.1 million LLM rollouts, repeated independent trials per configuration.</p>
+<p><strong>The formal machinery (from the paper's full text).</strong> All 30 harnesses are unified as parent-selection rules over the history <span class="arithmatex">\(\mathcal{H}_t\)</span> of evaluated programs. The Sequential Best-of-N baseline is greedy parent selection:</p>
+<div class="arithmatex">\[p_t = \arg\max_{x \in \mathcal{H}_t} S(x)\]</div>
+<p>where <span class="arithmatex">\(p_t\)</span> is the parent mutated at iteration <span class="arithmatex">\(t\)</span> and <span class="arithmatex">\(S(x)\)</span> is the evaluator score of program <span class="arithmatex">\(x\)</span>; every other harness is derived by relaxing this rule (top-<span class="arithmatex">\(K\)</span> archives, <span class="arithmatex">\(\epsilon\)</span>-greedy sampling from full history, UCT/PUCT subtree values, MAP-Elites + islands). Pair-level significance uses the best-of-five maximum <span class="arithmatex">\(T_h\)</span> of a candidate harness against a bootstrap null built from <span class="arithmatex">\(n_0\)</span> (100 or 30) Sequential BoN runs:</p>
+<div class="arithmatex">\[\widehat{p}_h = \frac{1 + \sum_{r=1}^{R} \mathbf{1}\{T_{r}^{0} \geq T_{h}\}}{R+1}, \qquad R = 100{,}000\]</div>
+<p>where <span class="arithmatex">\(T_r^0\)</span> is the max of five baseline scores resampled with replacement in bootstrap trial <span class="arithmatex">\(r\)</span> — no parametric assumptions, since score distributions are skewed and heavy-tailed. Cross-pair transfer is summarized by the majority-win statistic</p>
+<div class="arithmatex">\[\widehat{P}_{\mathrm{maj}}(h) = \frac{1}{R} \sum_{r=1}^{R} \mathbf{1}\Big\{ \sum_{j=1}^{12} \mathbf{1}\{M^{h}_{j} &gt; M^{0,r}_{j}\} \geq 7 \Big\}\]</div>
+<p>the probability that harness <span class="arithmatex">\(h\)</span>'s best-of-five vector <span class="arithmatex">\(\mathbf{M}^h\)</span> beats a resampled baseline vector <span class="arithmatex">\(\mathbf{M}^{0,r}\)</span> on at least 7 of 12 model–problem pairs, tested with a permutation test plus Holm correction. The headline instance: the strongest fixed harness (<span class="arithmatex">\(\epsilon\)</span>-greedy, <span class="arithmatex">\(K{=}1\)</span>, <span class="arithmatex">\(\epsilon{=}20\%\)</span>) reaches <span class="arithmatex">\(\widehat{P}_{\mathrm{maj}}=0.914\)</span> with raw <span class="arithmatex">\(\widehat{p}_{\mathrm{cross}}=0.023\)</span> — but after Holm correction that rises to 0.678, i.e., <em>not even the best harness survives multiple-comparison correction</em>.</p>
+<p><strong>Statistical protocol.</strong> Repeated budget-matched runs per (harness, model, problem) triple; null distributions constructed from run pools; hypothesis tests to decide whether a harness's advantage exceeds run-to-run variance. This is the part most harness papers skip: with a handful of runs, the max-over-runs statistic that discovery papers typically report is dominated by luck, and the paper's repeated-trial design is built to expose exactly that. The released run pools double as baseline null distributions, so a future harness proposal can be tested against the existing distribution for its model–problem pair without re-burning millions of rollouts — a significance test against the field's accumulated runs rather than a fresh bake-off.</p>
+<p><img alt="Early progress predicts final performance across checkpoints" src="assets/harness-generalization/fig2.png" /></p>
+<p><em>Figure from the paper: checkpoint-to-final rank correlation. Spearman correlation between partial-run and final performance is weak at the 10% checkpoint but exceeds 0.70 for 11 of 12 model–problem pairs by the 50% checkpoint.</em></p>
+<p><strong>Adaptive allocation experiment.</strong> The enabling observation: early discovery progress predicts final performance. The scheme, under one matched total budget: launch multiple harnesses in parallel; monitor partial-run progress; prune the weak; reallocate the freed compute to the stronger survivors. This is successive-halving/Hyperband logic transplanted to harness selection, and it outperforms (a) committing the whole budget to one randomly sampled fixed harness and (b) a non-adaptive ensemble that splits budget evenly to the end. Note what the comparison to (a) encodes: since no harness is reliably best, a practitioner without prior knowledge is effectively sampling a harness at random, and adaptive pruning dominates that realistic baseline — not just a strawman.</p>
+<p>A multi-stage pruning schedule with active-run counts <span class="arithmatex">\(m_1 &gt; m_2 &gt; \cdots &gt; m_L\)</span> between normalized checkpoints <span class="arithmatex">\(0 = q_0 &lt; q_1 &lt; \cdots &lt; q_L = 1\)</span> must satisfy the matched budget</p>
+<div class="arithmatex">\[\sum_{\ell=1}^{L} m_\ell \,(q_\ell - q_{\ell-1}) \leq B_e\]</div>
+<p>where <span class="arithmatex">\(B_e = 5\)</span> full-run equivalents (matching the paper's standard best-of-five evaluation) and <span class="arithmatex">\(m_L = s\)</span> is the number of survivors completed to 100%.</p>
+<pre><code class="language-text">Algorithm (adaptive harness ensemble, condensed from the paper):
+Budget: B_e = 5 full-run equivalents
+1. Sample m1 harness configs from the pool (m1 can exceed 5 -- runs are partial)
+2. Advance all m1 runs to checkpoint q1 (e.g., 25% of a full run)
+3. Rank partial runs by best evaluator score so far
+4. Keep top m2, advance to q2 (50%); prune again at q3 (75%) ...
+5. Complete the s survivors to 100%,
+   subject to  sum_l m_l * (q_l - q_{l-1}) &lt;= B_e
+6. Return the best final score found
+Best schedule found: 12 -&gt; 5 -&gt; 2 -&gt; 1, pruning at 25/50/75%:
+  avg score 85.75% vs 84.54% (unpruned ensemble), 84.35% (Sequential BoN x5),
+  82.49% (commit to one randomly sampled harness)
+</code></pre>
+<h2>Results</h2>
+<p><img alt="Progression toward OpenEvolve: added complexity does not produce monotonic gains" src="assets/harness-generalization/fig1.png" /></p>
+<p><em>Figure from the paper: progression toward OpenEvolve-style search — configurations progressively shift budget from breadth to depth and add MAP-Elites, inspiration sampling, and islands; added complexity does not produce monotonic gains, and full OpenEvolve variants often underperform simpler intermediates.</em></p>
+<p>Numbers and findings actually present in the sources:</p>
+<ul>
+<li>Scale of evidence: <strong>30 harnesses × 12 model–problem pairs, &gt;3.1M rollouts</strong>, repeated-trial statistical analysis.</li>
+<li><strong>No fixed harness is reliably superior</strong> across the evaluated model–problem pairs; the best choice changes with both model and problem.</li>
+<li><strong>OpenEvolve variants generally underperform simpler alternatives</strong> — greater harness complexity does not reliably buy discovery performance under matched budgets.</li>
+<li><strong>Early progress predicts final performance</strong>, and the adaptive-allocation scheme built on it <strong>outperforms both a randomly sampled fixed harness and a non-adaptive harness ensemble</strong> at matched budget. (The sources give the ordering, not effect sizes — pull magnitudes from the paper.)</li>
+<li><strong>Artifact:</strong> all run pools, including per-pair baseline null distributions, are released as reusable statistical infrastructure for evaluating future harness proposals.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Recursive Harness Self-Improvement (this list):</strong> this paper supplies RHI's premise. If no fixed harness generalizes, per-task harness adaptation is forced; RHI adapts by rewriting a prompt-level harness, whereas this paper adapts by <em>selecting</em> among discrete harnesses online. Rewriting vs. selecting are the two ends of the same adaptation spectrum.</li>
+<li><strong>Harness Handbook (this list):</strong> if harness choice is a hyperparameter that must be re-tuned per deployment, harness modification becomes frequent — which is exactly the workflow the Handbook's behavior-localization infrastructure accelerates.</li>
+<li><strong>OpenForgeRL (this list):</strong> finds the training-side analogue: harness choice materially changes what RL can learn, and some harnesses are much harder to learn in than others. Together the two papers say harness choice is a first-class variable at <em>both</em> inference and training time.</li>
+<li><strong>Evolving-benchmarks and self-improvement survey (this list):</strong> the statistical-infrastructure release addresses the same meta-problem — self-improvement claims outpacing the rigor of their evaluation.</li>
+<li><strong>Well-known prior work:</strong> FunSearch (Romera-Paredes et al., 2023) and AlphaEvolve (DeepMind, 2025) established LLM-driven evolutionary discovery; MAP-Elites (Mouret &amp; Clune, 2015) and island models are the quality-diversity machinery OpenEvolve inherits; successive halving/Hyperband (Jamieson &amp; Talwalkar; Li et al.) is the direct ancestor of the adaptive-allocation scheme; and the "deep RL that matters" reproducibility critique (Henderson et al., 2017) is the closest methodological precedent. The no-free-lunch framing (Wolpert &amp; Macready) hovers over the title, here established empirically for a specific, practically important search family.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Domain narrowness.</strong> Three problems, all compact mathematical-construction tasks with cheap exact scoring. Whether the "no universal harness" conclusion transfers to software engineering agents, scientific discovery with expensive/noisy evaluation, or long-horizon tool-use tasks is open — the <em>statistical methodology</em> transfers; the <em>finding</em> may not.</li>
+<li><strong>Open-weights, mid-scale models only.</strong> 3B–120B open models. Frontier closed models with much stronger in-context search behavior might flatten harness differences (or amplify them); the model axis here is narrower than the conclusion's phrasing suggests.</li>
+<li><strong>Budget-matching semantics.</strong> Matching on rollouts is one choice; harnesses differ in tokens per rollout, parallelism, and wall-clock. Different budget definitions could reorder the rankings — worth checking which the paper uses and how sensitive conclusions are.</li>
+<li><strong>Early-progress prediction can be gamed by landscapes.</strong> Deceptive fitness landscapes are the canonical case where early leaders plateau and exploration-heavy methods win late; the adaptive-allocation result is only as robust as this correlation across problem types.</li>
+<li><strong>A negative result invites survivorship in reverse.</strong> The 30 harnesses are decompositions of two existing families (OpenEvolve, TTT-Discover). A genuinely different harness class — e.g., RHI-style self-rewriting scaffolds — is outside the tested space, so "no universally superior harness" is proven over this family, not over all harnesses.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>Under budget-matched, repeated-trial, hypothesis-tested evaluation — 30 harnesses, 12 model–problem pairs, 3.1M+ rollouts — <strong>no discovery harness wins universally</strong>, and OpenEvolve-style complexity generally loses to simpler search.</li>
+<li>Treat <strong>harness choice as a model–problem-specific hyperparameter</strong>, and exploit the fact that <strong>early progress predicts final performance</strong>: prune-and-reallocate across harnesses beats committing to any fixed one at the same budget.</li>
+<li>The released run pools and null distributions are the field's first shared statistical infrastructure for harness claims — hold future harness papers (including the self-improving kind) to that bar.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

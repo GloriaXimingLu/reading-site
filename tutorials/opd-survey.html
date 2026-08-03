@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Survey: On-Policy Distillation for LLMs</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Survey: On-Policy Distillation for LLMs</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2604.00626">arXiv:2604.00626</a> · <a href="https://arxiv.org/abs/2604.00626">arXiv</a> · <a href="https://x.com/TheTuringPost/status/2042634001404629322">X post</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Tracker note: the item has no arXiv ID, but the paper is locatable — "A Survey of On-Policy Distillation for Large Language Models" (arXiv 2604.00626), by Mingyang Song and Mao Zheng, v1 April 2026, revised through June 2026. Everything below is grounded in the fetched abstract, the paper's HTML landing page, and the thread text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>First unified survey of on-policy distillation (OPD): the family of methods where the <strong>student generates the rollouts</strong> and the teacher supplies feedback on those rollouts, rather than the student imitating static teacher text. The whole landscape is formalized as <strong>f-divergence minimization over student-sampled trajectories</strong>.</li>
+<li>The organizing argument: static (off-policy) distillation suffers exposure bias that the authors say scales roughly with the <strong>square of sequence length</strong>; OPD's train/inference distribution match is supposed to reduce the compounding term toward <strong>linear</strong>, reframing distillation as iterative correction rather than single-pass imitation.</li>
+<li>The taxonomy has three orthogonal axes — <strong>feedback signal</strong> (logit-based / outcome-based / self-play), <strong>teacher access</strong> (white-box / black-box / teacher-free), and <strong>loss granularity</strong> (token-level / sequence-level / hybrid) — and closes with open problems: scaling behavior, uncertainty, and agent-level learning.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>You have accumulated a cluster of OPD papers in this tracker — OPD² (delta distillation), ReOPD (multi-turn teacher replay), the "no free lunch" MOPD failure-mode thread, and the MiniLLM notes item. Each of those is a point solution or a point critique. This survey is the map that the rest of the cluster sits on.</p>
+<p>The gap it fills is real: OPD-adjacent work has been published across at least three communities that historically cite each other poorly — classical knowledge distillation (Hinton-style, sequence-level KD), RLHF/post-training (where reverse-KL-to-a-teacher is treated as a reward shaping trick), and imitation learning (where the on-policy/off-policy distinction and the compounding-error analysis originate, going back to DAgger-era arguments). The result has been repeated reinvention: reverse-KL on student rollouts appears as MiniLLM, as on-policy GKD, and as the Thinking Machines writeup's per-token-reward formulation, with different names and different stabilization tricks. A survey that puts these in one coordinate system is exactly what the field needed circa early 2026, when — per the thread and the papers in your own tracker — OPD became a default stage in open-source frontier post-training recipes.</p>
+<p>The framing shift the survey pushes is worth internalizing: distillation is moving <strong>from static teacher data to interactive learning</strong>, where the student "learns from its own mistakes." That is the same conceptual move imitation learning made 15 years ago when it went from behavioral cloning to DAgger, and the theoretical motivation is directly imported.</p>
+<h2>The core idea</h2>
+<p>The single key insight is that OPD is not one method but a <strong>design space</strong>, and the space is spanned by three independent choices. Formally, essentially all OPD variants minimize some f-divergence between the student policy and a target (usually the teacher) evaluated <strong>on samples drawn from the student</strong>:</p>
+<ul>
+<li><strong>What to optimize</strong> — the divergence/loss and its granularity: per-token KL (forward or reverse), sequence-level divergences, or hybrids. Reverse KL on student samples is mode-seeking and is the workhorse (MiniLLM, the Thinking Machines recipe); generalized JSD interpolations are the GKD contribution.</li>
+<li><strong>Where the signal comes from</strong> — feedback type crossed with teacher access. Logit-based feedback needs a white-box teacher (full distributions at every student token); outcome-based feedback (rewards, verifiers, preferences over student rollouts) works with black-box teachers; self-play/teacher-free variants use the model's own better rollouts or a privileged-information copy of itself as the teacher.</li>
+<li><strong>How to stabilize</strong> — the practical tricks that make the on-policy loop trainable: mixed student/teacher sampling, length normalization, variance reduction for sequence-level objectives, clipping/reweighting of per-token terms.</li>
+</ul>
+<p>The motivating theory is the exposure-bias argument: a student trained only on flawless teacher prefixes has never learned to behave in the states its own errors produce, so per-step error ε compounds to roughly O(εT²) over horizon T (the classical behavioral-cloning bound). Training on student-visited states restores the O(εT) regime. The survey's abstract states this quadratic-vs-linear contrast explicitly as the reason the "prevailing industrial recipe" (static imitation of teacher-generated text) degrades as tasks get longer and more reasoning-heavy.</p>
+<h2>How it works</h2>
+<p>As a survey there is no single method, but the unified template it extracts looks like this training loop:</p>
+<ol>
+<li>Sample prompts; the <strong>student</strong> generates rollouts y ~ π_student(·|x).</li>
+<li>Obtain feedback on those rollouts: teacher logits at every position (white-box), a score or relabeled continuation (black-box/outcome-based), or a self-generated target (self-play).</li>
+<li>Minimize an f-divergence between student and target on those samples — most commonly per-token reverse KL, D_KL(π_student ‖ π_teacher), summed over the student's own trajectory. In the RL-flavored view this is policy gradient with a dense per-token reward of log π_teacher − log π_student.</li>
+<li>Apply stabilization: mixture sampling between student and teacher rollouts (the GKD/MiniLLM lineage), importance-weight corrections, length normalization to prevent collapse to short outputs.</li>
+</ol>
+<p>In symbols, the survey's unifying formalization — "f-divergence minimization over student-sampled trajectories" — is stated verbally in the abstract; the display form below is my transcription of it (reconstruction — verify against the paper; the survey's full text has no working HTML rendering as of this writing):</p>
+<div class="arithmatex">\[\min_{\theta}\ \mathbb{E}_{x\sim\mathcal{D},\ y\sim\pi_{\theta}(\cdot\mid x)}\Big[D_{f}\big(\pi_{\theta}(\cdot\mid x)\,\big\|\,\pi_{T}(\cdot\mid x)\big)\Big]\]</div>
+<p>where <span class="arithmatex">\(\pi_\theta\)</span> is the student, <span class="arithmatex">\(\pi_T\)</span> the target policy (usually the teacher), <span class="arithmatex">\(D_f\)</span> an f-divergence — and, crucially, the expectation is over the <strong>student's</strong> own rollouts, which is the entire on-policy point.</p>
+<p>The workhorse corner of the design space is per-token reverse KL with its dense-reward RL reading. This is the standard formulation, not the survey's invention; the equations below are copied from OPD² (arXiv 2607.15161, Eqs. 1–2), where they appear as the conventional-OPD baseline:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{x,\ y\sim\pi_{\theta}}\Big[D_{\mathrm{KL}}\big(\pi_{\theta}(y\mid x)\,\|\,\pi^{*}(y\mid x)\big)\Big],\qquad R_{t}=\log\pi^{*}(y_{t}\mid x,y_{&lt;t})-\log\pi_{\theta}(y_{t}\mid x,y_{&lt;t})\]</div>
+<p>where <span class="arithmatex">\(\pi^*\)</span> is the teacher and <span class="arithmatex">\(R_t\)</span> is the dense per-token reward whose policy-gradient maximization is equivalent to minimizing the reverse KL on student-sampled tokens.</p>
+<p>As a training loop:</p>
+<pre><code class="language-text"># Generic OPD template (the survey's unified framework;
+#  loop reconstruction from abstract + thread — verify against the paper)
+Require: student pi_s; feedback source: teacher logits | outcome scorer | self-play target
+for each training step:
+    sample prompts x ~ D
+    y ~ pi_s(.|x)                     # the STUDENT generates the rollouts
+    obtain feedback on y:
+      white-box : teacher distribution pi_t(.|x, y&lt;t) at every position t
+      black-box : score / rank / relabeled continuation for the whole rollout
+      self-play : target from a privileged or stronger copy of the student
+    loss = f-divergence between pi_s and target, evaluated on these samples
+      # workhorse: per-token reverse KL, sum_t KL(pi_s(.|x,y&lt;t) || pi_t(.|x,y&lt;t))
+      # RL view: policy gradient with dense reward r_t = log pi_t(y_t|.) - log pi_s(y_t|.)
+    stabilize: mixed student/teacher sampling, length normalization,
+               clipping / reweighting of per-token terms
+    update pi_s
+</code></pre>
+<p>The taxonomy then classifies methods by where they sit on each axis. Divergence-minimization methods (MiniLLM, GKD and descendants) occupy the logit-based/white-box/token-level corner. Reward-guided methods relax teacher access: the teacher only needs to score or rank student outputs. Self-play methods drop the external teacher entirely — including the on-policy <strong>self</strong>-distillation (OPSD) variants where a privileged-information-conditioned copy of the model supervises the unconditioned one, which is exactly the setup your MOPD-critique thread shows failing in specific ways.</p>
+<p>The open-problems section flags: scaling laws for OPD (when does teacher quality stop paying off?), uncertainty (when should the student trust teacher feedback?), and agent-level learning (extending OPD from single responses to multi-turn tool-use trajectories — the exact gap ReOPD attacks).</p>
+<h2>Results</h2>
+<p>This is a survey; it reports no new benchmarks. The load-bearing quantitative claim, stated in the abstract, is the complexity contrast: exposure bias in static distillation "has been shown to scale roughly with the square of sequence length," and OPD aims to reduce the compounding term toward linear. No new empirical numbers are claimed, and I did not find headline benchmark tables in the fetched material. The thread's summary of coverage matches the paper: why off-policy distillation fails, the OPD formulation, the three design axes, the method families (divergence minimization, reward-guided learning, self-play), and the open problems.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>MiniLLM</strong> (Gu et al.): reverse-KL distillation via policy gradient with sequence-level returns — the survey's canonical divergence-minimization entry. Your saved MiniLLM-notes item covers its stabilization tricks (single-step decomposition, teacher-mixed sampling, length normalization), which are instances of the survey's "how to stabilize" axis.</li>
+<li><strong>GKD</strong> (Agarwal et al.): generalized JSD plus on-policy/mixed sampling; the cleanest early statement of the train/inference mismatch argument in LLM distillation.</li>
+<li><strong>Speculative KD and standard sequence-level KD</strong> sit at the off-policy end of the spectrum the survey uses as its foil; speculative KD is a hybrid where student proposals are teacher-verified, an interesting middle point on the feedback axis.</li>
+<li><strong>Thinking Machines' on-policy distillation writeup</strong>: the practitioner-facing version of the same recipe (per-token reverse KL as dense reward on student rollouts); useful to read as the "industry default" the survey systematizes.</li>
+<li><strong>Within your tracker</strong>: OPD² changes the <em>what to optimize</em> axis (delta signal instead of raw teacher distribution); ReOPD changes the <em>where the signal comes from</em> axis for multi-turn agents (replayed teacher prefixes); the MOPD critique thread stress-tests the whole framework's failure modes (prefix pathologies, teacher-student overlap, privileged-information OPSD, thinking collapse). Reading the survey first gives you the coordinates to place all three.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Two-author surveys of fast-moving areas date quickly.</strong> v1 is April 2026 and the field's most interesting negative results (the ones in your MOPD thread, mostly May–July 2026) may postdate or be thinly covered; check the v4 revision for coverage of OPSD failure modes before treating the taxonomy as complete.</li>
+<li><strong>The O(T²) → O(T) story is imported theory, not LLM theory.</strong> The compounding-error bounds come from imitation learning with assumptions (bounded per-step error, recoverability) that are loose fits for autoregressive LLMs. Treat the quadratic-vs-linear claim as motivation, not as a proven property of LLM distillation.</li>
+<li><strong>Taxonomies flatter the field's tidiness.</strong> In practice, successful recipes are hybrids (off-policy cold start then on-policy; mixed sampling schedules), and the survey's clean axes can obscure that the stabilization tricks — the least glamorous axis — are often what determines success or failure.</li>
+<li><strong>Open question the survey names but can't answer</strong>: whether OPD's advantage survives when teacher and student distributions are far apart. The "Rethinking OPD" line of work (in your no-free-lunch item) suggests overlap, not teacher strength, predicts transfer — a result that partially undercuts the simple "on-policy is better" narrative.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>OPD = f-divergence minimization <strong>on student-sampled trajectories</strong>; the entire design space is three axes: feedback signal, teacher access, loss granularity.</li>
+<li>The motivation is the imitation-learning compounding-error argument: static distillation's exposure bias grows ~quadratically with length; training on student-visited states makes it ~linear.</li>
+<li>Use this survey as the map for the rest of your OPD cluster: OPD² innovates on the loss axis, ReOPD on the signal-source axis for agents, and the MOPD critique thread documents where every corner of the map breaks.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

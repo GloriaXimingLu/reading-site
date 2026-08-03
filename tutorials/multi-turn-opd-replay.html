@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Turn OPD via Teacher Replay (Microsoft)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Multi-Turn OPD via Teacher Replay (Microsoft)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.04763">arXiv:2607.04763</a> · <a href="https://arxiv.org/abs/2607.04763">arXiv</a> · <a href="https://x.com/dair_ai/status/2081560214554419700">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Paper: "Multi-Turn On-Policy Distillation with Prefix Replay" (arXiv 2607.04763), by Baohao Liao, Hanze Dong, Christof Monz, Xinxing Xu, Li Dong, and Furu Wei; v1 July 6, 2026. The thread attributes the work to Microsoft Research and the University of Amsterdam. Grounded in the fetched abstract plus the dair_ai thread.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>ReOPD (Replayed-Prefix On-Policy Distillation)</strong> makes on-policy distillation affordable for multi-turn agents: instead of fresh student rollouts through a live environment at every update, it replays <strong>pre-collected teacher trajectories as prefixes</strong>, lets the student act at selected steps, and has the teacher supply dense per-step supervision — with zero environment/tool execution during student training.</li>
+<li>It names a genuine pathology of multi-turn OPD, the <strong>prefix trap</strong>: pushing training histories toward the student's own distribution makes supervision more relevant to the student but simultaneously drags the teacher onto states where its targets are unreliable — a two-sided distribution shift between student occupancy and teacher reliability.</li>
+<li>The fix is <strong>reliability-aware prefix distribution design</strong>, implemented as a simple <strong>step-decaying sampling schedule</strong> favoring early, lower-shift prefixes. Across math-with-Python and search environments and multiple teacher/student scales, it preserves or improves accuracy while running <strong>at least 4x faster per rollout</strong> than standard OPD.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Your OPD cluster so far lives almost entirely in single-turn land: the survey's framework, OPD²'s delta loss, and most of the no-free-lunch failure modes all assume the student emits one response and the teacher scores its tokens. The survey explicitly lists <strong>agent-level learning</strong> as an open problem. This paper is the concrete attack on that problem.</p>
+<p>The obstacle is cost structure. In single-turn OPD the expensive part is teacher forward passes, which batch nicely. In multi-turn agentic OPD every update needs (a) fresh student rollouts <em>through an environment</em> — real tool calls, real search queries, real code execution, with their latency, flakiness, and per-call cost — plus (b) teacher queries at every visited interaction history. Environment interaction serializes training, doesn't batch, and often costs actual money. This is the same infrastructure pain that motivates the sandbox-scaling work elsewhere in your tracker (OSGym); ReOPD instead asks whether you can delete the environment from the training loop entirely.</p>
+<p>There's also a scientific contribution independent of the systems win: the prefix trap is a clean articulation of <em>why</em> naive multi-turn OPD is unstable, and it directly echoes the prefix pathologies in your no-free-lunch item (TRD's result that token-level KL along a student rollout gives anchored-to-bad-context supervision after an early wrong turn). ReOPD generalizes that concern to interaction histories and adds the flip side: it's not just that student-visited states can be bad for the student — they can also be states where the <em>teacher's</em> targets stop being trustworthy.</p>
+<h2>The core idea</h2>
+<p>On-policy distillation wants supervision at states the student actually visits (that's the whole exposure-bias argument). But in multi-turn settings, whose states you train on is a <strong>design choice with a two-sided trade-off</strong>:</p>
+<ul>
+<li>Sample histories from the <strong>student's</strong> occupancy distribution: supervision is maximally relevant, but the teacher is now queried at states it may never have encountered — degenerate tool outputs, malformed intermediate reasoning, off-manifold interaction histories — where its per-step targets are unreliable. Distilling unreliable targets faithfully is worse than useless.</li>
+<li>Sample histories from the <strong>teacher's</strong> trajectories: teacher targets are reliable (the teacher generated these states), but you've reintroduced off-policy exposure bias — the student trains on states it won't visit at inference.</li>
+</ul>
+<p>The paper's insight is to treat this as a <strong>prefix distribution design problem</strong>: choose, per training example, how much of a pre-collected teacher trajectory to replay as a frozen prefix before handing control to the student. Short replayed prefixes → more student-shifted, less teacher-reliable. Long replayed prefixes → the reverse. Early steps of a trajectory have accumulated the least distribution shift, so supervision there is both relevant and reliable; late steps are where the trap bites. Hence the step-decaying schedule: sample student-action points with probability that decays over trajectory depth (mechanism as described in the thread; exact schedule form — verify in the paper).</p>
+<p>The economic consequence is the headline: because the prefixes come from <strong>pre-collected</strong> teacher trajectories, the environment never has to be executed during student training. Tool outputs, search results, and code execution results inside the prefix are replayed verbatim from the teacher's log.</p>
+<p><img alt="OPD vs ReOPD for agentic tasks" src="assets/multi-turn-opd-replay/fig2.png" /></p>
+<p><em>Figure from the paper: Comparison between OPD and ReOPD for agentic tasks. Up: OPD with online environment — the environment is always alive during training, and all steps contribute equally to the loss. Down: ReOPD with offline environment.</em></p>
+<h2>How it works</h2>
+<p>Training loop as the abstract and thread support it:</p>
+<ol>
+<li><strong>Offline</strong>: collect teacher trajectories once — full multi-turn rollouts including tool calls and environment observations (math reasoning with a Python interpreter; search environments).</li>
+<li><strong>Per training step</strong>: sample a teacher trajectory and a cut point via the step-decaying schedule (early cut points favored). Replay the teacher trajectory up to the cut as the student's context — including the environment observations recorded in the log.</li>
+<li>The <strong>student acts</strong> at the selected step(s) beyond the cut, generating its own continuation from the replayed state.</li>
+<li>The <strong>teacher supplies dense per-step supervision</strong> on the student's actions at those histories — token-level targets in the standard OPD fashion — "without executing anything new": no tool calls, no environment interaction during student training.</li>
+<li>Update the student on this dense signal; repeat.</li>
+</ol>
+<p>What this buys: rollout generation is now pure LLM inference (replay + student sampling + teacher scoring), which batches and parallelizes like ordinary distillation — hence the ≥4x per-rollout speedup. What it costs: student-generated actions beyond the cut never get <em>executed</em>, so the student never sees the environment's response to its own actions during training; supervision quality rests entirely on the teacher's per-step targets at the replayed states (implication mine — verify how the paper handles post-action turns).</p>
+<p>The paper's v3 HTML formalizes all of this. The multi-turn OPD objective is distillation over a <strong>designed prefix distribution</strong> <span class="arithmatex">\(\rho_t\)</span> (Eq. 3):</p>
+<div class="arithmatex">\[\mathcal{L}_{\rho}(\theta;\theta_{\mathrm{old}})=\mathbb{E}_{x\sim\mathcal{D}}\left[\sum_{t=1}^{T}\alpha_{t}\,\mathbb{E}_{H_{t}\sim\rho_{t}(\cdot|x)}\left[\ell\left(\pi_{\theta}(\cdot\mid x,H_{t}),\,\pi_{T}(\cdot\mid x,H_{t})\right)\right]\right]\]</div>
+<p>where <span class="arithmatex">\(H_t\)</span> is the interaction history (prefix) at step <span class="arithmatex">\(t\)</span>, <span class="arithmatex">\(\rho_t\)</span> is the trainer-chosen distribution over those histories, <span class="arithmatex">\(\ell\)</span> is the per-step distillation loss (token-level KL to the teacher <span class="arithmatex">\(\pi_T\)</span>), and <span class="arithmatex">\(\alpha_t\)</span> are step weights.</p>
+<p>The prefix trap is the two-sided bound on the gap to the ideal objective <span class="arithmatex">\(\mathcal{R}^{\star}\)</span>, which supervises at the student's own occupancy <span class="arithmatex">\(d^t_{\theta_{\mathrm{old}}}\)</span> (Eq. 4):</p>
+<div class="arithmatex">\[\left|\mathcal{R}^{\star}-\mathcal{L}_{\rho}\right|\leq\mathbb{E}_{x\sim\mathcal{D}}\left[\sum_{t=1}^{T}\alpha_{t}\left\{2B\,\mathrm{TV}\!\left(d_{\theta_{\mathrm{old}}}^{t}(\cdot|x),\,\rho_{t}(\cdot|x)\right)+\mathbb{E}_{H_{t}\sim\rho_{t}(\cdot|x)}\!\left[\epsilon_{T,t}^{\theta}(x,H_{t})\right]\right\}\right]\]</div>
+<p>the first term is occupancy mismatch (train on prefixes the student won't visit and you pay it), the second is teacher-target unreliability <span class="arithmatex">\(\epsilon_{T,t}\)</span> at the prefixes you did train on — push <span class="arithmatex">\(\rho_t\)</span> toward the student and the first term shrinks while the second grows. That is the trap, as an inequality.</p>
+<p>The reliability-aware solution interpolates the two occupancies geometrically (Eq. 6), and in practice collapses to the step-decaying cut-point schedule:</p>
+<div class="arithmatex">\[\rho_{t}^{\star}(h_{t}\mid x)\propto\left[d_{\theta_{\mathrm{old}}}^{t}(h_{t}\mid x)\right]^{\gamma_{t}}\left[d_{T}^{t}(h_{t}\mid x)\right]^{1-\gamma_{t}},\qquad \omega(t;\kappa)=\kappa^{t}\]</div>
+<p>where <span class="arithmatex">\(\gamma_t\in[0,1]\)</span> trades student-relevance against teacher-reliability, <span class="arithmatex">\(d_T^t\)</span> is the teacher's occupancy, and the bridge weight is approximated (Eq. 8) by sampling teacher-trajectory cut points <span class="arithmatex">\(t\)</span> with probability <span class="arithmatex">\(\propto\kappa^t\)</span>, <span class="arithmatex">\(\kappa\in(0,1]\)</span> — early steps favored.</p>
+<pre><code class="language-text">Algorithm 1: Replayed-Prefix On-Policy Distillation (ReOPD)
+  # condensed from the paper's algorithm box
+Input: teacher trajectory pool D_T, teacher pi_T, student pi_theta,
+       step-decay schedule w(t;kappa) = kappa^t
+theta_old &lt;- theta
+for each OPD iteration:
+    assemble candidate positions {(x, h_t)} from pooled trajectories
+      # prefix h_t = teacher actions A_&lt;t + recorded observations O_&lt;=t
+    draw positions with p_t proportional to w(t;kappa)
+      # early, low-shift steps sampled more often
+    for each sampled position (x, h_t):
+        student generates action A_t = (a_t^1..a_t^n) ~ pi_theta_old(.|x, h_t)
+          # on-policy tokens; NO environment call
+        loss += sum_j KL( pi_theta(.|x,h_t,a_t^&lt;j) || pi_T(.|x,h_t,a_t^&lt;j) )
+          # dense per-token teacher supervision along the student's action
+    update theta on accumulated loss; theta_old &lt;- theta
+return pi_theta
+</code></pre>
+<p>The "reliability-aware" framing matters for how to think about the schedule: it is explicitly not trying to match the student's occupancy distribution (pure on-policyness); it is optimizing a trade-off between occupancy match and teacher-target reliability, and conceding some on-policyness at deep steps because the supervision there would be poison anyway.</p>
+<h2>Results</h2>
+<p>Numbers present in the sources (abstract + thread):</p>
+<ul>
+<li><strong>Setting</strong>: mathematical reasoning with Python tool use, and search environments; multiple teacher and student scales (specific model families/sizes not in my sources — verify in the paper).</li>
+<li><strong>Accuracy</strong>: ReOPD "preserves or improves accuracy" relative to standard multi-turn OPD.</li>
+<li><strong>Efficiency</strong>: <strong>zero tool calls during student training</strong> and <strong>at least 4x faster per rollout</strong> than OPD.</li>
+</ul>
+<p>No absolute benchmark scores, model names, or dataset names surfaced in the abstract or thread; treat the above as the verified claim set.</p>
+<p><img alt="ReOPD headline result" src="assets/multi-turn-opd-replay/fig1.png" /></p>
+<p><em>Figure from the paper: ReOPD keeps the benefits of on-policy distillation while removing environment interaction — it matches or improves OPD accuracy, trains much faster per step, and eliminates tool calls during training.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>DAgger and hindsight imitation</strong>: ReOPD is recognizably a descendant of the imitation-learning tradition of mixing expert and learner state distributions — but inverted. DAgger pushes toward learner states and assumes the expert can label anything; ReOPD's prefix trap is precisely the observation that for LLM teachers, that assumption fails, so the mixture must respect teacher reliability.</li>
+<li><strong>GKD / MiniLLM</strong>: GKD's mixed student/teacher sampling and MiniLLM's teacher-mixed rollouts are single-turn ancestors of prefix-distribution design; ReOPD lifts the idea from token-level mixing within one response to turn/step-level mixing across an agentic trajectory, and adds the replay-economics angle.</li>
+<li><strong>Off-policy RL replay buffers</strong>: reusing logged trajectories to avoid environment cost is the oldest trick in RL; the novelty here is doing it inside a distillation objective where the teacher provides dense per-step targets, rather than relying on sparse logged rewards.</li>
+<li><strong>Within your tracker</strong>: TRD (in the no-free-lunch item) fixes the single-turn prefix pathology by having the teacher <em>refine</em> the student's trajectory; ReOPD fixes the multi-turn version by <em>choosing which prefixes to train on</em>. The survey's agent-level-learning open problem is exactly this paper's slot. And the speed argument makes ReOPD the natural pairing for any of the loss-side innovations (e.g., OPD²'s delta signal) if you wanted cheap multi-turn reasoning distillation — an unexplored combination as far as my sources show.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>It is on-policy in a qualified sense.</strong> The student acts at selected steps, but the histories are teacher-generated and the student's actions are never executed. Late-trajectory, student-induced states — the exact states the exposure-bias argument worries about — are deliberately down-weighted. The bet is that teacher-target unreliability there outweighs the occupancy mismatch; that bet presumably holds in their environments, but it's a trade, not a free win, and the "preserves or improves accuracy" phrasing suggests parity more often than dominance.</li>
+<li><strong>Replay assumes replayability.</strong> Deterministic-enough environments (Python execution, cached search) replay cleanly. Stochastic, stateful, or time-varying environments (live web, real APIs, long-horizon OS interaction) break the frozen-prefix assumption; the two evaluated environments are on the friendly end of that spectrum.</li>
+<li><strong>"Zero tool calls" excludes teacher collection.</strong> The pre-collected teacher trajectories carry the full environment cost up front. Amortized over many student runs and epochs this is a great deal, but for a one-off distillation the accounting is less lopsided than the headline suggests.</li>
+<li><strong>Open questions</strong>: does the step-decaying schedule need tuning per environment? How does the method behave when teacher trajectories are scarce or narrow (coverage of the state space)? And does never seeing consequences of its own tool calls leave the student with execution-feedback blind spots that only show up on harder, longer-horizon tasks?</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>ReOPD = multi-turn on-policy distillation with <strong>replayed teacher-trajectory prefixes</strong>: student acts at sampled steps, teacher scores densely, environment is never executed during training — ≥4x faster per rollout, zero tool calls.</li>
+<li>The <strong>prefix trap</strong>: student-shifted histories are more relevant but push the teacher onto unreliable states; multi-turn OPD is a two-sided distribution-shift problem, and prefix selection is the control knob.</li>
+<li>The practical recipe is a <strong>step-decaying prefix schedule</strong> — supervise early, low-shift steps preferentially — which preserved or improved accuracy across math+Python and search environments at multiple scales.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Handbook: Readable, Navigable, Editable Harnesses</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Handbook: Readable, Navigable, Editable Harnesses</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.13285">arXiv:2607.13285</a> · <a href="https://arxiv.org/abs/2607.13285">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2080545686919987619">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>Harness Handbook</strong> (Wang et al., arXiv 2607.13285, 29 pages) identifies <strong>behavior localization</strong> — finding <em>where</em> in a large harness codebase a described behavior lives — as the central bottleneck in evolving agent harnesses, and builds a <strong>behavior-centric representation</strong> of the repo, synthesized automatically via static analysis plus LLM-assisted structuring, that links each runtime behavior to verified source locations.</li>
+<li>A companion search procedure, <strong>Behavior-Guided Progressive Disclosure (BGPD)</strong>, walks an agent from high-level behavior descriptions down to implementation details, following call and shared-state links, and verifies candidate edit sites against live source.</li>
+<li>On modification requests drawn from two open-source harnesses (Codex and Terminus-2), handbook-assisted planning raised plan win rates by <strong>10.0 and 18.9 points</strong> while cutting planner token use by <strong>12.7% and 8.6%</strong>, with the largest gains on scattered edit sites, rarely executed paths, and cross-module interactions.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>A modern agent's capability is model × harness: the harness constructs prompts, manages state, invokes tools, and coordinates execution. Models, APIs, environments, and requirements all churn, so the harness must be continually modified — harness evolution is now routine engineering, and increasingly it is done <em>by coding agents</em>. But there is a structural mismatch: modification requests describe <strong>what</strong> the system should do ("retry tool calls with backoff when the sandbox restarts"), while repositories are organized by <strong>where</strong> code lives (files, modules). In production harnesses, one behavior is typically distributed across distant files, functions, and pieces of shared state, and the codebases are large and tightly coupled. Code search, repo indexing, and long-context reading help you <em>inspect</em>, but the behavior-to-code mapping still has to be reconstructed by hand (or by an agent burning tokens) on every request.</p>
+<p>That framing matters for the self-improving-harness thread this reading list tracks. Recursive Harness Self-Improvement dodges the problem by keeping the harness in prompt-space, but that only works for small user-built harnesses. Anything that wants agents to improve <em>production-grade</em> harnesses — the Darwin-Gödel-Machine-style vision of agents editing their own scaffolds — needs the edit sites found reliably first. Harness Handbook is infrastructure for exactly that step: it does not generate better edits; it makes sure edits land in the right places.</p>
+<h2>The core idea</h2>
+<p>The key insight: <strong>reorganize the repository around runtime behaviors instead of files, and maintain that mapping as a first-class, verified artifact.</strong> A "handbook" is a behavior-centric index: each entry describes a behavior the harness exhibits at runtime and links it to the concrete source locations that implement it. Because the index is synthesized automatically (static analysis for structure and ground truth, LLM assistance for descriptions and organization) and — per the paper thread — <strong>updated automatically after edits</strong>, it stays usable as the harness evolves rather than rotting like hand-written docs.</p>
+<p><img alt="Harness Handbook three-level behavior-centric representation" src="assets/harness-handbook/fig1.png" /></p>
+<p><em>Figure from the paper: overview of the Harness Handbook representation — a three-level hierarchy from system-level overview to stage-level component overviews to source-backed unit details, with component and state indexes for cross-stage tracing.</em></p>
+<p>The complementary idea is that agents shouldn't consume this index all at once. <strong>Progressive disclosure</strong> gives the agent the behavior layer first, then lets it drill down — the thread describes three detail levels plus shared-state maps — narrowing from "which behavior" to "which functions and state," and finally <strong>checking candidate locations against the current source</strong> so the plan is grounded in the repo as it exists now, not as the index remembers it. Localization becomes a guided, verified descent instead of an open-ended grep-and-read expedition.</p>
+<h2>How it works</h2>
+<p>Two components, per the abstract and thread:</p>
+<p><strong>1. Handbook synthesis (offline, automatic).</strong>
+- Static analysis extracts the code structure: call relationships and shared state across modules (the thread mentions shared-state maps explicitly).
+- LLM-assisted structuring produces behavior descriptions and organizes them at three levels of detail, from high-level behavior summaries down to implementation specifics.
+- Each behavior entry is linked to its verified source locations — the behavior-to-code mapping is materialized rather than recovered per-request.
+- After edits land, the handbook is updated automatically, keeping the index consistent with the evolving codebase.</p>
+<p><img alt="Handbook construction pipeline: static analysis, behavioral organization, hierarchical synthesis" src="assets/harness-handbook/fig2.png" /></p>
+<p><em>Figure from the paper: construction pipeline — static analysis extracts source-linked facts, behavioral organization maps source units to execution stages, and hierarchical synthesis builds the L1–L3 handbook.</em></p>
+<p><strong>2. Behavior-Guided Progressive Disclosure (online, per request).</strong>
+- Given a modification request (phrased in behavior terms), the agent starts broad at the behavior level of the handbook.
+- It narrows to likely code regions, follows call links and shared-state links across module boundaries — precisely the hops that defeat file-local search.
+- It verifies candidate edit sites against the live source before committing them into an edit plan.</p>
+<p>The evaluation setting is <strong>planning</strong>: given diverse modification requests on two open-source harnesses, compare edit plans produced with handbook assistance vs. without, measuring plan win rate and planner token consumption. (The exact judging protocol for "plan win rate" — LLM judge vs. human, and against what gold edit sites — is not specified in the sources here; verify in the paper.)</p>
+<p><strong>The scoring function (from the paper's full text).</strong> Plan quality is judged by three LLM judges (GPT-5.5, Opus 4.8, DeepSeek-V4-Pro) on a 0–100 scale as a weighted combination:</p>
+<div class="arithmatex">\[S = 0.5\,S_{\mathrm{Loc}} + 0.25\,S_{\mathrm{Scope}} + 0.25\,S_{\mathrm{Reason}}\]</div>
+<p>where <span class="arithmatex">\(S_{\mathrm{Loc}}\)</span>, <span class="arithmatex">\(S_{\mathrm{Scope}}\)</span>, and <span class="arithmatex">\(S_{\mathrm{Reason}}\)</span> score localization accuracy, scope control, and reasoning quality respectively — localization gets the dominant weight, and a plan is declared the winner of a comparison only if its score exceeds the other's by a threshold <span class="arithmatex">\(\delta = 3\)</span>.</p>
+<p>The full request-handling loop, condensed from the paper's Algorithm 1 (the construction procedure is Algorithm 2, a three-phase pipeline: deterministic static fact extraction, LLM-assisted behavioral organization, hierarchical synthesis):</p>
+<pre><code class="language-text">Algorithm (Handbook-Guided Modification with Automatic Resynchronization):
+Input: request q, handbook H, repository snapshot R
+g   &lt;- LeafMode(H)               # granularity: function-as-leaf or file-as-leaf
+E_q &lt;- BGPD(q, H, R)             # progressive disclosure: L1 overview -&gt;
+                                 #   L2 stage/component -&gt; L3 source-backed units,
+                                 #   following call + shared-state links, and
+                                 #   verifying candidate sites against live source
+(P, Gamma) &lt;- Plan(q, E_q)       # edit plan + declarations (modify/add/remove)
+R'    &lt;- Execute(R, P)           # apply the edits
+Delta &lt;- Diff(R, R')
+if Delta is non-empty:
+    H' &lt;- Resync_g(H, R, R', Delta, Gamma)   # handbook auto-updates to match repo
+else:
+    H' &lt;- H
+return (P, Gamma, R', Delta, H')
+</code></pre>
+<h2>Results</h2>
+<p>Numbers present in the sources (thread + abstract):</p>
+<ul>
+<li><strong>Plan win rate:</strong> +<strong>10.0</strong> points on Codex requests and +<strong>18.9</strong> points on Terminus-2 requests for handbook-assisted planning.</li>
+<li><strong>Token efficiency:</strong> planner token use reduced by <strong>12.7%</strong> (Codex) and <strong>8.6%</strong> (Terminus-2) — better localization <em>and</em> cheaper planning simultaneously, because the agent reads targeted disclosures instead of raw repo context.</li>
+<li><strong>Where the gains concentrate (qualitative, from the abstract):</strong> scattered edit sites, rarely executed paths, and cross-module interactions — i.e., exactly the cases where behaviorally distributed code defeats file-oriented navigation. Handbook-assisted planning "finds more required edit sites" (thread) — coverage of necessary locations, not just precision.</li>
+</ul>
+<p>No end-to-end task-resolution numbers (did the resulting edits pass tests?) appear in these sources; the claims are about localization and plan quality.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Recursive Harness Self-Improvement (this list):</strong> the two papers partition the harness-evolution problem by harness scale. RHI: harness is a prompt, so the model rewrites it directly. Handbook: harness is a production codebase, so the bottleneck shifts to behavior localization before any rewrite. A self-improving Claude-Code-scale system plausibly needs both — handbook-style maps for its own scaffold, RHI-style loops for its task-level configuration.</li>
+<li><strong>No Universally Best Harness (this list):</strong> if harnesses must be tailored per model–problem pair (their conclusion), harness modification becomes high-frequency, which raises the value of cheap, reliable localization infrastructure like this.</li>
+<li><strong>OpenForgeRL / Training Agents Inside Their Harnesses (this list):</strong> finds that harness choice materially shapes what RL can learn. Iterating on harness design at that level again presupposes the ability to modify harnesses quickly and safely.</li>
+<li><strong>Long-Horizon Agents survey (this list):</strong> the survey's "runtime harness" era, with loops/context/tools/orchestration/hooks/verification as first-class components, is precisely the kind of behaviorally distributed system the handbook indexes.</li>
+<li>Also in this list: <strong>CodeWiki</strong> (repo → interactive guide) and <strong>Graphify</strong> (folder → knowledge graph) are consumer-grade cousins — repo-comprehension artifacts — but Handbook differs in being behavior-centric, verification-backed, and self-updating, aimed at <em>edit planning</em> rather than reading.</li>
+<li><strong>Well-known prior work:</strong> SWE-bench-style issue resolution showed fault localization is a dominant failure mode for coding agents; SWE-agent's agent–computer interface work established that navigation affordances change agent success rates; tools like ctags/LSP indexes and Aider's repo map compress <em>structural</em> views of code. Handbook's delta is indexing by <strong>runtime behavior</strong> with verified links and automatic maintenance — closer to executable documentation than to code search.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Index fidelity is the whole game.</strong> LLM-assisted behavior descriptions can be wrong or stale in ways static analysis won't catch; the live-source verification step mitigates but doesn't eliminate this. Error analysis of handbook mistakes (and their downstream cost in plans) is the first thing to check in the paper.</li>
+<li><strong>Plan win rate is a proxy.</strong> Winning a plan comparison is not the same as shipping a correct edit that passes the harness's tests. Without end-to-end resolution numbers in the sources, treat the +10/+18.9 as localization-quality evidence, not task-success evidence.</li>
+<li><strong>Two harnesses.</strong> Codex and Terminus-2 are both open-source agent harnesses; generalization to other domains of behaviorally distributed software (or to much larger closed production harnesses) is plausible but unshown in these sources.</li>
+<li><strong>Synthesis and maintenance cost.</strong> Building and continuously updating the handbook has its own compute cost; the 8.6–12.7% planner-token savings must be weighed against it under realistic request volumes. (Amortization presumably favors the handbook at high edit frequency — inferred from the thread — verify in the paper.)</li>
+<li><strong>Dynamic behavior from static analysis.</strong> Behaviors that only manifest through runtime configuration, dynamic dispatch, or prompt-content-dependent control flow are hard to recover statically; "rarely executed paths" showing the largest gains suggests the handbook helps there, but coverage limits are worth scrutinizing.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>The bottleneck in evolving production agent harnesses is not writing edits but <strong>finding all the places a behavior lives</strong>; Harness Handbook materializes the behavior-to-code map instead of re-deriving it per request.</li>
+<li>Behavior-centric index + progressive disclosure + live verification: <strong>+10.0/+18.9 plan win-rate points with 12.7%/8.6% fewer planner tokens</strong> on Codex and Terminus-2 modification requests.</li>
+<li>In the self-improving-harness stack, this is the <em>editability layer</em>: RHI handles prompt-level harnesses, Handbook makes code-level harnesses navigable enough for agents to evolve them safely.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

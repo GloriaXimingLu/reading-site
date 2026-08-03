@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Agents Inside Their Harnesses (Microsoft)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Training Agents Inside Their Harnesses (Microsoft)</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.21557">arXiv:2607.21557</a> · <a href="https://arxiv.org/abs/2607.21557">arXiv</a> · <a href="https://x.com/dair_ai/status/2080776545430557016">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>OpenForgeRL</strong> (Yu, Peng, Xu, Zou, Wu, Cheng, Yao, Singh, Yu, Gao — Microsoft and collaborators, arXiv 2607.21557) is an open-source framework for training agents <strong>end-to-end inside the real inference harnesses they deploy with</strong> (Claude Code/Codex/OpenClaw-class scaffolds), which open SFT/RL stacks otherwise cannot express because harness inference is stateful and multi-process.</li>
+<li>The trick is decoupling: a <strong>lightweight proxy</strong> serves the harness's model calls while recording them as training data for a standard RL codebase (e.g., veRL), and a <strong>Kubernetes orchestrator</strong> runs each rollout in its own remote container — any harness, any environment, at scale.</li>
+<li>With only hundreds to a few thousand tasks, OpenForgeGUI reaches <strong>72.3 on WebVoyager, 63.0 on Online-Mind2Web, 37.7 on OSWorld-Verified</strong>; OpenForgeClaw reaches <strong>31.7 and 55.9 pass@3 on ClawEval</strong> and <strong>33.7 on QwenClawBench</strong> — beating similar-size open baselines nearly everywhere and matching much larger models in the GUI setting. Bonus finding: <strong>harness choice is a training variable</strong> — some harnesses are substantially harder to learn than others.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>There is a widening train/deploy mismatch in agentic RL. Deployed agents live inside elaborate harnesses — multi-turn loops, tool routers, sub-agent spawning, context compaction, retry logic — but almost all open RL training happens in stripped-down single-process environments that look nothing like deployment, because open RL stacks assume the trainer owns the rollout loop: one policy, one context, tokens in and out. A real harness inverts that: it is an external, stateful, multi-process program that <em>calls the model</em> many times per task, from different components, with its own bookkeeping in between. veRL-style trainers have no native way to express this, so people either train harness-free and hope behavior transfers into the scaffold, or reimplement a toy harness inside the trainer and train for the wrong distribution.</p>
+<p>OpenForgeRL closes that gap with infrastructure rather than algorithms. That makes it the training-side half of the model–harness co-evolution loop this reading list tracks: Recursive Harness Self-Improvement optimizes the harness around a fixed model and explicitly frames harness traces as future training data; OpenForgeRL is the machinery that actually trains a model on execution inside a real harness.</p>
+<h2>The core idea</h2>
+<p>The insight is an inversion of control: <strong>don't put the harness inside the trainer — put a recorder between the harness and the model.</strong> The harness runs unmodified, exactly as deployed, in its own container against a real environment. Every model call it makes goes through a lightweight proxy that (a) serves the call from the current policy and (b) records the request/response as training data in the format a standard RL codebase expects. The harness doesn't know it's being trained; the trainer doesn't need to understand harness internals. All the statefulness and multi-process complexity that broke existing stacks becomes invisible to the trainer, because the proxy flattens harness execution into a stream of logged model interactions.</p>
+<p><img alt="OpenForgeRL architecture: orchestrator, sandboxed harness+environment, serve-and-record proxy" src="assets/training-agents-in-harnesses/fig1.png" /></p>
+<p><em>Figure from the paper: overview of OpenForgeRL — an orchestrator spawns remote sandboxes in which an LLM/VLM interacts with its environment through a harness; a proxy intercepts the harness's LLM calls, routes them to the RL framework's inference engines, and records the exchanged io-pairs as training trajectories.</em></p>
+<p>Because training and inference are decoupled at the API boundary — the same boundary every harness already speaks — the approach is harness-agnostic and environment-agnostic by construction: anything that calls an OpenAI-compatible endpoint can be trained this way (the API-shape detail is inferred from the proxy design — verify in the paper).</p>
+<h2>How it works</h2>
+<p>The pipeline, per the abstract and thread:</p>
+<ol>
+<li><strong>Rollout isolation.</strong> A Kubernetes orchestrator launches each rollout in its own remote container: harness + environment (terminal, browser, full OS) packaged together. This gives clean state per trajectory and horizontal scale.</li>
+<li><strong>Proxy-mediated inference.</strong> Inside the rollout, the harness's model calls route through the lightweight proxy, which serves them from the current policy weights and logs every call — prompts, completions, and enough structure to reconstruct the trajectory — as RL training data.</li>
+<li><strong>Standard RL training.</strong> The recorded data feeds a standard RL codebase (veRL is named as the example) — so the algorithmic stack (policy-gradient methods, batching, etc.) is off-the-shelf; OpenForgeRL's contribution is making real-harness rollouts expressible to it. Task outcomes provide the reward signal (reward/credit-assignment specifics across a harness's many model calls are not detailed in the abstract — verify in the paper).</li>
+<li><strong>Iterate at scale.</strong> Updated weights serve subsequent rollouts; the orchestrator keeps many containers rolling in parallel.</li>
+</ol>
+<p><strong>The formalism (from the paper's full text).</strong> The agent–environment interaction is a POMDP <span class="arithmatex">\(\langle\mathcal{S},\mathcal{A},\mathcal{T},\mathcal{R},\gamma\rangle\)</span>, but under a real harness <span class="arithmatex">\(\mathcal{H}\)</span> the policy never sees raw history — the harness transforms it into the model-visible context, so the logged trajectory is</p>
+<div class="arithmatex">\[\tau=\big\langle(\mathcal{H}(s_{0}),a_{0}),(\mathcal{H}(s_{1}),a_{1}),\ldots,(\mathcal{H}(s_{T}),a_{T})\big\rangle\]</div>
+<p>where <span class="arithmatex">\(s_t\)</span> is the raw observation, <span class="arithmatex">\(a_t \sim \pi(\cdot \mid \mathcal{H}(s_t))\)</span> the model's response, and <span class="arithmatex">\(\mathcal{H}(s_t)\)</span> the harness-constructed prompt (compaction, tool schemas, sub-agent context). This also answers the credit-assignment question the abstract leaves open: the proxy collects the terminal reward <span class="arithmatex">\(r_T\)</span> (task success) plus all recorded prompt–response pairs and reconstructs per-step training samples by broadcasting the terminal reward backwards,</p>
+<div class="arithmatex">\[\tau=(s^{\mathcal{H}}_{0},a_{0},r_{0}),\,(s^{\mathcal{H}}_{1},a_{1},r_{1}),\ldots,(s^{\mathcal{H}}_{T},a_{T},r_{T});\qquad r_{t}=\gamma^{\,T-t}\cdot r_{T}\]</div>
+<p>with <span class="arithmatex">\(\gamma=1.0\)</span> typically — i.e., every model call in a successful rollout gets the full terminal reward (Equation 1 in the paper). Training uses GRPO, with advantages computed by comparing average rewards across trajectories in the same group.</p>
+<pre><code class="language-text">OpenForgeRL training loop (condensed from the paper):
+for each RL iteration:
+    orchestrator spawns K remote sandboxes (harness + environment per container)
+    for each sandbox, asynchronously:
+        harness runs unmodified on a task x
+        every LLM call the harness makes -&gt; proxy:
+            serve completion from current policy pi_theta
+              (via the RL framework's inference engines)
+            log the io-pair (H(s_t), a_t)
+        episode ends -&gt; terminal reward r_T (task success / failure)
+    proxy reconstructs trajectories: (s^H_t, a_t, r_t) with r_t = gamma^(T-t) * r_T
+    trainer (veRL + GRPO, group-relative advantages) updates pi_theta
+    updated weights serve subsequent rollouts
+</code></pre>
+<p>Validated instantiations span <strong>tool/claw-based agents</strong> (terminal-style coding/tool harnesses — the paper analyzes ZeroClaw, OpenClaw, and Codex harnesses) and <strong>multimodal GUI agents</strong> (browser use and computer use), yielding two trained model families: <strong>OpenForgeClaw</strong> and <strong>OpenForgeGUI</strong>.</p>
+<h2>Results</h2>
+<p><img alt="OpenForgeRL: any harness x any environment into standard RL codebases, plus headline evaluations" src="assets/training-agents-in-harnesses/fig2.png" /></p>
+<p><em>Figure from the paper: OpenForgeRL builds on Orchard Env and connects any harness × any environment to standard RL codebases such as veRL, with no train–deploy mismatch; OpenForge-trained models are evaluated with six harnesses across six Claw and GUI environments.</em></p>
+<p>Numbers present in the abstract/thread:</p>
+<ul>
+<li><strong>Data efficiency:</strong> only hundreds to a few thousand tasks per setting.</li>
+<li><strong>OpenForgeClaw:</strong> 31.7 pass@3 and 55.9 pass@3 on ClawEval (two ClawEval numbers are quoted in the abstract — likely different splits or settings; check the paper for which is which), and 33.7 on QwenClawBench.</li>
+<li><strong>OpenForgeGUI:</strong> 37.7 on OSWorld-Verified, 63.0 on Online-Mind2Web, 72.3 on WebVoyager.</li>
+<li><strong>Relative standing:</strong> both outperform open baselines of similar size on nearly all benchmarks; in the GUI setting they match or surpass models several times larger.</li>
+<li><strong>Qualitative findings:</strong> (1) harness choice shapes learning — some harnesses (across ZeroClaw / OpenClaw / Codex) are substantially harder to learn than others; (2) RL improves <em>agentic reliability</em>: self-verification, tool coverage, and completion of multi-step plans; (3) <strong>error recovery remains weak</strong> even after RL.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Recursive Harness Self-Improvement (this list):</strong> the complementary half of model–harness co-evolution. RHI optimizes the harness and argues its traces should feed future training; OpenForgeRL is the system that consumes real-harness traces for training today. An obvious composition: run RHI-optimized harnesses inside OpenForgeRL rollouts.</li>
+<li><strong>No Universally Best Harness (this list):</strong> independently converges on "harness is a first-class variable." That paper shows it at inference time for discovery; OpenForgeRL shows it at training time — harness difficulty differences mean the scaffold you train in partly determines the policy you get.</li>
+<li><strong>Harness Handbook (this list):</strong> if harnesses are training variables, iterating on harness design becomes part of the training loop, and the Handbook's behavior-localization tooling is what makes rapid harness iteration safe.</li>
+<li><strong>Long-Horizon Agents survey (this list):</strong> OpenForgeRL sits squarely in the survey's "internalized model optimization" pillar (agentic RL), and its findings (self-verification improves, error recovery doesn't) map onto the survey's harness-component decomposition — verification is learnable, recovery may still need harness support.</li>
+<li>Also in this list: <strong>AgentGym-RL</strong>, <strong>OSGym</strong> (parallel OS sandboxes at $0.23/day — the environment-side scaling complement), <strong>Molt</strong> (NVIDIA's PyTorch-native agentic RL), <strong>prime-RL</strong> (async RL), and <strong>TRACE</strong> (turn-level rewards — a candidate answer to the credit-assignment question OpenForgeRL's abstract leaves open).</li>
+<li><strong>Well-known prior work:</strong> veRL as the underlying RL stack; the SWE-agent line established that the agent–computer interface changes agent capability, which this paper upgrades from an inference-time observation to a training-time one; benchmark lineage — WebVoyager, Mind2Web/Online-Mind2Web, OSWorld — is the standard GUI-agent evaluation stack.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Credit assignment is under-specified in the sources.</strong> A harness may make dozens of heterogeneous model calls (planner, executor, summarizer) per task; how outcome reward is attributed across recorded calls — and whether all call types are trained or some masked — is the technical crux, and the abstract is silent on it. Read that section first.</li>
+<li><strong>On-policyness of the proxy.</strong> If rollouts are long and containers many, recorded data can lag the current policy; how staleness/off-policy correction is handled matters for stability and isn't stated in these sources.</li>
+<li><strong>Benchmark-adjacent training.</strong> "Hundreds to a few thousand tasks" in the same domains as the evals invites distribution-matching concerns; strong pass@3 numbers should be read alongside pass@1 and held-out-harness results in the paper.</li>
+<li><strong>Error recovery stays weak.</strong> This is the most interesting negative result: RL sharpened execution (verification, tool coverage, plan completion) but not recovery from failure. Plausibly recovery is rare in successful rollouts, so outcome-reward RL barely reinforces it — an argument for either harness-level recovery scaffolding or targeted reward shaping (both open here).</li>
+<li><strong>Unfamiliar eval names.</strong> ClawEval and QwenClawBench are 2026 benchmarks for claw-style tool harnesses (inferred from the thread and abstract context — verify in the paper); treat cross-paper comparisons on them cautiously until they stabilize.</li>
+<li><strong>Infrastructure cost.</strong> One container per rollout with full harness + environment is heavy relative to text-only RL; the paper's scalability claims deserve scrutiny against OSGym-style cost-optimized alternatives.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>OpenForgeRL trains agents <strong>in the harness they deploy with</strong> by inserting a serve-and-record proxy at the model-API boundary and isolating each rollout in its own container — harness complexity becomes invisible to a standard RL stack like veRL.</li>
+<li>With only hundreds-to-thousands of tasks it produces small models that beat same-size open baselines (72.3 WebVoyager, 63.0 Online-Mind2Web, 37.7 OSWorld-Verified for the GUI agent) and rival much larger ones.</li>
+<li><strong>Harness choice is a training variable and error recovery is the stubborn residual:</strong> RL inside real harnesses improves self-verification and multi-step completion, but recovery from failure doesn't come along for free.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 04:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
