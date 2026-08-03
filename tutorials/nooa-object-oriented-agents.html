@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOOA: Native Python Object-Oriented Agents (NVIDIA)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>NOOA: Native Python Object-Oriented Agents (NVIDIA)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.20709">arXiv:2607.20709</a> · <a href="https://arxiv.org/abs/2607.20709">arXiv</a> · <a href="https://github.com/nvidia-nemo/labs-OO-Agents">GitHub</a> · <a href="https://x.com/akshay_pachaar/status/2084285621011689918">X post</a> · <a href="../index.html#tools">Tools &amp; Infrastructure</a></p><h2>TL;DR</h2>
+<ul>
+<li>NVIDIA's NOOA ("double-O Agents", arXiv 2607.20709; Furgale, Klingler, et al.) makes an agent a single Python class: methods are actions, fields are state, docstrings are prompts, type annotations are output contracts. A method whose body is <code>...</code> becomes an LLM-driven loop; a method with real code stays deterministic Python — the boundary is one line wide and visible in source.</li>
+<li>The load-bearing idea is <strong>pass-by-reference</strong>: a CodeAct method receives arguments as live Python objects, and the model sees only a bounded preview (type, true length, head/tail sample). The full object stays bound in an execution session the model writes code against, so an agent can process a million-row table while the prompt carries a ten-item preview — the limit becomes the machine, not the context window.</li>
+<li>A 253-line benchmark-agnostic agent hits 82.2% on SWE-bench Verified with GPT-5.5 (xhigh) at ~28 model calls / 1.1M tokens per task, vs OpenCode's 78.6% and PI's 78.2% at 66 calls / 2.2M tokens — defining most of the accuracy–cost frontier. Across 10 models, the interface itself passes 97.9% of 4,400 capability-test records zero-shot.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This tracker keeps circling one theme: for a frozen model, the <em>harness</em> is where capability, cost, and reliability are decided — the long-horizon survey calls long-horizon ability a property of the Model × Harness system, and the harness-handbook argues scaffolds should be readable, navigable, editable. NOOA is a concrete bet on what the harness's <em>interface</em> should be. Today an agent is scattered across prompt templates, JSON tool schemas, callback code, and a workflow graph — four representations of one behavior, none of them ordinary code. NOOA's claim is that Python already has the right abstractions (classes, methods, types, <code>asyncio</code>, control flow), they're mature, and — crucially — they're dense in LLM training data, so both the human and the model already know the interface.</p>
+<p>The second reason it matters is measured, not aesthetic. Because tool outputs stay live as typed Python values instead of being re-serialized into the transcript every turn, NOOA hits frontier accuracy at roughly half the tokens and half the model calls of comparable open harnesses, and it does so without lossy transcript compaction. That's the same insight as PRO-LONG's programmatic memory ("keep the full record, query it as a database, don't compress") and coding-agents-as-long-context-processors, but pushed down into the agent's <em>calling convention</em>: data an agent operates on need not pass through the context window at all.</p>
+<h2>The core idea</h2>
+<p>An agent is a Python object; agentic methods are the parts you leave to the model.</p>
+<pre><code class="language-python">from nooa import Agent
+
+TicketKind = Literal[&quot;refund&quot;, &quot;damaged&quot;, &quot;other&quot;]
+
+class Ticket(BaseModel):
+    kind: TicketKind
+    priority: int = Field(ge=1, le=5, description=&quot;Urgency 1 (low) to 5 (high).&quot;)
+    summary: str = Field(description=&quot;Customer-visible summary of the issue.&quot;)
+
+class SupportAgent(Agent):
+    &quot;&quot;&quot;You are a support agent for a customer service system.&quot;&quot;&quot;
+    order_db: OrderDB                        # object state: model-visible, by reference
+
+    def is_refund_eligible(self, order: Order) -&gt; bool:   # real body → deterministic
+        &quot;&quot;&quot;Return whether an order is eligible for a refund.&quot;&quot;&quot;
+        return order.delivered and order.days_since_delivery &lt;= 30
+
+    @strategy(PredictStrategy())             # &quot;...&quot; body → single typed LLM call
+    async def classify(self, message: str) -&gt; TicketKind:
+        &quot;&quot;&quot;Classify the customer message into the best ticket kind.&quot;&quot;&quot;
+        ...
+
+    @strategy(CodeActStrategy())             # &quot;...&quot; body → iterative code-writing loop
+    async def triage(self, message: str, photo: Image | None,
+                     order: Order | None) -&gt; Ticket:
+        &quot;&quot;&quot;Triage a customer message and create a support ticket.&quot;&quot;&quot;
+        ...
+</code></pre>
+<p>The class is simultaneously source code, prompt surface, type contract, tool interface, and state boundary. Five design principles drive it: (P1) reuse Python abstractions rather than inventing a DSL; (P2) reframe an agentic loop as a typed method call with pass-by-reference arguments; (P3) move deterministic work (arithmetic, parsing, exact rules) <em>out</em> of the model loop into normal method bodies; (P4) unlock the model's existing Python knowledge by letting it act via code; (P5) expose harness internals (context blocks, event history) as Python APIs the model itself can call. The paper claims NOOA is the first kit to combine six model-facing capabilities on one surface — typed I/O, pass-by-reference, code-as-action, programmable loop engineering, explicit object state, and model-callable harness APIs — and surveys 14 frameworks to show the field converging on subsets of them.</p>
+<h2>How it works</h2>
+<p><img alt="The CodeAct strategy loop: render context, call LLM, execute Python, update events and state, repeat until a type-validated result is returned" src="assets/nooa-object-oriented-agents/fig1.png" /></p>
+<p><em>Figure 5 from the paper: the optional long-term memory subsystem. <code>MemoryManager.install(agent)</code> attaches memory to an unmodified agent; the agent curates its own store via seven tools (write / recall / search / update / forget / associate / deref); a BeforeTurn hook injects associated memories; asynchronous reflection consolidates the store. All state lives in one inspectable SQLite file.</em></p>
+<p><strong>The agentic loop.</strong> A <code>@strategy</code>-decorated method with a <code>...</code> body runs as a loop: render context → call LLM → (if it writes code) execute Python in a restricted Jupyter-like session → append typed events and update state → repeat until the model calls <code>return_result(...)</code> with a value that passes return-type validation. Two built-in strategies: <code>PredictStrategy</code> (one typed LLM call, local retry on validation failure — for classification/extraction) and <code>CodeActStrategy</code> (an iterative REPL where the model calls <code>execute_python(...)</code>). Strategies are per-method and override model/truncation/context, so a small fast model can serve <code>classify</code> while a frontier model serves <code>triage</code>.</p>
+<p><strong>Pass-by-reference — the key mechanism.</strong> Rendering context does <em>not</em> mean serializing state into the prompt. A list of 100 integers renders as:</p>
+<pre><code class="language-text">records = list(len=100, [:5]=[42, 17, 89, 33, 8], [-5:]=[56, 71, 12, 45, 28])
+</code></pre>
+<p>The preview shows the concrete type, true length, and a head/tail sample. But <code>records</code> is the full 100-element list, bound as a local in the execution environment — the model can <code>for r in records: ...</code> over all of it though only ten elements ever enter context. The amount of data an agent can process is bounded by the execution environment, not the prompt: a method can accept a multi-million-row table and the model works on the whole thing by writing code. This is code-as-action + pass-by-reference together — the model spills results to typed live variables (not untyped text on disk, the bash pattern models already improvise) that persist cell to cell.</p>
+<p><strong>Context in three regions, engineered for the KV cache.</strong> A cacheable <em>static</em> prefix (system prompt + strategy instructions + <code>doc(self)</code>), an append-only <em>event history</em> of typed events (queryable, collapsible into summaries à la MemGPT), and a <em>dynamic</em> suffix re-rendered each turn (<code>pprint(self)</code>, live state). Static prefix never changes, history only appends, volatile state sits at the tail — so live-state updates don't invalidate the cached prefix. Both developer and model manipulate context through the same Pythonic API (<code>self.context[...]</code>, <code>self.events.query(...)</code>, <code>self.events.collapse(...)</code>).</p>
+<p><strong>Safety by construction.</strong> <code>eval</code>/<code>exec</code>/<code>compile</code>/<code>input</code> and blocking event-loop calls are rejected; tracebacks come back in IPython format so the next turn can repair code like a notebook cell. Termination is a <em>validated</em> action: the model must return a typed result (e.g. a <code>TaskResult</code> with root cause + evidence + verification command), not just stop talking.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Capability tests</strong> (does the model even understand the interface?): 88 tests × 5 runs × 10 models = 4,400 records, <strong>97.9% pass</strong> zero-shot. Frontier models (Opus 4.8, GPT-5.5, Gemini 3.1 Pro, GLM-5.2, Kimi K2.6, Nemotron 3 Ultra) 99.2%; small models 96.0%. GPT-5.5 is perfect. The residual failures concentrate in six "stress" families (batch bookkeeping, error recovery, multi-step REPL) — 84.7% — which the authors read as long-horizon <em>reliability</em> frontiers, not interface-comprehension gaps.</li>
+<li><strong>SWE-bench Verified</strong>: NOOA leads every open harness in every config. GPT-5.5: 67.2 / 78.8 / 82.2% (off/high/xhigh); Opus 4.6: 79.8%. vs OpenCode 78.6% and PI 78.2% at xhigh. Narrows the gap to closed systems (Codex 88.7%, Claude Code 80.8%) with a 253-line agent.</li>
+<li><strong>Cost</strong>: 82.2% at ~28 calls / 1.1M tokens vs PI's 78.2% at 66 calls / 2.2M — roughly half the calls and tokens for higher accuracy. NOOA defines most of the score–cost Pareto frontier (Figure 6).</li>
+<li><strong>Terminal-Bench 2.0</strong>: bigger margin — 73.0% (GPT-5.5 high) vs OpenCode 60.7%; the interface helps most when the model supplies less planning discipline of its own.</li>
+<li><strong>CyberGym L1</strong> (vulnerability discovery): 86.8% with GPT-5.5 (network blocked), top open-source agent, beating most closed solutions — validated by an 18-pass red-team cheat-check audit.</li>
+<li><strong>ARC-AGI-3</strong>: the sharpest demonstration — NVIDIA's prior 6-agent DreamTeam world-model system (1,821 lines of role prompts + a 4,690-line retrodiction engine) collapses into <em>one</em> NOOA agent + a 50-line skill, with the CodeAct REPL as simulator and the memory subsystem as carry-forward ledger. Reaches 50.2% RHAE on GPT-5.5 and 85.1% on GPT-5.6-sol (vs 13.3% for raw GPT-5.6-sol — a 6.4× harness effect), under $20/game, with a +11.8-point lift over the same skill using markdown files instead of the memory subsystem.</li>
+</ul>
+<p><img alt="ARC-AGI-3 fleet-mean RHAE vs wall-clock: world-model skill + memory reaches 50.2% on GPT-5.5 and 85.1% on GPT-5.6-sol, above the baseline skill (41.7%) and the no-memory markdown ablation (38.4%)" src="assets/nooa-object-oriented-agents/fig2.png" /></p>
+<p><em>Figure 7 from the paper: RHAE (action-efficiency score vs per-level human baselines) over the two-hour fleet cap. The dashed line is ARC Prize's evaluation of raw GPT-5.6-sol (13.3%); dots mark each $4 of per-game spend.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>OpenHarness: Claude Code Reimplemented in Python</strong> and <strong>Harness Handbook</strong> — same thesis (harnesses should be ordinary, inspectable code); NOOA pushes it into the model-facing <em>calling convention</em>, not just the developer-facing implementation.</li>
+<li><strong>PRO-LONG: Programmatic Memory</strong> and <strong>Coding Agents Are Effective Long-Context Processors</strong> — pass-by-reference is the calling-convention version of "keep the full record live and query it with code" rather than stuffing it into the prompt.</li>
+<li><strong>Training Agents Inside Their Harnesses</strong> and <strong>The Agent Is Its Own Best Speculator</strong> — NOOA is the substrate such harness-native training/latency work would run on; its KV-cache-friendly three-region context is the same prefix-stability concern.</li>
+<li><strong>NVIDIA's DreamTeam / workspace optimization</strong> (cited as companion work <code>sarafian2026workspace</code>) — NOOA's long-term memory targets the <em>transfer</em> problem that workspace optimization leaves open (the workspace is discarded at each task boundary).</li>
+<li><strong>wGraph</strong> and <strong>NOOA</strong> are two answers to "how should agent workflows be expressed" — graph serving engine vs plain Python objects; a useful contrast for the multi-agent-orchestration debate in this tracker.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The strongest evidence is the ARC-AGI-3 collapse and the token-efficiency numbers; the weakest is the framing that this is fundamentally new. Pass-by-reference over a live REPL is essentially what CodeAct/OpenHands and Pydantic's CodeMode already do, and the paper's own Table 7 admits Microsoft's harness providers, OpenAI's sandbox agents, and Codex's code mode all shipped these ideas during the evaluation window — so "first to combine all six" is a real but narrow claim, and several competitors are marked experimental/flag-gated in ways that flatter NOOA. The benchmark comparisons also mix backends and reasoning efforts (GPT-5.5 xhigh for the headline SWE-bench number, Opus 4.6 elsewhere), and NOOA doesn't win everywhere — PI edges it on Terminal-Bench GPT-5.5 xhigh. The deeper open question is the one the stress tests expose: the interface is trivially learnable (97.9%), but disciplined multi-step <em>use</em> of it — batching, recovery, decomposition — is still a capability frontier that scales with model quality, so how much of NOOA's win is the interface vs the frontier model driving it remains partly confounded (the margins shrink as reasoning effort rises, which the authors honestly note). Still: a 253-line agent competitive with Claude Code, at half the tokens, on an interface models use zero-shot, is a strong argument that a lot of agent-framework complexity is incidental.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The <code>...</code> body is the whole idea</strong>: one line marks the boundary between deterministic Python and an LLM loop, so an agent is testable, traceable, refactorable software instead of a scatter of prompts, schemas, and callbacks.</li>
+<li><strong>Pass-by-reference breaks the context-window ceiling</strong>: the model sees a bounded preview while the full typed object stays live in the execution session — so data volume is bounded by the machine, and you get ~2× token/call efficiency for free by never re-serializing tool outputs.</li>
+<li><strong>Harness &gt; model, quantified</strong>: the same GPT-5.6-sol goes from 13.3% raw to 85.1% inside NOOA on ARC-AGI-3, and a 6-agent 6,500-line system compresses to one agent + a 50-line skill — the strongest single data point in this tracker for "the scaffold is where the capability lives."</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 16:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

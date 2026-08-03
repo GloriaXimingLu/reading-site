@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HiSME: Hierarchical Skill Meta-Evolving for Agent Skill Libraries (Tsinghua/Huawei)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>HiSME: Hierarchical Skill Meta-Evolving for Agent Skill Libraries (Tsinghua/Huawei)</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2605.28390">arXiv:2605.28390</a> · <a href="https://arxiv.org/abs/2605.28390">arXiv</a> · <a href="https://x.com/jiqizhixin/status/2084198331111104812">X post</a> · <a href="https://anonymous.4open.science/r/HiSME-BD45">anonymous.4open.science</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"You Live More Than Once: Towards Hierarchical Skill Meta-Evolving" (arXiv 2605.28390; Xujun Li, Kehan Zheng, et al., Tsinghua + Huawei Foundation Model Dept.) argues that test-time skill evolving is itself a flawed human-designed prior — so HiSME evolves <strong>the evolving algorithm too</strong>, by distilling <em>meta-skills</em> (rules-of-thumb for the extractor/refactorer/refiner roles) from the observed outcomes of the skills those roles produced.</li>
+<li>Everything is text-space and test-time: the executor (claude-sonnet-4-6) stays frozen, skills are gated by LLM-maintained test bundles and credit assignment, and each role keeps ≤5 meta-skills refreshed from a replay buffer of (artifact, later-evidence) pairs.</li>
+<li>On BFCL-v4 multi-turn, HiSME reaches 0.800 official-valid vs 0.760 for the identical framework without meta-evolving (and 0.747 for SkillX, 0.580 skill-free); on MineDojo it hits 0.856 success while <em>reducing</em> interaction rounds and tokens below the no-skill baseline. Frozen meta-skills transferred into a fresh static run recover most of the gap (0.694 → 0.771).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Skill libraries are becoming the standard answer to "how does a frozen agent improve?" — distill execution traces into reusable text artifacts, retrieve them later. This tracker is full of the first-order version: MSCE converts memory into evidence-gated executable skills, Qwen's skill self-play co-evolves proposer/solver/controller, OpenSpace shares self-evolving skills across agents, and the UNC agent autonomously built a SOTA memory system. But in nearly all of these, the <em>strategy</em> that extracts, tests, and prunes skills is hard-coded. If the extraction prompt has a systematic bias — say, it keeps promoting brittle rules triggered by surface words like "urgent" — the library pays for that defect forever, and maintenance keeps repairing the same failure pattern.</p>
+<p>HiSME's question is the obviously-next-but-rarely-asked one: <strong>can the skill-evolving framework itself be optimized at test time, with the same machinery?</strong> That is a small, concrete instance of recursive self-improvement — a second-order loop stacked on the first-order loop, both operating in text space with no weight updates. It's directly in the lineage of the self-improvement survey's scaffold-improvement branch and the long-horizon survey's Harness × Optimization co-evolution framing: here the harness component being co-evolved is the skill-lifecycle policy. The paper's own limitations section even gestures at third-order evolution. Whether these higher-order loops keep paying off is one of the live questions for self-improving systems, and this is one of the first clean measurements of the second order in isolation.</p>
+<h2>The core idea</h2>
+<p>Frame everything as <strong>residual optimization</strong>. The frozen executor is a flawed prior with residual utility <span class="arithmatex">\(\epsilon_{0}\)</span>; a skill-evolving algorithm <span class="arithmatex">\(\textsc{Evo}_0\)</span> is a posterior optimizer that claws back part of that residual:</p>
+<div class="arithmatex">\[J_{1}(\textsc{Evo}_{0})=\mathbb{E}_{\{S_{t}\}_{t=1}^{T}\sim\textsc{Evo}_{0}(S_{0},\mathcal{D},\textsc{Exe}_{0})}\left[J_{0}(\textsc{Exe}_{S_{T}})-J_{0}(\textsc{Exe}_{0})\right],\]</div>
+<p>where <span class="arithmatex">\(J_0\)</span> is expected task utility, <span class="arithmatex">\(\textsc{Exe}_S\)</span> is the executor conditioned on skill library <span class="arithmatex">\(S\)</span>, and <span class="arithmatex">\(J_1\)</span> is the utility improvement the evolving algorithm delivers. HiSME's core claim is that the evolving algorithm — designed from human priors — is itself flawed, leaving a second-order residual:</p>
+<div class="arithmatex">\[\epsilon_{1}=\max_{\textsc{Evo}}J_{1}(\textsc{Evo})-J_{1}(\textsc{Evo}_{0})&gt;0.\]</div>
+<p>The remedy is the same trick one level up: learn run-time experiences — <strong>meta-skills</strong> <span class="arithmatex">\(M_t\)</span> — that condition the evolving algorithm, and update them periodically:</p>
+<div class="arithmatex">\[\widehat{\textsc{Evo}}_{t+1}=\widehat{\textsc{Evo}}_{t}(\cdot\,|\,M_{t}),\qquad M_{t+1}=\textsc{MetaEvo}(M_{t},\mathcal{D}_{t}).\]</div>
+<p>In the paper's hierarchy: traces are order 0 (the utility target), skills are first-order information about trace utility, and meta-skills are second-order information — rules about which <em>kinds</em> of skill extraction and maintenance decisions tend to produce helpful skills.</p>
+<h2>How it works</h2>
+<p><img alt="HiSME overview: executor traces feed skill generation; skill outcomes feed meta-skill generation back into the evolving roles" src="assets/hisme-skill-meta-evolving/fig1.png" /></p>
+<p><em>Figure 1 from the paper: red arrows are pre-hoc skill guidance to the executor, blue arrows are posterior evidence from traces to skills, green arrows are learned feedback (meta-skills) to the evolving procedure itself.</em></p>
+<p><strong>First-order loop (skill evolving).</strong> Three LLM roles generate and maintain skills for a frozen ReAct executor:</p>
+<ul>
+<li><strong>Extractor</strong> — mines single traces for reusable fragments (3 candidates sampled per trace, since single-trace extraction is noisy). Skills come in three semantics, following SkillX: callable functions, workflow frameworks, domain knowledge.</li>
+<li><strong>Refactorer</strong> — mines <em>groups</em> of traces/skills for shared structure via an overlap graph: nodes are trace segments, edge weights combine n-gram overlap, embedding similarity, and error-text overlap; high-purity cliques (shared tools, shared precondition failure, shared argument-binding pattern) are abstracted into concise skills.</li>
+<li><strong>Refiner + filter</strong> — each skill carries an evidence state <span class="arithmatex">\(e_{t}(s)=\{B(s),\,c_{t}(s),\,u_{t}(s)\}\)</span>: a test bundle <span class="arithmatex">\(B(s)\)</span> of unit/integration cases (short-term: does the skill implement its declared contract?), credit events <span class="arithmatex">\(c_t(s)\)</span> from an LLM judging whether the exposed skill helped/harmed/was neutral on real traces (long-term utility), and usage stats <span class="arithmatex">\(u_t(s)\)</span>. The refiner revises skills whose evidence suggests better scope or triggers, releasing new versions only after the bundle passes; the filter disables a skill when harmful credits <span class="arithmatex">\(h_s\ge\tau\)</span> and positive credits fall short of the protection threshold <span class="arithmatex">\(\tau_p\)</span> (gate reconstructed from the paper's prose — the rendered inequality is truncated in the HTML).</li>
+</ul>
+<p><strong>Second-order loop (meta-evolving).</strong> Every role <span class="arithmatex">\(r\in\{\textsc{Ext},\textsc{Rfc},\textsc{Rfn}\}\)</span> keeps a replay buffer <span class="arithmatex">\(\mathcal{B}^{r}_{t}\)</span> linking each artifact it produced to the evidence that later accumulated on it. Periodically (every 5 tasks), a MetaEvo agent samples the buffer and distills at most 5 rules-of-thumb per role, which are injected into that role's context: <span class="arithmatex">\(r_t(\cdot)=r(\cdot;M^{r}_{t})\)</span>. The learned rules are strikingly operational rather than generic prompting advice — e.g., "extract parameter contracts only when multiple independent traces confirm the pattern," "don't extract workflow guardrails triggered by sentiment keywords; require verifiable state or API preconditions," each traced back to concrete helpful/harmful credit events in the appendix.</p>
+<pre><code class="language-text"># HiSME core loop (frozen executor, all text-space)
+S ← ∅                                   # skill library
+M[r] ← ∅ for r in {Ext, Rfc, Rfn}       # ≤5 meta-skills per role
+B[r] ← ∅                                # per-role replay buffers
+for each task batch D_t (maintenance + meta-update every 5 tasks):
+  for task x in D_t:
+    skills ← retrieve(S, x)             # lexical + embedding + tool/domain + trust
+    τ ← Executor(x | skills)            # frozen ReAct executor
+    G ← Ext(τ ; M[Ext])                 # single-trace candidates (3 samples)
+    C ← top_cliques(overlap_graph(traces ∪ S))
+    G ← G ∪ Rfc(C ; M[Rfc])             # cross-trace refactoring
+    for s in G: build bundle B(s); release s iff bundle passes
+    credit ← CreditAssigner(τ, exposed skills)   # helpful/harmful/neutral
+    update e(s) = {bundle, credits, usage} for all exposed s
+  # maintenance
+  for s in S:
+    if e(s) suggests scope/trigger fix: s' ← Rfn(s, e(s); M[Rfn])
+      release s' iff updated bundle passes
+    if h_s ≥ τ and p_s &lt; τ_p: disable(s)
+  # meta-evolving (second order)
+  for r in {Ext, Rfc, Rfn}:
+    B[r] += {(artifact, evidence) for artifacts produced by r}
+    M[r] ← MetaEvo(M[r], sample(B[r])) # keep ≤5 rules-of-thumb
+</code></pre>
+<h2>Results</h2>
+<p>Setup: claude-sonnet-4-6 as both executor and all maintenance roles; BFCL-v4 multi-turn (150 train / 50 held-out test, skills frozen at test) and MineDojo with <em>primitive</em> actions and text-only ray perception (30/30). Three runs each. The load-bearing comparison is <strong>HiSME vs HiSME-static</strong> — identical lifecycle machinery, meta-evolving ablated.</p>
+<ul>
+<li><strong>BFCL-v4</strong>: official-valid 0.800 ± .053 (HiSME) vs 0.760 ± .020 (static) vs 0.747 (SkillX) vs 0.647 (AWM) vs 0.580 (no skills). Gains show up in call recall <em>and</em> precision — the library changes trajectory structure, not just prompt bulk.</li>
+<li><strong>MineDojo</strong>: success 0.856 ± .019 vs 0.700 (static), 0.733 (SkillX), 0.689 (no skills) — while using <em>fewer</em> executor rounds (40.3 vs 46.8) and fewer total tokens (27.8M vs 27.4M no-skill, vs 39.7M static). Good skills shorten long-horizon episodes.</li>
+<li><strong>Ablations</strong> (BFCL): removing the refactorer is catastrophic (−0.24 official-valid) — reusable structure needs cross-trace evidence; removing extractor −0.10, refiner −0.086, credit filter −0.045.</li>
+<li><strong>Meta test</strong> (the most interesting table): freeze the meta-skills from a finished HiSME run and hand them to a <em>fresh</em> static run — official-valid jumps 0.694 → 0.771, nearly matching full HiSME, at no extra cost. The learned evolving rules are transferable artifacts, though avg_score doesn't fully transfer (0.814 → 0.802).</li>
+<li>Meta-evolving's overhead is small: total maintenance budget 15.37 MTok vs 15.03 static on BFCL.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>MSCE: Converting Agent Memory into Executable Skills</strong> — MSCE is the governance story for <em>skills</em> (evidence-gated crystallization); HiSME governs the <em>governor</em>. MSCE's crystallization gates and HiSME's bundle+credit gates are close cousins; HiSME adds the layer that tunes the gating policy itself.</li>
+<li><strong>Qwen Skill Self-Play</strong> and <strong>OpenSpace</strong> — co-evolution of skill producers/consumers via RL and sharing; HiSME gets a co-evolution effect purely in context, no training.</li>
+<li><strong>Survey: Self-Improvement in Modern Agentic Systems</strong> and <strong>Survey: Long-Horizon Agents as Harness × Optimization Co-Evolution</strong> — HiSME is a clean data point for the "scaffold improves the scaffold" branch, and a micro-instance of the C3 (learning across task streams) level.</li>
+<li><strong>Self-Improving Agents Should Evolve Their Benchmarks</strong> and <strong>Co-Evolving Evaluation Criteria</strong> — same second-order instinct applied to evaluation instead of skill maintenance.</li>
+<li><strong>UNC: Agent Autonomously Builds a SOTA Memory System</strong> — an agent improving its own harness in one shot; HiSME makes the improvement continual and evidence-driven.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The direction is right and the meta-test is genuinely compelling, but the evidence is thinner than the framing. Test sets are tiny (50 and 30 tasks), variance is large (±0.053 on the headline number — the HiSME/static gap on BFCL is roughly one standard deviation), and both benchmarks were driven by a single executor model; whether meta-skills learned under claude-sonnet-4-6 transfer across executors is untested. The whole tower rests on LLM-based credit assignment, which the authors themselves flag: a biased credit judge poisons both the filter <em>and</em> the replay buffer the meta-level learns from — second-order learning amplifies first-order judgment errors rather than correcting them. Meta-skills are also capped at 5 free-text rules per role, which is closer to automated prompt-tuning of three fixed roles than to open-ended evolution of the algorithm's structure; the roles themselves, the 5-task cadence, and the overlap-graph machinery all remain human-designed and static. And note the MineDojo oddity: HiSME-static <em>underperforms</em> Memento there (0.700 vs 0.833), with only full HiSME winning — so the "architectural advantage" claim is benchmark-dependent. Still, "the evolving strategy is a learnable object, and its learned rules transfer to future runs" is a result worth having, and cheap enough that any skill-library system here could bolt it on.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Skill evolving is a posterior optimizer on a frozen executor's residual; HiSME shows the optimizer <em>itself</em> has a learnable residual: <span class="arithmatex">\(\epsilon_1 = \max_{\textsc{Evo}} J_1(\textsc{Evo}) - J_1(\textsc{Evo}_0) &gt; 0\)</span>, and you can capture part of it with ≤5 rules-of-thumb per role, learned from (artifact → later evidence) replay.</li>
+<li>Cross-trace evidence beats single-trace intuition: the overlap-graph refactorer is the single most important component (−0.24 official-valid when removed), echoing MSCE's "positive estimated gain" gating.</li>
+<li>Meta-skills are transferable: frozen rules from one run lift a cold-start static run from 0.694 to 0.771 official-valid — learned <em>process</em> knowledge, not just learned task knowledge, can be shipped between deployments.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-03 16:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
