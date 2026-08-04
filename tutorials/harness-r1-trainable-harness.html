@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness-R1: Training the Harness Engineer, Not the Agent</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness-R1: Training the Harness Engineer, Not the Agent</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.02276">arXiv:2608.02276</a> · <a href="https://arxiv.org/abs/2608.02276">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084499480926105991">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Harness-R1: Learning to Edit Executable Runtime Harnesses from Agent Failure Trajectories" (arXiv 2608.02276; Shuai Shao, Kangning Zhang, Qingyao Li, Shijian Wang, Hao Wang, Wenxiang Jiao, Yuan Lu, Yi Guo, Weiwen Liu, Weinan Zhang) is, per the authors, the first method that makes <strong>failure-conditioned, lifecycle-wide editing of an existing executable runtime a learned capability</strong>: a dedicated 9B "harness engineer" reads batches of a frozen agent's failures and writes validated executable patches to the runtime around it.</li>
+<li>The engineer is trained in two stages — cold-start SFT on ~1,000 teacher-proposed, validation-filtered edits, then <strong>online GRPO where the only reward is the realized success change from rerunning the frozen target on the same task batch</strong> with the patch installed. No KL penalty, no format bonus: a patch is worth exactly what it does.</li>
+<li>Across WebShop, ALFWorld, and DBBench, patches from the trained engineer lift a frozen Qwen3.5-9B from 44.3% to 53.6% average success (+9.3 points), beating every prompted frontier editor (best: GLM-5.2 at 48.8%); the editing policy transfers to 20 unseen target models (+7.06 points average, no per-target retuning) and keeps helping (+5.0) even after the target itself is fine-tuned.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This tracker has been circling one question all year: when an agent system improves, should the gradient flow into the model or into the harness? Microsoft's "Training Agents Inside Their Harnesses" put RL on the model while holding the scaffold fixed; the Sakana/Berkeley recursive-harness work and the Harness Handbook treat the harness as the thing to improve but do it with frozen prompted models; and the "Model or Harness" failure-mode taxonomy (added to the tracker today) argues most production agent bugs live on the seams between model and scaffolding, so the <em>repair</em> often belongs to the harness side.</p>
+<p>Harness-R1 is the missing quadrant: it applies weight-updating RL, but to a <strong>separate engineer model whose actions are harness edits</strong>, while the deployed agent stays frozen. That's an attractive operating point for anyone who can't retrain the production model (API models, compliance-frozen checkpoints, multi-tenant targets) but accumulates failure trajectories for free during deployment. And the headline negative result matters just as much: prompting GPT-5.5-class frontier models to do the same editing job is unreliable, because they optimize for <em>plausible-looking</em> patches and never observe whether a patch actually raises task success. Outcome-grounded training beats scale at this job — a trained 9B engineer outperforms every prompted frontier editor.</p>
+<h2>The core idea</h2>
+<p>Let <span class="arithmatex">\(A\)</span> be a frozen target agent (model + base runtime) and <span class="arithmatex">\(B=\{x_i\}_{i=1}^{n}\)</span> a batch of tasks in environment <span class="arithmatex">\(E\)</span>. Running the unmodified agent yields baseline trajectories <span class="arithmatex">\(\tau_i^0\)</span> and rewards <span class="arithmatex">\(R_i^0\)</span>. A deterministic extractor keeps only failed episodes and compacts task constraints, selected action–observation excerpts, outcomes, and needed environment state into a <strong>failure packet</strong> <span class="arithmatex">\(s_B\)</span>. The engineer <span class="arithmatex">\(H_\theta\)</span> reads the packet once and emits a batch-conditioned <strong>executable overlay</strong> <span class="arithmatex">\(P\)</span> — it never answers tasks or joins rollouts.</p>
+<p>The overlay hooks the agent loop at four lifecycle points, touching only inputs and outputs around the frozen policy: (i) <strong>episode initialization</strong> (starting context/state), (ii) <strong>pre-decision</strong> (augment context with guidance and interface constraints), (iii) <strong>pre-action</strong> (a guardrail that may canonicalize, rewrite, or veto an action before it reaches the environment), (iv) <strong>post-feedback</strong> (inspect observations, trigger recovery on stalls). Patches are validated before installation; invalid patches have no effect.</p>
+<p>After installation, the same frozen target reruns <em>every</em> task in <span class="arithmatex">\(B\)</span> — including the ones that already succeeded, so regressions count. The engineer's reward is the full-batch performance difference:</p>
+<div class="arithmatex">\[\Delta_{B}(P)=\frac{1}{n}\sum_{i=1}^{n}\left(R_{i}^{P}-R_{i}^{0}\right),\qquad r(B,P)=\begin{cases}\Delta_{B}(P), &amp; \text{if valid and complete},\\ 0, &amp; \text{otherwise},\end{cases}\]</div>
+<p>where <span class="arithmatex">\(R_i^P\)</span> is task <span class="arithmatex">\(i\)</span>'s reward under the patched runtime (the cases form of <span class="arithmatex">\(r(B,P)\)</span> is transcribed from the paper's Eq. 1). This reward is non-differentiable and only observable after an edit changes agent behavior — hence RL.</p>
+<p>Cold-start SFT first gives the engineer a prior over valid, executable edits: a GPT-5.5 teacher proposes serialized editing responses <span class="arithmatex">\(y_j^T\)</span> for failure packets, each validated on the frozen target, keeping at most one executable, complete, non-regressive response per packet (~1,000 examples), trained with standard next-token prediction</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{SFT}}(\theta)=-\frac{1}{\sum_{j}|y_{j}^{T}|}\sum_{j=1}^{M}\sum_{t=1}^{|y_{j}^{T}|}\log H_{\theta}\!\left(y_{j,t}^{T}\mid s_{j},y_{j,&lt;t}^{T}\right).\]</div>
+<p>Online GRPO then optimizes realized utility: sample <span class="arithmatex">\(K=8\)</span> candidate patches per packet, evaluate each by a full-batch rerun, and normalize rewards within the group,</p>
+<div class="arithmatex">\[\widehat{A}_{k}=\frac{r_{k}-\mu_{B}}{\sigma_{B}},\]</div>
+<p>with <span class="arithmatex">\(\mu_B,\sigma_B\)</span> the mean/std of the eight same-packet candidates. The sequence-level advantage is shared across all response tokens and plugged into a token-averaged clipped surrogate</p>
+<div class="arithmatex">\[\mathcal{J}(\theta)=\mathbb{E}\!\left[\frac{1}{K}\sum_{k=1}^{K}\frac{1}{T_{k}}\sum_{t=1}^{T_{k}}w_{k,t}\,\min\!\Big\{\rho_{k,t}\widehat{A}_{k},\ \operatorname{clip}(\rho_{k,t},1-\epsilon_{\ell},1+\epsilon_{h})\widehat{A}_{k}\Big\}\right],\]</div>
+<p>where <span class="arithmatex">\(\rho_{k,t}\)</span> is the token importance ratio against the old policy and <span class="arithmatex">\(w_{k,t}=\operatorname{clip}(\exp(\ell^{\mathrm{tr}}_{k,t}-\ell^{\mathrm{ro}}_{k,t}),0,2)\)</span> is a truncated importance weight correcting the training-engine vs rollout-engine log-prob mismatch. Only engineer parameters <span class="arithmatex">\(\theta\)</span> update; the target never does.</p>
+<h2>How it works</h2>
+<p><img alt="Harness-R1 overview: mined target failures become an evidence bundle; the harness engineer writes an executable patch editing four lifecycle points around the frozen target; same-batch reruns provide outcome rewards" src="assets/harness-r1-trainable-harness/fig1.png" /></p>
+<p><em>Figure 2 from the paper: the failure-to-edit-to-rerun loop. The trainable engineer (left) and the frozen task agent (right) are strictly separated; the patch touches episode-init, pre-decision, pre-action, and post-feedback hooks only.</em></p>
+<pre><code class="language-text"># Offline: cache base runs
+for each task batch B:
+    run frozen target A with base harness  -&gt;  trajectories tau^0, rewards R^0
+    extractor(failures)                     -&gt;  failure packet s_B
+
+# Stage 1: cold-start SFT
+teacher proposes edits y^T for packets; validate on frozen A
+keep &lt;=1 executable, complete, non-regressive edit per packet
+SFT engineer H_theta on ~1,000 (s, y^T) pairs
+
+# Stage 2: online, outcome-grounded GRPO
+repeat until budget exhausted:
+    sample update bundle U from cached records (B, s_B, R^0)
+    for each (B, s_B, R^0) in U:
+        sample K=8 patch candidates P_1..P_K ~ H_theta(. | s_B)
+        for each P_k: parse + validate
+            if valid: install P_k, rerun A on ALL of B  -&gt;  R^{P_k}
+                      r_k = mean_i(R_i^{P_k} - R_i^0)
+            else:     r_k = 0
+        A_hat_k = (r_k - mean_k r) / std_k r          # group-relative
+    update theta on clipped surrogate (truncated IS weights, no KL)
+</code></pre>
+<p>Two details are load-bearing. First, the objective is <strong>same-batch and transductive</strong>: the patch is scored on the very tasks whose failures it saw, with no iterative refinement within an instance and no persistent patch memory across batches — which controls task composition but raises the overfitting question the held-out experiment then has to answer. Second, invalid/no-op/incomplete patches get zero reward rather than being filtered out, so validity itself is under optimization pressure.</p>
+<h2>Results</h2>
+<p><img alt="Matched-baseline reward changes across WebShop, ALFWorld, DBBench for prompt strategies, frontier editors, and Harness-R1" src="assets/harness-r1-trainable-harness/fig2.png" /></p>
+<p><em>Figure 1 from the paper: matched-baseline reward changes across the three benchmarks; diamonds mark the equal-weight average. Prompted frontier editors are unstable; the outcome-trained engineer is consistently positive.</em></p>
+<ul>
+<li><strong>Main result</strong> (Qwen3.5-9B target; 500/500/300 test tasks on WebShop/ALFWorld/DBBench): average success 44.3% → 53.6% (+9.3 points), largest gain on ALFWorld (40.6% → 53.2%). The outcome-trained engineer beats the supervised-only engineer by 7.1 points — the RL stage, not the SFT prior, carries most of the value.</li>
+<li><strong>Versus alternatives</strong>: best prompted frontier engineer (GLM-5.2) reaches 48.8%. Fixed prompt strategies are not reliably positive: ReAct +3.2, Self-Refine −2.5 (Reflection's 55.8% is a cumulative two-episode protocol, not comparable). </li>
+<li><strong>Co-evolution</strong>: after direct SFT of the target agent (59.2% avg), a target-specific engineer still adds +5.0 points to 64.2% — harness editing doesn't saturate once the actor improves.</li>
+<li><strong>Cross-target transfer</strong>: applied to 20 unseen target models (each supplying its own failures, receiving a fresh patch), benchmark-averaged gain is +7.06 points, every target-level average positive; 56 of 63 target–benchmark cells improve and the 3 regressions are ≤2.0 points.</li>
+<li><strong>Held-out tasks</strong>: from just 10 observed failures, one patch applied to 1,270 unseen tasks yields +8.9±1.5 points, positive on every seed — while Qwen3.5-397B and DeepSeek-V4-Pro as editors average <em>negative</em> (−4.3±2.5, −0.4±3.6) under the identical protocol.</li>
+<li><strong>Lifecycle ablation</strong>: full patch +8.9 over no intervention; disabling pre-action mediation costs 3.9 points and post-feedback recovery 3.3, versus 0.9/0.6 for episode-start/pre-decision — with the dominant hook depending on environment (pre-action on WebShop, recovery on ALFWorld). The authors caution these are conditional effects, not a universal ranking.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>[Training Agents Inside Their Harnesses (Microsoft)]</strong> is the exact dual: gradient into the model, harness fixed. Harness-R1: gradient into the harness (via an engineer), model frozen. The pair brackets the co-evolution design space that the <strong>[Long-Horizon Agents as Harness × Optimization Co-Evolution]</strong> survey maps.</li>
+<li><strong>[Recursive Harness Self-Improvement (Sakana/Berkeley)]</strong> and <strong>[Harness Handbook]</strong> improve harnesses with prompted frozen models; Harness-R1's frontier-editor baselines are essentially that approach, and its data says training the editor beats prompting a bigger one.</li>
+<li><strong>[Model or Harness: 41 Agent Failure Modes]</strong> (added today) gives the diagnostic vocabulary — failures live on component-interaction edges; Harness-R1 is the repair loop for the harness-side edges, with pre-action and post-feedback (the tool/environment seams) empirically carrying most of the value.</li>
+<li><strong>[SkillHone]</strong> (also today) evolves the <em>content</em> the agent loads (skills) via persistent decision history without any weight updates; Harness-R1 trains an engineer that edits the <em>runtime code</em>. Both keep the target frozen; they differ in what accumulates (artifacts + history vs. engineer weights).</li>
+<li><strong>[RLSVR]</strong> and <strong>[ISO]</strong> are the RLVR-infrastructure backdrop: Harness-R1's reward (rerun deltas on a frozen target) is another instance of manufacturing a verifiable signal where none exists natively.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The transductive objective is doing quiet work: during training, a patch is scored on the batch whose failures it was written from, so the reward measures "fix these tasks" rather than "fix this agent." The held-out experiment is the right response and its result is genuinely strong (+8.9 from 10 failures), but it covers one target and three classic academic environments — WebShop, ALFWorld, and DBBench are small, resettable worlds with short episodes, far from the SWE-agent-scale harnesses where lifecycle edits would be most valuable and reruns most expensive. And the cost profile deserves scrutiny: every GRPO group requires up to 8 full-batch reruns of the target, which is affordable at 500-task batches with cheap episodes and painful anywhere else. The "no persistent patch memory across batches" design also means the system re-derives fixes rather than accumulating them — the engineer's weights are the only memory, which is elegant for RL but wasteful at deployment; a SkillHone-style history layer on top seems like the obvious hybrid. Finally, the four hook points are hand-chosen; "lifecycle-wide" is really "these four seams," and the ablation shows the payoff is concentrated in two of them. None of this undercuts the central finding — outcome-grounded training makes a small editor beat prompted frontier models at a job that looks like it should be about raw capability — but the scaling story to production harnesses is still unwritten.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The harness is now a trainable component</strong>: a separate 9B engineer, post-trained with GRPO against same-batch rerun deltas, edits four runtime hooks around a frozen agent — +9.3 points average over three benchmarks.</li>
+<li><strong>Outcome beats plausibility</strong>: prompted frontier editors (GPT-5.5, GLM-5.2, DeepSeek-V4-Pro...) write valid-looking patches that often don't help or actively hurt; the trained 9B engineer beats them all because its reward is realized task success, not textual reasonableness.</li>
+<li><strong>The gains sit at the action and feedback seams</strong>: pre-action mediation and post-feedback recovery carry ~7 of the 8.9 ablation points — consistent with the "failures live on the model–environment edges" thesis of the failure-mode taxonomy work.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-04 16:04 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FutureBridge-OPD: Look Ahead Before You Distill</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>FutureBridge-OPD: Look Ahead Before You Distill</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.01953">arXiv:2608.01953</a> · <a href="https://arxiv.org/abs/2608.01953">arXiv</a> · <a href="https://x.com/sheriyuo/status/2084495842321616959">X post</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Look Ahead Before You Distill: Future Trajectory Validation of Teacher Guidance for Agentic On-Policy Distillation" (arXiv 2608.01953; Chishui Chen, Yaoyou Fan, Te Sun, Yi Yang, and 10 further authors; code released) attacks a temporal failure of agentic on-policy distillation: a teacher action can look better <em>at the current turn</em> and still push the student into a worse future.</li>
+<li>FutureBridge-OPD (FTB) finds the student turn with maximum teacher–student disagreement, has the teacher execute a one-turn "bridge" from the restored environment state, rolls the <em>student</em> forward from both branches, and keeps the teacher action only if the student's continuation after the bridge is more teacher-preferred than the continuation after its own action — a paired, future-validated gate that needs no reward labels beyond B2F's reference trajectories.</li>
+<li>With a Qwen3-32B teacher and Qwen3-1.7B student on ALFWorld/WebShop/ScienceWorld, FTB beats vanilla OPD by 16.6 and TCOD-B2F by 7.6 average success points; accepted bridge tokens are only 8.8% of optimization tokens but contribute 75.2% of the total positive distillation advantage.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>On-policy distillation is this tracker's most-covered training recipe for a reason: dense token-level supervision on states the student actually visits, at a fraction of RL's cost. But everything the tracker has filed under multi-turn OPD — TCOD's teacher replay, Flux-OPD's evolving contexts, MOPD's no-free-lunch results — wrestles with the same structural issue: in multi-turn environments the student's small deviations compound, and the teacher's per-turn opinion is a <em>myopic</em> signal. Injecting a teacher action where disagreement is highest assumes local disagreement marks a fixable mistake. Sometimes it marks a place where the teacher's preferred action, executed in this student's trajectory, strands the student in states it cannot handle — teacher guidance that is locally superior and globally harmful.</p>
+<p>FTB's contribution is to make the intervention decision <em>empirical</em> rather than assumed: actually execute the teacher's alternative in the environment, actually roll the student forward, and compare futures before adding the teacher action to the training buffer. That "validate guidance by its downstream effect on the student" move is the distillation-side analogue of what turn-level credit assignment (TRACE) did for agentic RL, and it lands with an unusually crisp accounting: a tiny, validated subset of teacher tokens carries three-quarters of the useful learning signal. For anyone running teacher→student pipelines for agents — which, per β-OPSD and the Liquid AI post-training stack (both added to the tracker today), is increasingly the industrial default — this is a concrete answer to "when should the teacher intervene?"</p>
+<h2>The core idea</h2>
+<p>Standard OPD minimizes the student–teacher divergence on student-visited states:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{OPD}}(\theta)=\mathbb{E}_{\tau\sim p_{\pi_{\theta}}}\left[\sum_{t=1}^{T}D_{\mathrm{KL}}\left(\pi_{\theta}(\cdot\mid h_{t})\,\|\,\pi_{\phi}(\cdot\mid h_{t})\right)\right],\]</div>
+<p>where <span class="arithmatex">\(\pi_\theta\)</span> is the student, <span class="arithmatex">\(\pi_\phi\)</span> the teacher, and <span class="arithmatex">\(h_t\)</span> the interaction history at turn <span class="arithmatex">\(t\)</span>. FTB builds on TCOD's back-to-forward (B2F) curriculum: replay the first <span class="arithmatex">\(L-k\)</span> turns of a successful reference trajectory, let the student finish, and grow <span class="arithmatex">\(k\)</span> over training. The raw sampled distillation advantage of student token <span class="arithmatex">\(x_{t,i}\)</span> in context <span class="arithmatex">\(c_{t,i}\)</span> is</p>
+<div class="arithmatex">\[A_{t,i}=\beta\left[\log\pi_{\phi}(x_{t,i}\mid c_{t,i})-\log\pi_{\bar{\theta}}(x_{t,i}\mid c_{t,i})\right],\]</div>
+<p>with <span class="arithmatex">\(\beta&gt;0\)</span> the distillation coefficient and <span class="arithmatex">\(\pi_{\bar\theta}\)</span> the frozen rollout student; positive means the teacher likes the sampled token more than the student that produced it.</p>
+<p><strong>Localize.</strong> Score each student-controlled turn by its length-normalized disagreement <span class="arithmatex">\(\widehat{d}_{t}=\frac{1}{M_{t}}\sum_{i}\log\frac{\pi_{\bar{\theta}}(x_{t,i}\mid c_{t,i})}{\pi_{\phi}(x_{t,i}\mid c_{t,i})}\)</span>, which by autoregressive factorization is just <span class="arithmatex">\(-\overline{A}_t/\beta\)</span>, and pick the realized response the teacher supports least:</p>
+<div class="arithmatex">\[t^{\star}=\arg\max_{t\in\mathcal{T}_{S}(\tau)}\widehat{d}_{t}=\arg\min_{t\in\mathcal{T}_{S}(\tau)}\overline{A}_{t},\]</div>
+<p>over student turns after the replayed prefix, excluding the final turn. At most one bridge per trajectory bounds validation cost.</p>
+<p><strong>Bridge and validate.</strong> The teacher generates <span class="arithmatex">\(a^{\mathrm{br}}_{t^\star}\)</span> from the same history <span class="arithmatex">\(h_{t^\star}\)</span>; the environment state at <span class="arithmatex">\(t^\star\)</span> is restored, the bridge executes in place of the student action, and the <em>frozen student</em> continues for <span class="arithmatex">\(H\)</span> turns, giving <span class="arithmatex">\(\xi^{\mathrm{br}}\)</span>; the continuation after the original student action gives <span class="arithmatex">\(\xi^{\mathrm{base}}\)</span>. Define the <strong>teacher-preferred token ratio</strong> of any student-generated sequence <span class="arithmatex">\(y\)</span>:</p>
+<div class="arithmatex">\[\rho(y)=\frac{1}{|y|}\sum_{i=1}^{|y|}\mathbf{1}\!\left[A_{i}(y)&gt;0\right],\]</div>
+<p>the fraction of tokens the teacher assigns higher likelihood than the frozen student (length-normalized so a few large log-prob gaps can't dominate). The gate accepts the bridge iff its induced future is more teacher-aligned:</p>
+<div class="arithmatex">\[g(\tau)=\mathbf{1}\left[\rho(\xi^{\mathrm{br}})&gt;\rho(\xi^{\mathrm{base}})\right].\]</div>
+<p>Accepted bridges (only the bridge action, not the continuations) enter the B2F experience buffer and are optimized with an advantage-weighted log-likelihood loss, <span class="arithmatex">\(\mathcal{L}_{\mathrm{bridge}}(\theta)=-\mathbb{E}\big[\frac{g(\tau)}{M_{\mathrm{br}}}\sum_{i}\operatorname{sg}[A_{i}^{\mathrm{br}}]\log\pi_{\theta}(x_{i}^{\mathrm{br}}\mid c_{i}^{\mathrm{br}})\big]\)</span>, whose gradient at <span class="arithmatex">\(\theta=\bar\theta\)</span> matches a sampled squared teacher–student log-prob discrepancy objective (proof in the paper's Appendix D). No environment reward or success label is consumed beyond B2F's successful reference trajectories.</p>
+<h2>How it works</h2>
+<p><img alt="FutureBridge-OPD overview: on-policy student rollouts provide distillation signals; maximum teacher–student disagreement picks a candidate bridge turn; paired continuations validate the teacher action before it enters training" src="assets/futurebridge-opd/fig1.png" /></p>
+<p><em>Figure 2 from the paper: (1) B2F student rollouts, (2) disagreement-based bridge-turn selection, (3) teacher bridge + paired student continuations, (4) the future-validation gate deciding what enters the buffer.</em></p>
+<pre><code class="language-text">for each B2F rollout tau (teacher prefix replayed, student finishes):
+    # 1. localize
+    for each student turn t (excluding final):
+        d_t = mean_token log( pi_student(x|c) / pi_teacher(x|c) )
+    t* = argmax_t d_t                       # most teacher-disliked realized turn
+
+    # 2. bridge
+    a_br ~ teacher(. | h_{t*})              # student decoding config
+    restore environment state at t*
+    xi_br   = execute a_br,  frozen student rolls H turns
+    xi_base = continuation after original student action
+
+    # 3. future-validation gate
+    rho(y) = fraction of tokens in y with A_i(y) &gt; 0
+    if rho(xi_br) &gt; rho(xi_base):
+        add a_br to B2F experience buffer   # continuations are evidence only
+
+# 4. train student: OPD loss on own rollouts
+#    + advantage-weighted NLL on accepted bridge tokens
+</code></pre>
+<p>The two aggregations are complementary uses of one sampled signal: the <em>signed mean</em> advantage localizes a weakly supported realized action; the <em>positive-token fraction</em> characterizes the whole induced future. And the gate is deliberately relative — paired continuations share the pre-intervention history and the same frozen student, so their difference isolates the causal effect of swapping that one action.</p>
+<h2>Results</h2>
+<p><img alt="Teacher-preferred token ratio by student turn on ALFWorld and WebShop for FTB and ablations" src="assets/futurebridge-opd/fig2.png" /></p>
+<p><em>Figure 4 from the paper: FTB keeps the teacher-preferred token ratio higher across most student turns; removing bridge execution or future validation degrades it.</em></p>
+<ul>
+<li><strong>Main setting</strong> (Qwen3-32B teacher, ALFWorld/WebShop/ScienceWorld, TCOD splits, 200 optimization steps for all methods): with a Qwen3-1.7B student, FTB beats vanilla OPD by <strong>+16.6</strong> and TCOD-B2F by <strong>+7.6</strong> average success points; with Qwen3-4B, +7.5 and +5.2. Baselines include TCOD-F2B and Guided-OPD.</li>
+<li><strong>Student beats its zero-shot teacher on WebShop</strong>: the FTB-trained 1.7B outperforms both the 4B student and the zero-shot 32B teacher, taking simpler paths (7.67 steps average, 32% max-step rate vs 11.37 and 51% for the 4B) — validated local guidance seems to let the student develop a more efficient task-specific policy rather than imitating teacher verbosity.</li>
+<li><strong>RL-trained teacher</strong> (Qwen3-8B-RL → Qwen3-4B): best on all reported metrics, +4.5/+4.3 average success over OPD/TCOD-B2F.</li>
+<li><strong>Ablations</strong>: replacing the max-disagreement turn with a random turn hurts most; skipping actual bridge execution, or executing but skipping future validation, both consistently degrade. The full pipeline wins on all metrics.</li>
+<li><strong>Signal concentration</strong>: bridge tokens are 8.8% of optimization tokens but contribute <strong>75.2% of total positive distillation advantage</strong>. Over half of accepted bridges fire at the first student turn, ~85% within five; acceptance falls from 39.7% (turn 1) to 4–7% (late turns) — early deviations are both more common and more fixable.</li>
+<li><strong>What bridges change</strong>: on ALFWorld 91.5% modify the student action (58.9% keep the action type, changing target/argument); on WebShop 68.9% modify, mostly arguments. Fine-grained corrections dominate wholesale rewrites.</li>
+<li><strong>Cost</strong>: despite the extra bridge and validation rollout, FTB runs faster per step than vanilla OPD on ALFWorld (the authors attribute the paired machinery's cost as offset by shorter, more efficient student trajectories).</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>[Multi-Turn OPD via Teacher Replay (Microsoft)]</strong> — FTB is built directly on TCOD's B2F curriculum and inherits its splits; the delta is the look-ahead gate on when teacher actions may enter the buffer.</li>
+<li><strong>[OPD Isn't a Free Lunch (MOPD)]</strong> and <strong>[OPD-Squared / On-Policy Delta Distillation]</strong> — the failure FTB targets (locally attractive, globally harmful teacher guidance) is a mechanism behind the no-free-lunch results; FTB is the first in this tracker to <em>test</em> the counterfactual future rather than reweight the local signal.</li>
+<li><strong>[TRACE: Turn-Level Rewards]</strong> — same philosophical move on the RL side: judge a turn by what it does to the rest of the trajectory, not by its local score.</li>
+<li><strong>[β-OPSD]</strong> (added today) — "RL derives targets, distillation trains" — pairs naturally: FTB's validated bridges are exactly the kind of dense, quality-controlled targets that compilation view wants.</li>
+<li><strong>[Experiential Learning / Rubric Feedback as Privileged Information]</strong> — another route to richer-than-scalar supervision; EL widens the <em>channel</em> (advice instead of scores), FTB filters the <em>content</em> (only future-validated corrections).</li>
+</ul>
+<h2>Critical take</h2>
+<p>The gate never touches task reward: it accepts a bridge when the student's future becomes <em>more teacher-like</em>, on the bet that teacher-likeness is a good proxy for success. On these benchmarks — where the teacher is a much stronger model and B2F already anchors training to successful reference trajectories — the bet pays off, but it is circular in an important way: guidance is validated against the same teacher whose judgment is in question, so a teacher with a systematic blind spot (say, a bias toward an action pattern the environment punishes late) would validate its own bias. A success-labeled variant of the gate seems like the obvious ablation the paper doesn't run. Second, the machinery requires <strong>restorable environment state</strong> — trivially available in ALFWorld/WebShop/ScienceWorld simulators, mostly unavailable for real tool-use agents whose side effects (API calls, file writes, purchases) can't be rewound; the honest scope here is "simulator-trainable agents," the same restriction that quietly limits most of the agentic RL literature. Third, one bridge per trajectory and max-disagreement selection is a strong sparsity prior; the trigger-position analysis (85% of bridges in the first five turns) suggests it works because early errors dominate in these short-horizon tasks (15–30 steps) — at 200-step horizons, single-intervention validation with an <span class="arithmatex">\(H\)</span>-turn window may localize much less cleanly (sensitivity to <span class="arithmatex">\(H\)</span> is deferred to Appendix E). Still, the 8.8%-of-tokens/75.2%-of-signal statistic is the most convincing evidence yet in this tracker that agentic distillation quality is about <em>which</em> teacher tokens you train on, not how many.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Local disagreement proposes; the future disposes</strong> — FTB executes the teacher's alternative, rolls the student forward, and keeps the correction only if the student's induced future gets more teacher-preferred (<span class="arithmatex">\(\rho(\xi^{\mathrm{br}})&gt;\rho(\xi^{\mathrm{base}})\)</span>).</li>
+<li><strong>Validated sparsity beats volume</strong>: 8.8% of training tokens (accepted bridges) carry 75.2% of the positive distillation advantage; +16.6 over vanilla OPD and +7.6 over TCOD-B2F with a 1.7B student.</li>
+<li><strong>Watch the two constraints</strong>: the gate validates teacher-likeness (not success), and the method needs restorable environment state — both fine in simulators, both open problems for real-world agentic distillation.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-04 16:04 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
