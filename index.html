@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">195 papers/posts · 31 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks</p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">30</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">27</span></a><a href="#distillation">Distillation <span class="count">11</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">23</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">7</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">8</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">18</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">6</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">27</span></a><a href="#data">Data &amp; Datasets <span class="count">6</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">15</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">17</span></a></nav><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
+<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">199 papers/posts · 31 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks</p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">30</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">28</span></a><a href="#distillation">Distillation <span class="count">11</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">23</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">7</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">8</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">20</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">6</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">28</span></a><a href="#data">Data &amp; Datasets <span class="count">6</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">15</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">17</span></a></nav><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
 <div class="card-head"><span class="title">Qwen Skill Self-Play: Co-Evolving Proposer/Solver/Controller</span><span class="badge like">like</span></div>
 <p class="snippet">Alibaba&#x27;s Qwen team releases Skill Self-Play
 
@@ -434,6 +434,11 @@ LLM RL wastes a lot of compute generating rollouts. So people reuse the same rol
 00:00 Intro
 00:13 Q1: Should capabilitie…</p>
 <p class="card-meta">@natolambert · added 2026-08-05 · <a href="https://x.com/natolambert/status/2084655250125033898">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Chunky Post-Training: RLVR Distribution Pattern-Matching in Model Behavior</span><span class="badge feed">feed</span></div>
+<p class="snippet">Interesting how these models go into a monomaniacal rage on cyber evals. I wonder if we&#x27;re seeing chunky post-training https://t.co/uqCinTD7I3 in action, where the models pattern-m…</p>
+<p class="card-meta">@johnschulman2 · added 2026-08-05 · <a href="https://arxiv.org/abs/2602.05910">arXiv</a> · <a href="https://x.com/johnschulman2/status/2084835800899076313">X post</a></p>
 <p class="card-actions"> </p>
 </div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card">
 <div class="card-head"><span class="title">Survey: On-Policy Distillation for LLMs</span><span class="badge bookmark">bookmark</span></div>
@@ -966,6 +971,26 @@ Multi-Head Attention Residuals: attention residuals read the depth history throu
 We show that language can be modeled with high-capacity continuous representations and generated through diffu…</p>
 <p class="card-meta">@scy994 · added 2026-08-05 · <a href="https://arxiv.org/abs/2608.02602">arXiv</a> · <a href="https://github.com/fyv587/AURORA-LM">GitHub</a> · <a href="https://x.com/scy994/status/2084851063979741189">X post</a> · <a href="https://huggingface.co/papers/2608.02602">huggingface.co</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">AURORA-LM: Continuous-Latent Diffusion Language Model</span><span class="badge feed">feed</span></div>
+<p class="snippet">🌌 AURORA-LM: a continuous-latent diffusion LM.
+
+It learns native, decodable continuous text representations and generates with diffusion.
+
+Language in continuous space — toward a u…</p>
+<p class="card-meta">@JingkangY · added 2026-08-05 · <a href="https://arxiv.org/abs/2608.02602">arXiv</a> · <a href="https://x.com/JingkangY/status/2084830971858448712">X post</a> · <a href="https://aurora-lm-project.github.io/">aurora-lm-project.github.io</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Kimi K3 Architecture Decomposed: KDA + MLA + Stable LatentMoE + AttnRes</span><span class="badge feed">feed</span></div>
+<p class="snippet">转一下苏剑林老师对 K3 架构的复盘。
+一句话概括，K3 = KDA + MLA + Stable LatentMoE + AttnRes。整套设计没什么炫技，核心就是在模型效果、计算效率和训练稳定性之间做取舍。
+
+这里稍微解释一下：
+KDA，一种线性 Attention
+MLA，一种 KV Cache 较小的 Full Attention 变体
+Stabl…</p>
+<p class="card-meta">@AI_Whisper_X · added 2026-08-05 · <a href="https://x.com/AI_Whisper_X/status/2084624661955170474">X post</a> · <a href="https://kexue.fm/archives/11848">kexue.fm</a></p>
+<p class="card-actions"> </p>
 </div></section><section id="world-models"><h2>World Models &amp; Embodiment</h2><p class="cat-desc">World models, video-as-world, robot policies.</p><div class="card">
 <div class="card-head"><span class="title">Looped World Models: Reusable Depth for Long Rollouts</span><span class="badge bookmark">bookmark</span></div>
 <p class="snippet">“Looped World Models”
@@ -1217,6 +1242,13 @@ Imagine using the same model, same task, and same prompt. Now move it between tw
 <div class="card-head"><span class="title">AISI Incident Report: Unsanctioned Agent Behaviour during Frontier Cyber Evaluations</span><span class="badge feed">feed</span></div>
 <p class="snippet">The UK’s @AISecurityInst (AISI) has published a report on their recent cybersecurity evaluation of Anthropic’s Claude Mythos 5 and OpenAI’s GPT-5.6 Sol. The models attempted to com…</p>
 <p class="card-meta">@AISecurityInst, @AnthropicAI, @OpenAI · added 2026-08-05 · <a href="https://x.com/AISecurityInst/status/2084746202579386632">X post</a> · <a href="http://www.aisi.gov.uk/blog/incident-report-unsanctioned-agent-behaviour-during-cyber-testing">aisi.gov.uk</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Terminal-Bench 3.0: Harder by Measuring Weak Capabilities, Not Complexity</span><span class="badge feed">feed</span></div>
+<p class="snippet">A benchmark gets harder in two ways: by adding complexity, or by measuring capabilities models still struggle with.
+
+Wrote a short piece for @turingcom on why I think Terminal-Benc…</p>
+<p class="card-meta">@sunotsue_ · added 2026-08-05 · <a href="https://x.com/sunotsue_/status/2084715931180413003">X post</a> · <a href="https://www.turing.com/blog/introducing-terminal-bench-3-0">turing.com</a></p>
 <p class="card-actions"> </p>
 </div></section><section id="data"><h2>Data &amp; Datasets</h2><p class="cat-desc">Datasets, data curation, data pipelines.</p><div class="card">
 <div class="card-head"><span class="title">DataComp for VLMs: A Data-Curation Testbed</span><span class="badge bookmark">bookmark</span></div>
@@ -1534,6 +1566,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-08-05 16:06 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-05 16:42 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>
