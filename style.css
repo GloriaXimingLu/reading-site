@@ -90,3 +90,6 @@ article img { max-width: 100%; height: auto; border: 1px solid var(--border); bo
 article img + em, article p > em:only-child { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
 .badge.feed { background: var(--accent-soft); color: var(--accent); }
 mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+.latest-row { margin: 4px 0; font-size: 0.9rem; }
+#latest { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 4px 16px 12px; margin-top: 20px; }
+#latest h2 { border: 0; margin: 10px 0 6px; padding: 0; font-size: 1.05rem; }
