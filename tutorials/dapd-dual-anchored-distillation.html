@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAPD: Dual-Anchored Policy Distillation — Fixing the Privilege Illusion in On-Policy Self-Distillation</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>DAPD: Dual-Anchored Policy Distillation — Fixing the Privilege Illusion in On-Policy Self-Distillation</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.01735">arXiv:2608.01735</a> · <a href="https://arxiv.org/abs/2608.01735">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2085017922192249255">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.01735">alphaxiv.org</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<ul>
+<li>"DAPD: Dual-Anchored Policy Distillation" (arXiv 2608.01735; Jianyu Wu, Yizhou Wang, Encheng Su, Chen Tang, Shixiang Tang) names and fixes a failure mode of on-policy <em>self</em>-distillation (OPSD): <strong>privilege illusion</strong> — the student learns behavior that depends on the reference answer its teacher saw during training, then acts at inference as if that answer were still available, asserting "recalled" answers it never derived.</li>
+<li>The diagnosis is <strong>information asymmetry</strong>: OPSD's teacher is the same policy conditioned on the ground-truth reference <span class="arithmatex">\(y^*\)</span>, the student is the same policy without it, so the KL target mixes "how to reason" with "what the answer is." DAPD inserts a <strong>self-conditioned bridge distribution</strong> (condition the policy on the very completion being predicted) and aligns teacher and student only along <strong>matched-information paths</strong>, in both reference-guided and rollout-guided directions.</li>
+<li>On Qwen3-4B across six benchmarks, DAPD beats OPSD by <strong>+2.00 points average</strong> (57.34 vs 55.34); the gain <em>grows</em> with scale (+2.69 at 4B, +2.78 at 32B on reasoning Avg@12) while OPSD's gains largely vanish at scale — and DAPD cuts "wrong claims" (unsupported recalled answers) by <strong>73%</strong> relative to OPSD late in training.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>On-policy self-distillation has quietly become one of the standard post-training moves: no separate teacher model, just the policy itself given privileged information (the reference completion) as the target distribution for its own unprivileged rollouts. This tracker has followed the OPD line closely — the on-policy distillation survey, multi-turn OPD via teacher replay, OPD-Squared's delta distillation, and MOPD's "no free lunch" caveats — and the recurring theme is that the <em>construction of the teacher</em> is where these methods succeed or silently fail.</p>
+<p>DAPD's contribution is to give the failure a mechanism and a measurement. The privileged teacher <span class="arithmatex">\(p_\theta(\cdot\mid x, y^*)\)</span> doesn't just show the student better reasoning; it also leaks the answer into every token-level target. A student that faithfully matches those targets learns, among other things, to <em>behave like a model that knows the answer</em> — confident assertions, skipped derivations, "I recall the answer is..." moves that are only justified when a reference actually sits in context. At inference there is no reference, but the behavior remains. That is precisely the "privilege illusion," and the authors show it is not hypothetical: under vanilla OPSD, unsupported answer-claims nearly triple over training (13.0 → 37.0 per 10k generations) while accuracy degrades.</p>
+<p>For anyone using rubrics, hints, tools, or reference answers to strengthen a teacher — which is most of the current post-training playbook, including the rubric-as-privileged-information work already in this tracker — this is the cautionary tale plus the repair.</p>
+<h2>The core idea</h2>
+<p>Setup: training distribution <span class="arithmatex">\(\mathcal{D}\)</span> over prompt–reference pairs <span class="arithmatex">\((x, y^*)\)</span>; student policy <span class="arithmatex">\(p_\theta\)</span> samples rollouts <span class="arithmatex">\(y \sim p_\theta(\cdot\mid x)\)</span>. At each token position <span class="arithmatex">\(t\)</span> of a rollout, OPSD compares two views of the <em>same</em> policy:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{OPSD}}=\mathbb{E}_{(x,y^*)\sim\mathcal{D},\; y\sim p_\theta(\cdot\mid x)}\left[\frac{1}{|y|}\sum_{t=1}^{|y|}\mathrm{D}\!\left(\operatorname{sg}\!\left[p_{\mathrm{Cross},t}\right]\middle\|\;p_{\mathrm{None},t}\right)\right],\]</div>
+<p>where <span class="arithmatex">\(p_{\mathrm{None},t}=p_\theta(\cdot\mid x,y_{&lt;t})\)</span> is the inference-condition view, <span class="arithmatex">\(p_{\mathrm{Cross},t}=p_\theta(\cdot\mid x,y_{&lt;t},y^*)\)</span> is the privileged view conditioned on the reference, <span class="arithmatex">\(\mathrm{D}\)</span> is a token-level divergence, and <span class="arithmatex">\(\operatorname{sg}[\cdot]\)</span> is stop-gradient. The asymmetry is visible in the equation: the target saw <span class="arithmatex">\(y^*\)</span>, the learner never will.</p>
+<p>DAPD's key construction is a third, <strong>self-conditioned</strong> distribution. For a completion source <span class="arithmatex">\(s\in\{y, y^*\}\)</span> (with <span class="arithmatex">\(\bar{s}\)</span> the other one), define on the tokens of <span class="arithmatex">\(s\)</span>:</p>
+<div class="arithmatex">\[p_{\mathrm{None}}^{s}=p_\theta(\cdot\mid x,s_{&lt;t}),\qquad p_{\mathrm{Self}}^{s}=p_\theta(\cdot\mid x,s_{&lt;t},s),\qquad p_{\mathrm{Cross}}^{s}=p_\theta(\cdot\mid x,s_{&lt;t},\bar{s}).\]</div>
+<p><span class="arithmatex">\(p_{\mathrm{Self}}\)</span> conditions the policy on <em>the very completion it is predicting</em> — privileged in form, but carrying no information the completion doesn't already contain. It acts as a trainable bridge between the privileged and unprivileged worlds. Three directed objectives are built from these views:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{ent}}^{s}=\mathbb{E}\!\left[\mathrm{D}\!\left(\operatorname{sg}[p_{\mathrm{Cross}}^{s}]\middle\|p_{\mathrm{None}}^{s}\right)\right],\quad
+\mathcal{L}_{\mathrm{infer}}^{s}=\mathbb{E}\!\left[\mathrm{D}\!\left(\operatorname{sg}[p_{\mathrm{None}}^{s}]\middle\|p_{\mathrm{Self}}^{s}\right)\right],\quad
+\mathcal{L}_{\mathrm{priv}}^{s}=\mathbb{E}\!\left[\mathrm{D}\!\left(\operatorname{sg}[p_{\mathrm{Cross}}^{s}]\middle\|p_{\mathrm{Self}}^{s}\right)\right].\]</div>
+<p><strong>Dual-Path Anchoring (DPA)</strong> then routes supervision along two matched-information paths per direction: an <em>unconditioned path</em> <span class="arithmatex">\(\mathcal{L}_{\mathrm{uncond}}^{s\to\bar{s}}=\mathcal{L}_{\mathrm{infer}}^{\bar{s}}+\mathcal{L}_{\mathrm{ent}}^{s}\)</span> that aligns behavior under inference conditions, and a <em>privileged path</em> <span class="arithmatex">\(\mathcal{L}_{\mathrm{priv}}^{s}\)</span> where <strong>both</strong> endpoints receive conditioning — so the student is never asked to imitate privilege-dependent behavior from an unprivileged position:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{DPA}}^{s\to\bar{s}}=\mathcal{L}_{\mathrm{uncond}}^{s\to\bar{s}}+\mathcal{L}_{\mathrm{priv}}^{s}.\]</div>
+<p><strong>Dual-Source Anchoring (DSA)</strong> applies DPA in both completion directions — reference-guided and rollout-guided — with a balance <span class="arithmatex">\(\lambda\in[0,1]\)</span>:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{DAPD}}=\lambda\,\mathcal{L}_{\mathrm{DPA}}^{y\to y^{*}}+(1-\lambda)\,\mathcal{L}_{\mathrm{DPA}}^{y^{*}\to y},\]</div>
+<p>reducing over-reliance on the reference (which the student may not be able to reach) while keeping its correctness signal. (The <span class="arithmatex">\(s\to\bar{s}\)</span> superscript notation and per-term composition are transcribed from the paper; the exact per-term coefficients live in the paper's Eq. 9.)</p>
+<p><img alt="DAPD overview: Dual-Source Anchoring runs guidance in both reference-to-rollout and rollout-to-reference directions; Dual-Path Anchoring introduces the Self distribution as a trainable bridge, pairing Entangled Distillation with the Inference Anchor on the unconditioned path and the Privileged Anchor on the matched-privilege path" src="assets/dapd-dual-anchored-distillation/fig3.png" /></p>
+<p><em>Figure 3 from the paper: left, Dual-Source Anchoring balances correctness (reference-guided) against student reachability (rollout-guided); right, Dual-Path Anchoring for one direction — OPSD's mismatched arrow (Cross → None) is replaced by two matched-information paths through the Self bridge.</em></p>
+<h2>How it works</h2>
+<pre><code class="language-text"># DAPD training step (LoRA-adapted student p_theta on pairs (x, y*))
+for each minibatch:
+    sample rollout y ~ p_theta(.|x)                      # on-policy
+    for each source s in {y, y*}, with s_bar the other:
+        compute on tokens of s:
+            p_None^s  = p_theta(.|x, s_&lt;t)               # inference view
+            p_Self^s  = p_theta(.|x, s_&lt;t, s)            # self-conditioned bridge
+            p_Cross^s = p_theta(.|x, s_&lt;t, s_bar)        # privileged view
+        L_ent^s   = D( sg[p_Cross^s] || p_None^s )       # entangled distillation
+        L_infer^s = D( sg[p_None^s]  || p_Self^s )       # inference anchor
+        L_priv^s  = D( sg[p_Cross^s] || p_Self^s )       # privileged anchor
+    # dual paths per direction, dual sources across directions
+    L_DPA(s -&gt; s_bar) = L_infer^{s_bar} + L_ent^s + L_priv^s
+    L = lambda * L_DPA(y -&gt; y*) + (1 - lambda) * L_DPA(y* -&gt; y)
+    backprop L; update LoRA parameters only
+    periodically refresh the shared snapshot serving as the
+      entangled-distillation teacher
+# inference/privileged-anchor teachers come from the detached, LoRA-off base
+</code></pre>
+<p>Two implementation details are worth noting. First, the teachers are not all the same object: the two Entangled-Distillation teachers come from a shared, periodically-refreshed snapshot of the current student, while the Inference and Privileged Anchor teachers use the detached LoRA-off base model — the anchors are pinned to a stable reference rather than chasing the moving student. Second, everything is trained with LoRA rather than full fine-tuning, so all six distribution evaluations reuse one backbone with adapters toggled.</p>
+<h2>Results</h2>
+<p><img alt="Training dynamics averaged across five Qwen3 scales: OPSD's wrong claims climb while DAPD's stay suppressed; DAPD's reasoning Avg@12 keeps improving where OPSD degrades" src="assets/dapd-dual-anchored-distillation/fig2.png" /></p>
+<p><em>Figure 2 from the paper: training dynamics for OPSD, Privileged Anchor, and DAPD averaged across five scales — (a) wrong claims per 10k generations, (b) Avg@12 on AIME24/AIME25/HMMT25.</em></p>
+<ul>
+<li><strong>Main table (Qwen3-4B, six benchmarks)</strong>: base 54.46 avg → OPSD 55.34 → DAPD <strong>57.34</strong>. Per-benchmark vs OPSD: AIME25 +4.44, LiveCodeBench v5 +4.82, HMMT25 +3.06, AIME24 +0.55; BFCL v3 and IFBench essentially flat (−0.02, −0.67). The gains concentrate exactly where multi-step derivation matters.</li>
+<li><strong>Scale trend (reasoning Avg@12)</strong>: +1.13 (1.7B), +2.69 (4B), +2.41 (8B), +2.04 (14B), <strong>+2.78 (32B)</strong> over OPSD — and the paper notes OPSD's own gains largely disappear as scale grows, while DAPD's persist. Privilege illusion apparently doesn't self-resolve with capability.</li>
+<li><strong>Privilege-illusion diagnostics</strong>: wrong claims (generations that assert an unsupported "recalled" answer after a failed derivation) rise from 13.0 to 37.0 per 10k under OPSD while Avg@12 falls 59.56 → 53.24. Adding only the Privileged Anchor cuts wrong claims ~45% and adds +6.22 Avg@12; full DAPD cuts them ~73% vs OPSD late in training (+7.66 Avg@12). The qualitative example is telling: on the same AIME24 problem, the OPSD student announces "I recall that the answer is likely..." and is wrong; the DAPD student derives the correct answer end-to-end.</li>
+<li><strong>Ablations</strong>: path components stack (entangled only 62.13 → +inference anchor 63.43 → +privileged anchor 63.89), and sources are complementary — reference-guided alone 63.89, rollout-guided alone 65.09, both <strong>65.28</strong>. Notably, the rollout-guided direction alone already beats reference-guided alone.</li>
+<li><strong>OOD check</strong>: students optimized on reasoning data are also evaluated on coding/instruct benchmarks (Table 2 in the paper) to confirm the gains aren't domain-overfit.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>[Survey: On-Policy Distillation for LLMs]</strong> and <strong>[MiniLLM Notes]</strong> frame the OPD design space; DAPD lives in the self-distillation corner where teacher = policy + privilege, and identifies that corner's characteristic pathology.</li>
+<li><strong>[On-Policy Distillation Isn't a Free Lunch (MOPD)]</strong> catalogued when OPD hurts; privilege illusion is a concrete, measurable mechanism behind one class of those failures — with "wrong claims per 10k" as a reusable diagnostic.</li>
+<li><strong>[FutureBridge-OPD]</strong> (in the tracker since yesterday) validates teacher interventions by their downstream trajectory effect; DAPD validates teacher <em>targets</em> by information symmetry. Both are filters on what the teacher is allowed to teach.</li>
+<li><strong>[Rubric-Generated Feedback as Privileged Information]</strong> is the RL-side cousin: privileged signals strengthen training but must not be assumed at inference. DAPD's matched-information paths are the distillation-side answer to the same asymmetry.</li>
+<li><strong>[OPD-Squared: On-Policy Delta Distillation]</strong> and <strong>[Multi-Turn OPD via Teacher Replay]</strong> modify <em>what</em> is distilled and <em>when</em>; DAPD modifies <em>under which conditioning</em> — the three are composable in principle.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The mechanism is convincing; the accounting is where questions remain. DAPD evaluates three conditional distributions over two completion sources per step — roughly triple OPSD's forward cost per token (the LoRA-sharing trick helps memory, not FLOPs), and the paper's headline "+2.00" doesn't come with a compute-matched OPSD baseline given extra epochs. The gains are also strongly concentrated in math/code reasoning; BFCL and IFBench are flat, so "privilege illusion degrades performance" should really read "degrades derivation-style tasks." The wrong-claims metric is the paper's most interesting artifact, but its detection (classifying a generation as an unsupported answer-assertion) inherits the usual model-graded fragility. And the ablation's quiet surprise — rollout-guided alone (65.09) nearly matches full DSA (65.28) — suggests most of the value comes from <em>not chasing an unreachable reference</em>, which slightly deflates the dual-source story. Finally, the privilege studied here is one specific kind (the ground-truth reference in context); rubrics, tool outputs, and retrieved documents are messier privileges where the Self-bridge construction is less obviously well-defined. Still, this is the cleanest formalization yet of a failure everyone doing OPSD has probably shipped without noticing, and the fix requires no new models, no verifier, and no reward — just conditioning discipline.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Self-distillation with a privileged teacher trains the student to fake privilege</strong>: under OPSD, unsupported "I recall the answer" claims nearly triple over training while accuracy drops — the student imitates answer-aware behavior it can't back up at inference.</li>
+<li><strong>The fix is matched information, not weaker teachers</strong>: a self-conditioned bridge distribution <span class="arithmatex">\(p_\theta(\cdot\mid x,s_{&lt;t},s)\)</span> lets DAPD align privileged-to-privileged and unprivileged-to-unprivileged views only, in both reference- and rollout-guided directions.</li>
+<li><strong>The gap widens with scale</strong>: OPSD's gains fade by 32B while DAPD holds +2.78 — conditioning asymmetry, not model capacity, is the binding constraint on self-distillation quality.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-05 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
