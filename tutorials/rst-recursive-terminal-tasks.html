@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RST: Recursive Synthesis for Long-Horizon Terminal Tasks</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>RST: Recursive Synthesis for Long-Horizon Terminal Tasks</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.05466">arXiv:2608.05466</a> · <a href="https://arxiv.org/abs/2608.05466">arXiv</a> · <a href="https://x.com/Yucheng__Shi/status/2085571304539742703">X post</a> · <a href="../index.html#data">Data &amp; Datasets</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Recursive Synthesis for Long-Horizon Terminal Tasks" (arXiv 2608.05466; Zhongzhi Li, Yucheng Shi, Zongxia Li, Ruhan Wang, and 7 further authors) inverts the usual task-authoring order for terminal agents: instead of writing a task and hoping it's solvable, RST grows a <em>reference solution</em> and its runtime environment first, then fits the verifier and instruction to what already runs — so every task is solvable by construction and carries its own reward signal.</li>
+<li>Starting from 639 verified seeds, fifteen recursive rounds produce <strong>37,484 verified long-horizon terminal tasks at ~$0.05 each</strong>, with difficulty compounding as accepted children become the next round's seeds: DeepSeek-V4-Pro pass@4 falls from 90% at <span class="arithmatex">\(R_1\)</span> to 2.5% at <span class="arithmatex">\(R_{15}\)</span>, while synthesis yield and domain diversity stay flat — no ceiling observed.</li>
+<li>The data trains real agents: SFT on rejection-sampled Qwen3.5 trajectories lifts Qwen3.5-27B on Terminal-Bench 2 from 41.2% to 47.9% (122B-A10B: 43.8% → 49.4%), and agentic PPO on the full pool takes Qwen3.5-27B to 49.44% TB2 / 32.00% TB-Hard — a +41% relative gain on the out-of-distribution hard split.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The scarcest resource in agentic RL right now is not compute or algorithms but <em>verified environments</em>: tasks where the instruction, environment, reference solution, and reward checker are mutually consistent. Human-authored terminal tasks cost hundreds to thousands of dollars each because a single inconsistency — an instruction that mentions a file the environment doesn't ship, a verifier that checks something the solution never produces — silently poisons training. Direct LLM generation of tasks breaks these dependencies constantly. This is the same bottleneck this tracker has filed under the verifier-bottleneck thesis (added today: recursive self-improvement is limited by verification, not compute): compute buys proposals, verifiers buy knowledge.</p>
+<p>RST's answer is a self-improvement loop for the <em>task distribution itself</em>. Because each accepted task must pass a sandbox oracle where its own reference solution satisfies its own verifier, the factory's outputs are verified by construction; because accepted tasks reseed the next round, difficulty compounds without human curation. The result is the missing input for the RL recipes this tracker follows — a graded curriculum of long-horizon terminal tasks (successful trajectories exceed 100 steps in late rounds) that costs about as much as a coffee per thousand tasks. It is also a direct answer to the discussion in "Terminal-Bench 3.0: Harder by Measuring Weak Capabilities" about where benchmark and training-task difficulty should come from.</p>
+<h2>The core idea</h2>
+<p>Don't write the task; grow the solution. Each round takes a verified task — a tuple of instruction, environment, reference solution <code>solve.sh</code>, and private verifier — picks one of 40 rewrite operators, extends the <em>solution</em> with new executable work, aligns the environment/verifier/instruction to the extended behavior, and only accepts the child if the whole tuple still runs and passes in a fresh sandbox.</p>
+<p>The invariant maintained by every accepted task can be written as (reconstructed formalization — the paper states this procedurally, not as an equation):</p>
+<div class="arithmatex">\[\text{accept}(T)\;=\;\mathbf{1}\!\left[\,V_T\big(\mathrm{Exec}(S_T,\,E_T)\big)=\text{pass}\,\right]\;\wedge\;\mathbf{1}\!\left[\,\mathrm{Consistent}(I_T,\,V_T)\,\right],\]</div>
+<p>where <span class="arithmatex">\(T=(I_T,E_T,S_T,V_T)\)</span> is the task's instruction, environment, reference solution, and private verifier; <span class="arithmatex">\(\mathrm{Exec}(S_T,E_T)\)</span> runs the solution in a freshly built sandbox; and <span class="arithmatex">\(\mathrm{Consistent}\)</span> checks that public requirements in the instruction are actually reflected in executable verifier checks. A task is a reward-emitting RL environment exactly when this predicate holds.</p>
+<p>Recursion enters through the seed pool: accepted children of round <span class="arithmatex">\(R_{r-1}\)</span> are the candidate seeds of round <span class="arithmatex">\(R_r\)</span>, under diversity caps on parent lineage, category, rewrite family, and generation cohort so that no single parent or rewrite pattern dominates.</p>
+<h2>How it works</h2>
+<p><img alt="RST overview: recursive task synthesis feeding agent training — accepted tasks seed subsequent synthesis rounds and form the RL task pool, while successful rollouts provide SFT trajectories" src="assets/rst-recursive-terminal-tasks/fig1.png" /></p>
+<p><em>Figure 2 from the paper: the synthesis loop (seed → rewrite → validate → reseed) and its two training consumers — rejection-sampled SFT trajectories and the verifier-rewarded RL pool.</em></p>
+<p><strong>Seeds.</strong> The pipeline bootstraps from 639 verified tasks sampled from TerminalWorld (validated tasks built from real interaction records). Round 1 alone yields 2,820 accepted tasks.</p>
+<p><strong>Target selection and contract.</strong> The generator inspects the seed's files, tools, dependencies, and workflow, then picks one of 40 rewrite operators grouped into five families (Configuration &amp; Control State; Data, Manifest &amp; Schema State; Filesystem &amp; Resource Binding; Build, Cache &amp; Artifact State; Runtime, Tooling &amp; Diagnostics). Before touching anything it writes a <em>rewrite plan</em>: the new required behavior, the solution changes, what the verifier will check, what information the agent gets, and — importantly — which shortcuts the verifier must reject. Plans that make only cosmetic changes or hide required information in private tests are rejected up front.</p>
+<p><strong>Rewrite: grow solution, then align.</strong> The order is the whole trick. First <code>solve.sh</code> is extended with real executable work (deriving values, invoking tools, producing intermediate artifacts); then the environment is modified to support it (dependencies, fixtures, services, permissions); then the verifier is updated to check the new artifacts and state transitions while rejecting placeholders and hard-coded outputs; and only last is the public instruction revised to state the new objective.</p>
+<p><strong>Validate.</strong> Two stages: cheap static filters (near-duplicates of the seed, missing files, invalid metadata, leaked verifier details) before any sandbox is allocated; then the sandbox oracle — build the environment from scratch, execute the reference solution, run the private verifier. Repairable failures get a limited number of log-guided repairs restricted to approved files; persistent failures are discarded. Acceptance additionally requires the instruction–verifier consistency check.</p>
+<pre><code class="language-text">pool ← 639 verified TerminalWorld seeds
+for r = 1 .. 15:
+    seeds ← select(pool, caps: parent lineage, category,
+                   rewrite family, generation cohort)
+    for each seed T = (I, E, S, V) in seeds:
+        op    ← choose_operator(inspect(T), 40 operators / 5 families)
+        plan  ← write_rewrite_plan(T, op);  reject if cosmetic/leaky
+        S'    ← extend_solution(S, plan)          # grow behavior first
+        E'    ← align_environment(E, S')
+        V'    ← align_verifier(V, S', E')         # reject shortcuts
+        I'    ← revise_instruction(I, plan)
+        if static_filters(T') fail: continue
+        if sandbox_oracle(S', E', V') fails:
+            T' ← bounded_repair(T', logs); retry once; else discard
+        if consistent(I', V'): accept T'; pool ← pool ∪ {T'}
+train: SFT on rejection-sampled successful rollouts;
+       PPO with each task's built-in verifier as reward
+</code></pre>
+<h2>Results</h2>
+<p><strong>The factory doesn't degrade.</strong> Passed-task yield per 1,000 seed attempts and candidate pass rate are stable through <span class="arithmatex">\(R_{15}\)</span>; normalized domain entropy moves only from 0.821 to 0.817 and the effective number of domains from 11.22 to 11.09 — no domain collapse. Median reference-solution length grows 67 → 374 lines, executed commands 40 → 244, and instruction length grows much more slowly — the tasks get harder in <em>executable work</em>, not in prompt verbosity.</p>
+<p><img alt="DeepSeek-V4-Pro pass@4 across synthesis rounds, declining monotonically from 90% at R1 to 2.5% at R15" src="assets/rst-recursive-terminal-tasks/fig2.png" /></p>
+<p><em>Figure 12 from the paper: frontier-model pass@4 on task subsets by round — a 90% → 2.5% decline with no observed ceiling; mean verifier partial credit falls 0.970 → 0.170.</em></p>
+<p><strong>SFT.</strong> Fine-tuning on successful Qwen3.5 rollouts improves monotonically as trajectories from more synthesis rounds are added. After three rounds: Qwen3.5-27B goes 41.2 → 47.9 on TB2, 22.7 → 28.3 on TB-Hard, 18.1 → 22.4 on Long-Horizon Terminal Bench; Qwen3.5-122B-A10B goes 43.8 → 49.4, 20.0 → 30.0, 18.9 → 23.6.</p>
+<p><strong>RL.</strong> PPO (actor–critic, GAE, no KL penalty, <span class="arithmatex">\(\epsilon=0.2\)</span>) over the full 37,484-task pool, reward from each task's built-in verifier: mean verifier reward climbs from ~0.11 to above 0.14 while mean trajectory length rises from ~19–20 turns to 30+ — longer interactions track greater task progress, not degradation. Final: Qwen3.5-27B-RL reaches 49.44 / 32.00 / 22.07 on TB2 / TB-Hard / LHTB, relative gains of +20.0%, +41.2%, +21.9% over base, with the largest gain on the <em>independently constructed</em> hard split. DeepSeek-V4-Pro (51.68 / 36.00 / 30.00) stays ahead — headroom remains.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Verifier bottleneck &amp; RSI</strong>: RST is the constructive counterpart to the verifier-bottleneck argument (tracked today) and the empirical-RSI caution from the Narayanan group — it shows one domain where verification <em>can</em> be manufactured at scale, because terminal work is checkable by execution.</li>
+<li><strong>Benchmarks</strong>: the tasks target Terminal-Bench 2 / TB-Hard / LHTB (see "Terminal-Bench 3.0" in this tracker), and the difficulty-by-construction philosophy echoes "Evolving Benchmarks".</li>
+<li><strong>Agentic RL</strong>: the PPO consumer sits alongside TRACE (turn-level rewards) and today's AgentOPSD tutorial — RST supplies the environments those credit-assignment methods need; skill-self-play and AREX cover the analogous self-generated-curriculum idea for skills and research tasks.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The acceptance predicate guarantees <em>solvability</em>, not <em>well-posedness</em>: a verifier aligned to one reference workflow may under-credit legitimate alternative solutions, and the paper's own instruction-audit and requirement-to-verifier-alignment figures (10–11) are measurements, not guarantees. Difficulty growth is partly length growth — pass@4 falling to 2.5% shows tasks got harder, but not that they got harder in <em>interestingly diverse</em> ways; all rewrite operators extend existing workflows, so the pool may drift toward long compositional chains over genuinely novel capabilities. Retaining rewrite variants without deduplication in the RL pool risks reward-correlated near-duplicates. And the strongest trained model still trails DeepSeek-V4-Pro on every benchmark, so the demonstrated value is "cheap data that reliably moves mid-scale models," not frontier-level supremacy. None of this dents the main contribution: a $0.05 marginal cost for verified long-horizon environments changes what's economically feasible in agentic post-training.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Build the solution first, then fit the task to it</strong> — solvability and reward signal come for free, and the sandbox oracle (reference solution must pass its own verifier in a fresh environment) is the whole quality gate.</li>
+<li><strong>Recursion is the difficulty engine</strong>: accepted children reseed the factory, compounding executable complexity (67 → 374 median solution lines) while diversity caps keep the pool from collapsing — 37,484 tasks at ~$0.05 each, frontier pass@4 driven from 90% to 2.5%.</li>
+<li><strong>The data actually trains agents</strong>: +6–10 points SFT on Terminal-Bench 2 and +41% relative via PPO on the out-of-distribution hard split — synthetic task factories are now a viable substitute for hand-built RL environments in the terminal domain.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-07 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

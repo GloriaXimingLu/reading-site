@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentOPSD: Recursive Self-Distillation for Agentic RL</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AgentOPSD: Recursive Self-Distillation for Agentic RL</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.05987">arXiv:2608.05987</a> · <a href="https://arxiv.org/abs/2608.05987">arXiv</a> · <a href="https://github.com/ZethWang/AgentOPSD">GitHub</a> · <a href="https://x.com/rosinality/status/2085666307026964682">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>"AgentOPSD: Recursive Self-Distillation for Agentic Reinforcement Learning" (arXiv 2608.05987; Zi-Han Wang, Zhengxi Lu, Zhiyuan Yao, and 10 further authors — Tsinghua/Zhejiang/Meituan; code released) attacks the core weakness of GRPO-style agentic RL: one trajectory-level advantage broadcast uniformly over every token cannot tell the pivotal turn from the routine one.</li>
+<li>The mechanism is critic-free and needs no extra rollouts: score each turn by how much a <em>privileged self-teacher</em> (the same policy, conditioned on a training-only retrieved skill) prefers the action over the unconditioned policy, accumulate that evidence in a decaying Bayesian belief state in log-odds space, and reweight GRPO's advantage per turn by each turn's <em>marginal belief revision</em> — pivotal turns are the ones that move the belief.</li>
+<li>On ALFWorld, WebShop, and Search-QA with Qwen2.5-3B/7B, AgentOPSD beats GRPO and eight skill/self-distillation baselines: 89.1% ALFWorld success at 7B, and at 3B it lifts ALFWorld 75.0 → 84.4, Search-QA 36.4 → 46.7, and WebShop score 79.8 → 90.4 over GRPO — with no skills used at inference.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Turn-level credit assignment is arguably <em>the</em> open problem in long-horizon agentic RL, and this tracker has been watching its two lineages converge for months. From the RL side, TRACE and GiGPO (both tracked) build turn/step-level advantages from grouping and anchor states, but need either extra structure in the rollouts or matching anchor states. From the distillation side, the OPSD/privileged-distillation line — β-OPSD, FutureBridge-OPD, TCOD teacher replay — provides dense token-level teacher signals but no principled account of <em>sequential</em> credit: a per-token log-prob gap says the teacher disagrees, not whether this turn mattered for the outcome.</p>
+<p>AgentOPSD is the cleanest synthesis of the two lines so far. It keeps GRPO's machinery untouched (same rollouts, same clipped loss, same group advantage) and uses the self-distillation contrast purely as an <em>evidence stream</em> feeding a recursive Bayesian filter. Two properties make it notable for anyone building agentic post-training stacks: the teacher is the policy itself with privileged context (no second model, no extra forward passes beyond scoring with the skill prepended), and the credit signal is explicitly <em>history-dependent</em> — the same local evidence counts more when the outcome is still uncertain and less once support has saturated, which is exactly the intuition value functions were supposed to provide before everyone went critic-free. Ablations attribute the gains specifically to turn-level aggregation and the recursive belief update, i.e., to the credit <em>construction</em> rather than the privileged information itself.</p>
+<h2>The core idea</h2>
+<p>GRPO computes a sequence-level advantage per trajectory <span class="arithmatex">\(i\)</span> in a group of <span class="arithmatex">\(G\)</span> rollouts and gives it to every token. AgentOPSD asks: which turns <em>earned</em> it?</p>
+<p>Directly measuring a turn's counterfactual contribution is intractable, so the paper takes a hindsight-evidential view. Let <span class="arithmatex">\(C\)</span> be the event that the trajectory succeeds. Bayes' rule says an action's effect on the belief in success is a likelihood ratio; AgentOPSD approximates it with a computable <strong>self-teacher contrast</strong>. For token <span class="arithmatex">\(t\)</span> of turn <span class="arithmatex">\(k\)</span>, with student context <span class="arithmatex">\(h_{k,t}=(s_k,y_{k,&lt;t})\)</span> and privileged context <span class="arithmatex">\(h^+_{k,t}=(s_k,c^+,y_{k,&lt;t})\)</span> where <span class="arithmatex">\(c^+\)</span> is a training-only retrieved skill:</p>
+<div class="arithmatex">\[\delta_{k,t}=\log\pi_{\theta}(y_{k,t}\mid h_{k,t}^{+})-\log\pi_{\theta}(y_{k,t}\mid h_{k,t}),
+\qquad
+e_{k}=\sum_{t=1}^{L_{k}}\delta_{k,t}=\log\frac{\pi_{\theta}(a_{k}\mid s_{k},c^{+})}{\pi_{\theta}(a_{k}\mid s_{k})},\]</div>
+<p>so the turn-level evidence <span class="arithmatex">\(e_k\)</span> is the log-ratio by which the skill-conditioned "teacher" branch prefers the whole action <span class="arithmatex">\(a_k\)</span> over the unconditioned student — a tractable proxy for the ideal Bayes factor <span class="arithmatex">\(\log\frac{p(a_k\mid s_k,C)}{p(a_k\mid s_k,\neg C)}\)</span> (conditions in the paper's Appendix A.1).</p>
+<p>Evidence alone isn't credit: the same <span class="arithmatex">\(e_k\)</span> can be pivotal or redundant depending on what came before. So the belief state is updated recursively in log-odds space with decay <span class="arithmatex">\(\gamma\in(0,1]\)</span>, anchored at the group success rate <span class="arithmatex">\(\bar R = S/G\)</span>:</p>
+<div class="arithmatex">\[B_{0}=\operatorname{clip}(\bar{R},\epsilon_{0},1-\epsilon_{0}),\qquad
+\ell_{k}=\operatorname{logit}(B_{0})+\sum_{j=1}^{k}\gamma^{\,k-j}e_{j},\qquad B_{k}=\sigma(\ell_{k}),\]</div>
+<p>where <span class="arithmatex">\(\sigma\)</span> is the sigmoid and <span class="arithmatex">\(\epsilon_0=10^{-4}\)</span> keeps log-odds finite for all-correct/all-wrong groups. A turn's importance is its <strong>marginal belief revision</strong>:</p>
+<div class="arithmatex">\[\Delta B_{k}=B_{k}-B_{k-1}\;\approx\;B_{k-1}(1-B_{k-1})\big(e_{k}-(1-\gamma)\,c_{k-1}\big),\]</div>
+<p>new evidence net of decayed carry-over, gated by the state sensitivity <span class="arithmatex">\(B_{k-1}(1-B_{k-1})\)</span>: evidence moves the belief most under uncertainty and is suppressed once support saturates. Aligning with the verifier gives the credit <span class="arithmatex">\(q_k=\operatorname{sign}(A_{\mathrm{seq}})\,\Delta B_k\)</span>, which is standardized within the trajectory and applied as a bounded multiplier:</p>
+<div class="arithmatex">\[w_{k}^{(i)}=\operatorname{clip}\!\big(1+bz_{k}^{(i)},\,1-b,\,1+b\big),\qquad
+\widetilde{A}_{k}^{(i)}=A_{\mathrm{seq}}^{(i)}\big[(1-\lambda)+\lambda w_{k}^{(i)}\big],\]</div>
+<p>with <span class="arithmatex">\(z_k\)</span> the within-trajectory z-score of <span class="arithmatex">\(q_k\)</span>, <span class="arithmatex">\(b\in(0,1)\)</span> the modulation bound, and <span class="arithmatex">\(\lambda\in[0,1]\)</span> the reshaping strength. The multiplier stays strictly positive, so reshaping never flips GRPO's update direction — it only redistributes magnitude across turns. Tokens inherit their turn's <span class="arithmatex">\(\widetilde A_k\)</span> inside the standard clipped policy-gradient loss; no separate distillation loss exists.</p>
+<h2>How it works</h2>
+<p><img alt="AgentOPSD overview: token-level teacher–student gaps aggregate into turn evidence, a recursive belief state reads off marginal revisions, and GRPO's sequence advantage is reshaped per turn — vs vanilla GRPO broadcasting one advantage everywhere" src="assets/agentopsd-recursive-self-distillation/fig1.png" /></p>
+<p><em>Figure 2 from the paper: (1) aggregate token gaps δ into turn evidence e; (2) recursively update belief B (initialized from the group success rate) and read off ΔB; (3) reshape the sequence advantage per turn. Right: vanilla GRPO broadcasts the same advantage to every token.</em></p>
+<pre><code class="language-text">for each task x: sample G trajectories with π_θ (standard GRPO rollouts)
+compute A_seq per trajectory from outcome rewards (group-normalized)
+for each trajectory i:
+    B0 ← clip(group success rate, ε, 1-ε);  c ← 0
+    for turn k = 1..K:
+        e_k ← Σ_t [ log π_θ(y_t | s_k, c+, y_&lt;t) − log π_θ(y_t | s_k, y_&lt;t) ]
+               # c+ = retrieved skill, training-only, detached
+        c   ← γ·c + e_k
+        B_k ← σ( logit(B0) + c )
+        q_k ← sign(A_seq) · (B_k − B_{k−1})
+    z ← standardize(q_1..K within trajectory)
+    w_k ← clip(1 + b·z_k, 1−b, 1+b)
+    Ã_k ← A_seq · [(1−λ) + λ·w_k]
+optimize clipped PPO/GRPO loss with token advantage Ã_{turn(t)}
+# no critic, no extra rollouts; skills never used at inference
+</code></pre>
+<h2>Results</h2>
+<p>At 3B (Qwen2.5-3B-Instruct), AgentOPSD posts the best averages on all three environments: ALFWorld 84.4% success (GRPO 75.0, GRPO+OPSD 81.2, SDAR 84.4 tied on avg but AgentOPSD wins Search-QA/WebShop decisively), Search-QA 46.7% (GRPO 36.4, best baseline 44.6), WebShop score 90.4 / accuracy 69.5 (GRPO 79.8 / 63.3). At 7B it reaches 89.1% ALFWorld success vs 81.2 for GRPO. Notably, plain OPSD without outcome rewards <em>collapses</em> on Search-QA (≈0%), and prompting with skills at inference (Skill-Prompt) is far worse than not using skills at all after RL — the paper's framing that the gain comes from <strong>credit construction, not privileged access</strong> is backed by ablations where removing turn-level aggregation, the recursive update, or the sign alignment each degrades results.</p>
+<p><img alt="Training dynamics: AgentOPSD's validation success rate climbs above baselines, loses fewer success points per extra turn of horizon, and keeps policy entropy healthier" src="assets/agentopsd-recursive-self-distillation/fig2.png" /></p>
+<p><em>Figure 1 from the paper: (a) validation success over training; (b) horizon sensitivity — success points lost per extra turn, where AgentOPSD degrades least; (c) policy entropy.</em></p>
+<p>The horizon-sensitivity analysis is the most interesting evaluation choice: regressing per-sub-task success against the mean turns of successful episodes, AgentOPSD loses the fewest success points per extra turn — direct evidence that better turn-level credit specifically buys <em>long-horizon</em> robustness, the regime where uniform broadcast is weakest.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>TRACE (turn-level rewards)</strong> and <strong>GiGPO</strong> (added to the tracker today): three critic-free answers to the same credit-assignment question — TRACE from reward decomposition, GiGPO from anchor-state grouping, AgentOPSD from distillation-derived Bayesian evidence. AgentOPSD needs no repeated states (GiGPO's requirement) and no auxiliary reward model.</li>
+<li><strong>FutureBridge-OPD</strong> and <strong>multi-turn OPD replay</strong>: the OPD lineage this builds on; FutureBridge validates teacher actions by rolling out futures, while AgentOPSD never injects teacher actions at all — the teacher only <em>scores</em> student actions, sidestepping teacher–student state-distribution mismatch entirely.</li>
+<li><strong>Skill-retrieval line (SkillHone, MSCE, SkillRise)</strong>: retrieved skills here become <em>privileged training-time context</em> rather than inference-time scaffolding — a third use of skill libraries beyond prompting and curriculum.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The Bayesian story is elegant but the evidence stream is only as good as the retrieved skill <span class="arithmatex">\(c^+\)</span>: <span class="arithmatex">\(e_k\)</span> measures "does this action look like what the skill describes," which correlates with success only insofar as the skill is relevant and correct — the paper concedes <span class="arithmatex">\(B_k\)</span> is <em>relative support</em>, not a calibrated probability, and the approximation to the true Bayes factor holds in a <span class="arithmatex">\(\rho_k\to 0\)</span> limit that is asserted rather than measured during training. Environments are the usual suspects (ALFWorld/WebShop/Search-QA) with short-to-medium horizons and binary outcomes; whether decaying log-odds accumulation survives 100+-turn terminal tasks (cf. today's RST tutorial) is untested. And since the multiplier never flips sign, AgentOPSD inherits GRPO's blindness to good turns inside failed trajectories — it redistributes magnitude, not direction. Still, as a drop-in reweighting that costs one extra scoring pass and consistently beats a crowded baseline field at two scales, the cost–benefit is unusually good.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Turn credit = marginal belief revision</strong>: aggregate privileged-vs-plain log-prob gaps into turn evidence <span class="arithmatex">\(e_k\)</span>, push it through a decaying log-odds filter anchored at the group success rate, and credit each turn by <span class="arithmatex">\(\Delta B_k\)</span> — history-dependent credit without a critic or extra rollouts.</li>
+<li><strong>The teacher is the student with better context</strong>: a training-only retrieved skill turns the policy into its own privileged teacher; skills are never used at inference, and the gains come from the credit construction, not the privileged access.</li>
+<li><strong>Reshaping, not replacing</strong>: GRPO's advantage is modulated per turn by a strictly positive bounded multiplier <span class="arithmatex">\((1-\lambda)+\lambda w_k\)</span> — never reversing the update — and this alone yields 89.1% ALFWorld at 7B and double-digit gains at 3B, with the biggest edge on the longest-horizon tasks.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-07 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
