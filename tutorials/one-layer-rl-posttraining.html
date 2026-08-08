@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is One Layer Enough? Single-Layer Training Can Match Full-Parameter RL</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Is One Layer Enough? Single-Layer Training Can Match Full-Parameter RL</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.01232">arXiv:2607.01232</a> · <a href="https://arxiv.org/abs/2607.01232">arXiv</a> · <a href="https://x.com/fnruji316625/status/2085934378362823075">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Is One Layer Enough? Training A Single Transformer Layer Can Match Full-Parameter RL Training" (arXiv 2607.01232; Zijian Zhang, Rizhen Hu, Athanasios Glentis, Dawei Li, Chung-Yiu Yau, Hongzhou Lin, Mingyi Hong) trains every transformer layer of an LLM <em>in isolation</em> with RLVR and finds that the best single layer recovers — and often exceeds — the full gain of full-parameter GRPO, across seven models, three RL algorithms, and math/code/agentic tasks.</li>
+<li>The structure is strikingly stable: high-contribution layers concentrate in the <strong>middle of the stack</strong>, the profile is an intrinsic property of the pretrained weights (layer rankings correlate across datasets at Spearman ρ=0.76 and even across math→code at ρ=0.59), and it is <em>not</em> explained by weight-change magnitude — full training moves all layers about equally.</li>
+<li>The finding is actionable: freezing everything but the top-10 contribution layers beats tuned full-parameter GRPO by +2.68 on Qwen3-8B (32% of the total RL gain), and a zero-profiling heuristic — just train the middle 5 layers — still beats full-parameter training at every scale tested.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>RLVR pipelines default to updating every parameter, implicitly assuming RL improvement is spread across the network. This paper is the most direct test of that assumption to date, and the assumption fails badly: on Qwen3-8B one layer trained alone can beat the whole network trained together (best contribution 1.07), while the worst layer's contribution is <em>negative</em> (−0.51 — training it alone makes the model worse). That asymmetry says RL post-training is not a diffuse process; it is absorbed by a small, structurally consistent set of middle layers.</p>
+<p>Two consequences matter for the threads this tracker follows. Practically, this is free money for RL efficiency: layer-selective training reduces optimizer state and gradient communication (only backprop through the full network is still needed), stacks with any algorithm (GRPO, Dr. GRPO, GiGPO were all tested), and the middle-layers heuristic needs no profiling at all. Scientifically, it sharpens the picture of <em>where</em> RL changes a model — complementing logit-level accounts (RL as mostly re-weighting existing behaviors) with a parameter-space account: whatever RLVR adds, a mid-stack layer's subspace is sufficient to express most of it. That has obvious implications for distillation, merging, and for deciding whether a failure needs post-training at all.</p>
+<h2>The core idea</h2>
+<p>Take standard GRPO. For prompt <span class="arithmatex">\(x\)</span>, sample <span class="arithmatex">\(G\)</span> responses and compute group-normalized advantages, then maximize the clipped surrogate:</p>
+<div class="arithmatex">\[\mathcal{L}_{\text{GRPO}}(\theta)=\mathbb{E}_{x,\{y_{i}\}}\left[\frac{1}{G}\sum_{i=1}^{G}\left(\min\left(\rho_{i}\hat{A}_{i},\;\text{clip}(\rho_{i},1-\epsilon,1+\epsilon)\hat{A}_{i}\right)-\beta\,\mathbb{D}_{\mathrm{KL}}\!\left[\pi_{\theta}\,\|\,\pi_{\text{ref}}\right]\right)\right],\]</div>
+<p>where <span class="arithmatex">\(\hat A_i\)</span> is the group-normalized binary-reward advantage, <span class="arithmatex">\(\rho_i\)</span> the importance ratio, and <span class="arithmatex">\(\pi_{\text{ref}}\)</span> the initial policy. The intervention is minimal: freeze everything except one transformer layer <span class="arithmatex">\(\theta_k\)</span>,</p>
+<div class="arithmatex">\[\theta_{k}\leftarrow\theta_{k}-\alpha\,\nabla_{\theta_{k}}\mathcal{L}_{\text{GRPO}}(\theta),\quad\text{all other parameters frozen,}\]</div>
+<p>with the gradient still backpropagated through the full network — only the <em>update</em> is restricted. Repeat independently for every layer <span class="arithmatex">\(k\)</span>, evaluate each resulting model, and define <strong>layer contribution</strong></p>
+<div class="arithmatex">\[\mathcal{C}(k)=\frac{S_{k}-S_{\text{base}}}{S_{\text{full}}-S_{\text{base}}},\]</div>
+<p>where <span class="arithmatex">\(S_k\)</span>, <span class="arithmatex">\(S_{\text{base}}\)</span>, <span class="arithmatex">\(S_{\text{full}}\)</span> are in-domain scores of the layer-<span class="arithmatex">\(k\)</span>-trained model, the untrained base, and the full-parameter-trained reference. <span class="arithmatex">\(\mathcal{C}(k)=1\)</span> means single-layer training fully matches full RL; <span class="arithmatex">\(\mathcal{C}(k)&gt;1\)</span> means it surpasses it.</p>
+<p><img alt="Layer contribution across all seven models plotted against depth-normalized layer position, showing the middle-layer concentration pattern" src="assets/one-layer-rl-posttraining/fig1.png" />
+<em>Figure 1 from the paper: layer contribution vs relative depth for all seven models. The inverted-U is universal — middle layers absorb RL gains; input- and output-adjacent layers barely do.</em></p>
+<p>The comparison protocol is unusually careful, which is what makes the headline credible: the learning rate is tuned <em>for the full-parameter baseline</em> and then reused unchanged for every single-layer run (no per-layer advantage), all other hyperparameters are identical, runs are trained to convergence under the same step budget, and public results (Dr. GRPO, GiGPO) anchor the baselines. A learning-rate ablation confirms rankings don't change if layers get their own tuned rate.</p>
+<h2>How it works</h2>
+<pre><code class="language-text"># Phase 1: profile layer contributions
+train full-parameter GRPO with tuned lr  →  S_full
+for k in 0..L-1:
+    freeze all params except layer θ_k (requires_grad=False elsewhere)
+    train with GRPO, same lr/hparams/steps as full baseline
+    S_k ← in-domain eval;  C(k) ← (S_k − S_base) / (S_full − S_base)
+
+# Phase 2: exploit the profile (three strategies, increasing practicality)
+(a) layer-adaptive lr:   boost lr ×2 on top-k layers, default elsewhere
+(b) layer-selective:     train ONLY top-k layers, freeze the rest
+(c) heuristic (no profiling): train only the middle k layers
+                         [⌊L/2−k/2⌋, ⌊L/2+k/2⌋)
+</code></pre>
+<p><strong>Scope of the scan.</strong> Primary experiments: Qwen3-1.7B/4B/8B-Base (28/36/36 layers), GRPO on NuminaMath-CoT, full per-layer scans — that is one RL run per layer per model. Generality checks: Qwen2.5-Math-1.5B with Dr. GRPO, Qwen2.5-1.5B/3B-Instruct with GiGPO on ALFWorld (agentic), DeepSeek-Distilled-Qwen-7B with GRPO on Skywork math (partial scans). Evaluation spans 12 benchmarks in four categories (Math in-domain; Code, Reasoning, Language out-of-domain).</p>
+<p><strong>Key structural findings.</strong></p>
+<ul>
+<li><em>Middle-layer concentration, everywhere.</em> All seven models show the inverted-U profile. Best/worst contributions: Qwen3-1.7B 1.14/0.28, Qwen3-4B 1.06/0.66, Qwen3-8B 1.07/−0.51, Qwen2.5-Math-1.5B 1.01/0.42, and the agentic ALFWorld runs 1.02/0.25 and 1.01/0.17. Every model has at least one layer with <span class="arithmatex">\(\mathcal{C}\geq 1.0\)</span>.</li>
+<li><em>It's a property of the model, not the data.</em> On Qwen3-1.7B, layer rankings from NuminaMath vs DeepScaleR correlate at ρ=0.76; math vs <em>code</em> (DeepCoder) still ρ=0.59. So a cheap profiling run on accessible data transfers to guide training elsewhere.</li>
+<li><em>Not weight-change magnitude.</em> Under full training, per-layer <span class="arithmatex">\(\|\Delta\theta_k\|_2\)</span> is nearly uniform (~0.5–0.8) despite wildly non-uniform contributions; under single-layer training, high- and low-contribution layers move comparably far (~0.8–1.0) yet produce vastly different outcomes. Contribution reflects the <em>effectiveness of a layer's parameter subspace</em>, not how much it moves.</li>
+<li><em>Out-of-domain gains track in-domain.</em> <span class="arithmatex">\(\mathcal{C}_{\text{all}}\)</span> (average over Math/Code/Reasoning/Language) tracks <span class="arithmatex">\(\mathcal{C}_{\text{math}}\)</span> with Pearson r&gt;0.6 — single-layer training is not overfitting the training objective.</li>
+</ul>
+<p><img alt="Layer contribution across model scales, in-domain math vs overall average, with the full-parameter baseline as dashed line" src="assets/one-layer-rl-posttraining/fig2.png" />
+<em>Figure 2 from the paper: math (blue) and overall (black) layer contribution across Qwen3 scales — layers that learn math well also improve code, reasoning, and language.</em></p>
+<h2>Results</h2>
+<p>The exploitation experiments turn the observation into training strategies, on top of an already-tuned full-parameter baseline:</p>
+<ul>
+<li><strong>Layer-adaptive lr (B10 = boost top 10 layers to 1e-5):</strong> Qwen3-1.7B 53.70 vs 50.82 baseline (+2.88, i.e. 43% of the entire RL gain added on top); 4B +1.45; 8B +0.99. Boosting the <em>worst</em> layers hurts at every scale — the gain is from contribution-guided selection, not the lr bump.</li>
+<li><strong>Layer-selective training (freeze the rest):</strong> the strongest strategy at scale. Qwen3-4B "Only B5" 65.87 (+2.90 over full, 27% of total RL gain); Qwen3-8B "Only B10" 69.11 (+2.68, 32%). Training only the worst layers craters (e.g. 62.04 on 8B). At larger scales, updates to low-contribution layers appear to be actively counterproductive — freezing them yields cleaner optimization.</li>
+<li><strong>Heuristic middle-k (no profiling):</strong> middle-5 layers beat full-parameter at all scales — 1.7B 51.35 vs 50.82, 4B 64.80 vs 62.97 (+1.83), 8B 68.19 vs 66.43 (+1.76) — capturing most of the profiled strategy's benefit for free.</li>
+<li><strong>Complementarity bonus:</strong> top-7 layer-trained models on Qwen3-1.7B solve largely <em>different</em> problems (mean pairwise Jaccard 34.1% on newly-solved OlympiadBench items). Majority-voting the seven models reaches 33.6% vs 28.3% for the best single one, 26.9% for full-parameter, and 31.3% for 7-sample self-consistency from one model — structural diversity beats sampling diversity. (The authors flag this as analysis, not a practical recipe.)</li>
+</ul>
+<h2>How it connects</h2>
+<p>This is the parameter-space companion to the optimizer-level work in "ISO: An RLVR-Native Optimization Stack" — both argue that treating RLVR as generic full-network fine-tuning wastes structure, one in the update rule, the other in <em>where</em> updates land. The compute-allocation question interacts with "Scaling Law for Pretrain vs RL Compute Allocation": if RL gains are absorbable by ~1/28th of parameters, the marginal cost of an RL point is lower than full-parameter accounting suggests. The finding that mid-stack subspaces suffice for RL deltas is highly suggestive for the delta-transfer methods in "OPD-Squared: On-Policy Delta Distillation" (distill the delta; this paper says the delta is low-dimensional and localizable). The layer-ensemble diversity result is a structured version of the diversity arguments in "Skill Entropy: Benchmarking and Training Skill Switching". And for the model-vs-harness triage question ("Model or Harness: Attributing 41 Agent Failure Modes"), cheap localized post-training changes the economics of the "fix the model" branch: the GiGPO/ALFWorld result shows single-layer RL works for agentic tasks too.</p>
+<h2>Critical take</h2>
+<p>The efficiency framing needs qualification: single-layer training still backpropagates through the whole network, so the savings are optimizer state, weight-update compute, and communication — not the backward pass. All seven models are Qwen-family (Qwen2.5/Qwen3 and a DeepSeek distill of Qwen), 1.5B–8B; "middle 40–60%" could partially be a Qwen pretraining signature, and the tweet's "7 models, 3 algorithms" is within-family evidence, not cross-family. The paper measures RLVR-style short-horizon reward regimes; whether long-horizon agentic RL with dense/turn-level rewards concentrates the same way is untested beyond ALFWorld with partial scans. There's also a selection subtlety: contribution is measured against a full-parameter baseline whose gain <span class="arithmatex">\(S_{\text{full}}-S_{\text{base}}\)</span> is sometimes modest; <span class="arithmatex">\(\mathcal{C}(k)&gt;1\)</span> is easier when the denominator is small (the 8B worst layer at −0.51 shows how noisy isolated-layer outcomes can be). Finally the profiling cost is real — one RL run per layer — which is why the middle-layers heuristic is the result most likely to be used in practice; a cheap <em>predictor</em> of layer contribution (from activations or a few gradient steps) is the obvious missing piece.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>RL post-training gains are <strong>localized, not diffuse</strong>: one mid-stack transformer layer, trained alone under a fair protocol, matches or beats full-parameter GRPO across seven Qwen-family models, three algorithms, and math/code/agentic tasks.</li>
+<li>The contribution profile is an <strong>intrinsic property of the pretrained model</strong> — stable across datasets and even tasks (ρ=0.76 math↔math, 0.59 math↔code) — and is <em>not</em> explained by how much layers move during training.</li>
+<li>You can cash this in without profiling: <strong>train only the middle ~5 layers</strong> and beat tuned full-parameter RLVR at every scale tested (+1.8/+1.8 points at 4B/8B); with profiling, freezing low-contribution layers recovers ~30% extra of the total RL gain.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-08 16:00 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
