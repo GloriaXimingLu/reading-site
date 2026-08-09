@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EvoHarness-RL: Training Harness Usage as a Capability (UIUC/Meta)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>EvoHarness-RL: Training Harness Usage as a Capability (UIUC/Meta)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.05446">arXiv:2608.05446</a> · <a href="https://arxiv.org/abs/2608.05446">arXiv</a> · <a href="https://x.com/Xudong07452910/status/2086303204464320941">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "EvoHarness-RL: Learning Self-Evolving Runtime Harness for Long-Horizon LLM Agents" (arXiv 2608.05446, accepted to LLA@COLM 2026). Authors: Xuying Ning, Dongqi Fu, Tianxin Wei, Hanqing Zeng, Yuanchen Bei, Bingxuan Li, Zihao Li, Qifan Wang, Xiang Shen, Yifan Wu, Jiayi Liu, Hong Li, Yinglong Xia, Xiangjun Fan, Hanghang Tong, Jingrui He (UIUC + Meta AI).</p>
+<h2>TL;DR</h2>
+<ul>
+<li>Everyone keeps bolting memory, state trackers, and skill banks onto agents; EvoHarness-RL asks the neglected complementary question — <strong>when is touching that external state actually worth a turn of the interaction budget?</strong> — and makes the answer a <em>trained</em> policy rather than a prompt convention.</li>
+<li>The harness is abstracted into three policy-facing state classes — <strong>Belief</strong> (what's true in the environment), <strong>Progress</strong> (subgoal/execution status), <strong>Experience</strong> (cross-episode skills, mistakes, search priors) — accessed via four meta-actions (<code>track</code>, <code>commit</code>, <code>recall</code>, <code>note</code>) that share the same action budget as environment actions. Training is SFT on teacher demos, then <strong>cost-aware GRPO</strong>.</li>
+<li>On ALFWorld with Qwen3-8B: ReAct 47.9% → <strong>96.9%</strong> on the seen split (matching Claude Opus 4.5's ReAct 96.4%) and <strong>86.6%</strong> unseen. Two clean dynamics emerge: <strong>harness annealing</strong> (calls drop from frequent scaffolding to ~1/episode as routines get internalized into weights) and <strong>harness evolution</strong> (the skill store expands, then consolidates and forgets).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The harness-engineering literature — including several papers in this tracker — has been optimizing <em>what the scaffold contains</em>: better memory schemas, better skill libraries, offline-searched harness configurations. All of it leaves the agent's runtime policy for <em>using</em> the scaffold as prompt text and heuristics. That's exactly the failure mode anyone who has watched an agent obsessively re-query its memory (or never query it) will recognize: the support exists, but the decision of when to form, read, update, and consolidate it was never trained.</p>
+<p>EvoHarness-RL's framing — "harness policy learning" — treats harness access as a first-class action in the MDP, competing with environment actions for a bounded turn budget. The headline implication is bigger than the ALFWorld numbers: if harness coordination is trainable, the boundary between "engineered scaffold" and "model capability" becomes dynamic. Their harness-annealing result is early empirical evidence that RL <em>moves</em> behaviors across that boundary — routine scaffold use gets absorbed into the weights, and only genuinely informative external-state accesses survive. That is the mechanism the "harness features get internalized over time" thesis (see the long-horizon agents survey in this tracker) has been missing.</p>
+<h2>The core idea</h2>
+<p><img alt="EvoHarness-RL overview: heterogeneous external support abstracted into Belief / Progress / Experience with four harness meta-actions" src="assets/evoharness-rl/fig1.png" />
+<em>Figure 1 from the paper: existing harnesses are heterogeneous and manually controlled; EvoHarness-RL exposes them as three policy-facing states (Belief, Progress, Experience) coordinated through compact harness actions — track, commit, recall, note.</em></p>
+<p>Concrete harnesses contain many domain-specific components, but the authors argue they serve three recurring failure modes of long-horizon interaction: losing track of what is currently true, forgetting what's done vs. pending, and rediscovering procedures/mistakes across episodes. So the harness renders, at each step <span class="arithmatex">\(t\)</span>,</p>
+<div class="arithmatex">\[ \mathcal{H}_{t} = (B_{t}, P_{t}, E_{t}), \]</div>
+<p>where <span class="arithmatex">\(B_t\)</span> is Belief (task-relevant environment facts inferred from interaction), <span class="arithmatex">\(P_t\)</span> is Progress (subgoal-status records <span class="arithmatex">\((g_i,\sigma_i)\)</span>), and <span class="arithmatex">\(E_t\)</span> is Experience (cross-episode skills, failure modes, search priors).</p>
+<p>The policy interacts with this workspace via four meta-actions — <code>track</code> reads from <span class="arithmatex">\(B_t\)</span>, <code>commit</code> writes execution updates to <span class="arithmatex">\(P_t\)</span>, <code>recall</code> retrieves from <span class="arithmatex">\(E_t\)</span>, <code>note</code> stages new insights for later consolidation into <span class="arithmatex">\(E_t\)</span> — and chooses from the joint action space</p>
+<div class="arithmatex">\[ \mathcal{A} = \mathcal{A}_{\mathrm{env}} \cup \mathcal{A}_{\mathrm{bpe}}, \qquad a_{t} \sim \pi_{\theta}(\cdot \mid o_{t}, \mathcal{H}_{t}, c_{t}), \]</div>
+<p>where <span class="arithmatex">\(o_t\)</span> is the environment observation and <span class="arithmatex">\(c_t\)</span> the task context. The crucial design decision: <strong>harness actions consume the same interaction budget as environment actions</strong>, so "should I check my memory?" has a real opportunity cost the policy must learn to price.</p>
+<p>A per-environment adapter grounds the interface without leaking domain specifics into the trainable layer. In ALFWorld: Belief is a background world-state tracker (queried via <code>track[object]</code> / <code>track[world]</code> — the state exists but is <em>not</em> dumped into context by default); Progress is a bounded subgoal-status list; Experience is a skill store organized into general skills, task-specific skills, common mistakes, and object-location search priors, kept fixed within each rollout batch and merged at epoch boundaries by a consolidation model via add/update/remove operations.</p>
+<h2>How it works</h2>
+<p><strong>Stage 1 — supervised harness fine-tuning.</strong> Teacher trajectories are collected through the same BPE interface; the teacher outputs one <code>&lt;think&gt;...&lt;/think&gt;&lt;action&gt;...&lt;/action&gt;</code> step at a time, where the action is either an ALFWorld command or a BPE meta-action. Qwen3-8B is fine-tuned on these next-action demonstrations, learning the action protocol's semantics and how to externalize useful state. Teacher-rollout experience also seeds the skill store used in RL.</p>
+<p><strong>Stage 2 — cost-aware GRPO.</strong> From the SFT checkpoint, GRPO optimizes a trajectory reward that combines a dominant sparse success term with shaping terms for adaptive harness use:</p>
+<div class="arithmatex">\[ R(\tau) = \underbrace{R_{\mathrm{succ}}(\tau)}_{\text{task success}} + \underbrace{\lambda_{\mathrm{eff}} R_{\mathrm{eff}}(\tau)}_{\text{efficiency}} + \underbrace{\lambda_{\mathrm{div}}(u)\, R_{\mathrm{div}}(\tau)}_{\text{action diversity}} - \underbrace{\lambda_{\mathrm{spam}} R_{\mathrm{spam}}(\tau)}_{\text{spam}} - \underbrace{\lambda_{\mathrm{inv}} R_{\mathrm{inv}}(\tau)}_{\text{format}}, \]</div>
+<p>with <span class="arithmatex">\(R_{\mathrm{succ}}(\tau) = 10\cdot\mathbf{1}[\text{solved}]\)</span> as the gatekeeper and the efficiency bonus <span class="arithmatex">\(R_{\mathrm{eff}}(\tau)=\max(0,\,1-|\tau|/T_{\max})\)</span> granted <em>only on success</em> (<span class="arithmatex">\(|\tau|\)</span> = trajectory length, <span class="arithmatex">\(T_{\max}\)</span> = step cap) — so redundant harness queries are penalized without discouraging necessary ones. To prevent collapse into either ignoring <span class="arithmatex">\(\mathcal{A}_{\mathrm{bpe}}\)</span> or looping on it, a diversity bonus is cosine-annealed over training:</p>
+<div class="arithmatex">\[ R_{\mathrm{div}}(\tau) = \frac{|\{\mathrm{verb}(a_{t}) : a_{t} \in \tau\}|}{|\tau|}, \qquad \lambda_{\mathrm{div}}(u) = \frac{\lambda_{\mathrm{div}}^{\max}}{2}\left(1 + \cos\frac{\pi u}{U}\right), \]</div>
+<p>where <span class="arithmatex">\(u\)</span> is the current RL epoch and <span class="arithmatex">\(U\)</span> the annealing horizon — broad exploration of harness actions early, forced specialization late. <span class="arithmatex">\(R_{\mathrm{spam}}\)</span> and <span class="arithmatex">\(R_{\mathrm{inv}}\)</span> are fixed penalties for degenerate repetition and malformed syntax.</p>
+<pre><code class="language-text"># EvoHarness-RL core loop (condensed from Secs. 2.3-2.4)
+SFT: fine-tune base LLM on teacher demos over A_env ∪ {track,commit,recall,note}
+E ← skill store seeded from teacher rollouts
+for epoch u = 1..U:                              # cost-aware GRPO
+  freeze skill store E for this batch
+  for each task, sample group of rollouts:
+    B, P ← empty; adapter updates B in background each env step
+    for t = 1..T_max:
+      a_t ~ π_θ(· | o_t, (B_t,P_t,E_t), c_t)
+      if a_t ∈ A_env:   env step → new observation
+      elif track:       return queried belief view from B
+      elif commit:      write subgoal/status to P
+      elif recall:      retrieve from E; bump usage counts
+      elif note:        append insight to temporary note buffer
+    R(τ) = 10·1[solved] + λ_eff·R_eff + λ_div(u)·R_div − penalties
+  GRPO update of π_θ with group-relative advantages
+  # harness evolution at epoch boundary:
+  consolidation model merges note buffers + trajectory summaries
+  into E via add / update / remove   (retain frequently recalled,
+  merge redundant, evict rarely useful)
+</code></pre>
+<h2>Results</h2>
+<p>On the 140-task ALFWorld seen split, EvoHarness-RL (Qwen3-8B) reaches <strong>96.9%</strong> average success, +49.0 absolute over the ReAct baseline (47.9%) — essentially matching Claude Opus 4.5 with ReAct (96.4%). The staged progression validates the pipeline: prompt-time BPE alone 56.4% → SFT 68.6% → GRPO 96.9%. It also clearly beats plain GRPO without the harness (65.6%), SkillOS (80.2%), and SkillRL (89.9%, though on Qwen2.5-7B), and frozen memory methods (ExpeL 49.3%, Dynamic Cheatsheet 52.1%, ACE 51.4%).</p>
+<p>The prompt-time harness transfers across scales: as a pure inference-time scaffold it lifts GPT-4.1 from 47.9% to 70.0% (+22.1), GPT-5 from 60.7% to 85.0% (+25.7), and pushes Claude Opus 4.5 to 98.5%. Ablations show all three components matter roughly equally — removing Belief drops the frozen-harness average to 50.0%, Progress to 50.7%, Experience to 48.6% (from 56.4%) — with intuitive task-level signatures (no Belief hurts Clean/Cool localization; no Progress hurts multi-subgoal Pick2).</p>
+<p>On the <strong>unseen split</strong>: ReAct 50.0%, prompt-time BPE 77.6%, SFT 69.4% (below prompt-time — imitation overfits teacher harness-use patterns), RL 86.6%. That SFT-dips-then-RL-recovers pattern is good evidence that what GRPO learns is genuinely <em>when access is worthwhile</em>, not memorized call sites.</p>
+<p><img alt="Harness usage anneals during GRPO training" src="assets/evoharness-rl/fig3.png" />
+<em>Figure 3 from the paper: the SFT-initialized policy starts with frequent cognitive-tool calls, then usage drops and stabilizes near one harness call per episode as routine scaffolded behaviors are internalized into the policy.</em></p>
+<p>The two dynamics analyses are the most interesting part. <strong>Harness annealing</strong> (Fig. 3): the agent begins RL with frequent harness calls and stabilizes near ~1 call/episode, keeping access only where expected benefit beats its step cost. <strong>Harness evolution</strong> (Fig. 4): the skill bank grows rapidly early (general strategies, task procedures, mistakes, search priors), then consolidation merges redundancies and evicts rarely-recalled entries, ending compact but diverse — a curated substrate, not an append-only log.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>OpenForgeRL / Training Agents Inside Their Harnesses (this list):</strong> OpenForgeRL builds the infrastructure for doing RL <em>through</em> a real harness and finds harness choice shapes what RL can learn; EvoHarness-RL is the natural next step on that axis — don't just train inside the harness, train the harness-usage policy itself. The BPE adapter is a research-scale stand-in for what a Claude-Code-scale version would need.</li>
+<li><strong>TRACE turn-level rewards (this list):</strong> EvoHarness-RL's reward is still trajectory-level with hand-built shaping; its harness actions are exactly the kind of turn whose marginal value TRACE's prefix-value telescoping could price directly. A TRACE-style credit signal seems like the principled replacement for the cosine-annealed diversity bonus.</li>
+<li><strong>Agentic Context Management (this list):</strong> ACM's lifecycle primitives (scoping, anticipating, compacting-with-consolidation) are the <em>engineering</em> answer to when-to-touch-state; EvoHarness-RL is the <em>learning</em> answer. Its background-updated Belief with selective <code>track</code> access is scoping made policy-controlled; the epoch-boundary consolidation model is ACM's validated compaction, but on a skill store.</li>
+<li><strong>Harness Handbook (this list):</strong> Handbook treats production harnesses as codebases needing behavior maps for safe modification; EvoHarness-RL abstracts them into three state roles precisely so the trainable layer stays harness-agnostic. The tension between those two moves — rich harness specificity vs. compact trainable interface — is an open design question.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The 96.9% headline needs its context: ALFWorld is a text game with six mostly <em>sequential</em> household task families, small enough that a "bounded subgoal list" suffices for Progress and that a Qwen3-8B can plausibly internalize most of the needed state — which is exactly why harness annealing looks so clean here. Whether annealing to ~1 call/episode generalizes to SWE-style tasks, where the environment state can't fit in weights or context, is untested; the honest prediction is that annealing should <em>plateau higher</em> the larger the external state is relative to model capacity. Baseline comparability is also soft in places (SkillOS/SkillRL numbers are reported by their own papers; SkillRL uses a different backbone). The reward is heavily engineered — five terms, a success scalar of 10, an annealing schedule — and no sensitivity analysis is shown for the <span class="arithmatex">\(\lambda\)</span>s; the cosine curriculum smells like a fix discovered after policy-collapse pain (inferred from the framing — verify in the paper's appendix). Finally, "generalization" means ALFWorld-unseen, not cross-domain: the claim that the <em>coordination layer</em> transfers while adapters stay domain-specific is architecture, not yet evidence. None of this undercuts the central contribution: a clean demonstration that when-to-use-the-harness is trainable, measurable, and moves across the model/scaffold boundary during RL.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Harness access as a priced action</strong>: BPE state (Belief/Progress/Experience) + four meta-actions sharing the environment's turn budget turns "when to consult external state" from prompt convention into a learnable, cost-aware policy decision — Qwen3-8B goes 47.9% → 96.9% on ALFWorld (86.6% unseen).</li>
+<li><strong>Harness annealing</strong> is the paper's most generalizable finding: RL internalizes routine scaffold behaviors into weights, and external-state access anneals to ~1 selective call per episode — the scaffold/capability boundary is dynamic under training.</li>
+<li>The two-stage recipe matters: SFT alone <em>hurts</em> generalization (69.4% vs. 77.6% for the untouched prompt-time harness on unseen tasks); only cost-aware GRPO recalibrates access into a strategy that transfers.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-09 14:55 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

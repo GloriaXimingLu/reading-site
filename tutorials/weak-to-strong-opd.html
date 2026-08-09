@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weak-to-Strong On-Policy Distillation via Proxy-Teacher Logit Contrast (Microsoft)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Weak-to-Strong On-Policy Distillation via Proxy-Teacher Logit Contrast (Microsoft)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.26246">arXiv:2607.26246</a> · <a href="https://arxiv.org/abs/2607.26246">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2086308858054447113">X post</a> · <a href="https://paperswithcode.co/paper/2607.26246">paperswithcode.co</a> · <a href="../index.html#distillation">Distillation</a></p><p>Paper: "Weak-to-Strong On-Policy Distillation" (arXiv 2607.26246, v2 Aug 3 2026). Authors: Fangxu Yu (UMD, work done during MSR internship), Weijia Xu, Michael Xu, Zinan Lin (Microsoft Research), Tianyi Zhou (MBZUAI). Code (announced): github.com/Yu-Fangxu/W2S-OPD; project page: w2s-opd.github.io.</p>
+<h2>TL;DR</h2>
+<ul>
+<li>On-policy distillation assumes a teacher at least as strong as the student — dead end at the frontier, and expensive when it means training domain experts at student scale. <strong>W2S-OPD synthesizes a proxy teacher in logit space</strong>: take a <em>contrast pair</em> of weak models, subtract their logits to isolate a capability direction, add it to the student's own base model, distill with per-token reverse KL on student rollouts.</li>
+<li>Three cheap contrast pairs, all Qwen3: post-RL 4B expert vs. its pre-RL init (isolates what RL instilled), 4B vs. 0.6B base (isolates scale, zero training), and one 4B conditioned on correct vs. wrong hints (isolates instance-level direction). With the RL contrast, the 8B student hits <strong>51.8 avg on competition math — above the 4B-RL teacher's 48.8</strong> and +5.3 over standard OPD; even two untouched base models lift the student +6.0 on math.</li>
+<li>Token-level analysis of where the contrast fires: RL and hint contrasts reinforce <strong>Plan/Monitor</strong> (reasoning-framework) tokens, the scale contrast reinforces <strong>Analyze/Implement</strong> (solving-procedure) tokens — different weak signals teach complementary things.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>OPD is now a default post-training stage (Qwen3's strong-to-weak pipeline; MOPD-style specialize-then-consolidate at DeepSeek scale), but both prevailing modes presuppose a teacher ≥ student. That premise fails exactly where it matters most: at the frontier there is no larger teacher, and training multiple domain experts at the student's own scale to consolidate them is what makes MOPD-style recipes expensive. Meanwhile naive weak-to-strong distillation fails for two well-understood reasons — the weak teacher's distribution mismatches the student's (weakening the signal), and imitating something weaker caps you at its level and erodes general ability.</p>
+<p>W2S-OPD's reframe is the interesting move: weak-to-strong learning is not <em>imitating a weak supervisor</em>, it's <em>isolating and transferring a capability direction</em>. What two weak models share (their common weakness) cancels in the logit subtraction; what remains is the direction along which one improves over the other — a signal the paper argues is largely disentangled from scale and hence portable onto a stronger base. If that holds up beyond Qwen3-8B, it's a recipe for frontier models to keep improving from supervision that is strictly cheaper and weaker than themselves — including signals that are literally free (two already-released checkpoints of different sizes).</p>
+<h2>The core idea</h2>
+<p><img alt="W2S-OPD overview: a positive/negative contrast pair defines a capability direction in logit space, re-anchored on the student's base model to form a proxy teacher" src="assets/weak-to-strong-opd/fig2.png" />
+<em>Figure 2 from the paper: the logit difference between a positive and a negative weak model isolates a capability direction; added to the student's base logits it yields a proxy teacher that is capable in-domain yet distributionally adjacent to the student, which then minimizes per-token reverse KL on its own rollouts.</em></p>
+<p>Standard OPD minimizes a per-token divergence against a frozen teacher on the student's own rollouts:</p>
+<div class="arithmatex">\[ \mathcal{L}_{\mathrm{OPD}}(\pi_{S}) = \mathbb{E}_{x\sim\mathcal{D},\; y\sim\pi_{S}(\cdot\mid x)}\Bigg[\sum_{t=1}^{|y|} D\big(\pi_{S}(\cdot\mid s_{t})\,\big\|\,\pi_{T}(\cdot\mid s_{t})\big)\Bigg], \]</div>
+<p>where <span class="arithmatex">\(s_t=(x, y_{&lt;t})\)</span> is the student-generated prefix and <span class="arithmatex">\(D\)</span> is instantiated as reverse KL (top-<span class="arithmatex">\(k\)</span> approximated for efficiency). W2S-OPD keeps this loop but replaces the teacher. Given a positive model <span class="arithmatex">\(m^{+}\)</span>, a weaker negative model <span class="arithmatex">\(m^{-}\)</span>, and the student's own base model with logits <span class="arithmatex">\(z_{\mathrm{base}}\)</span>, the proxy teacher at each position is</p>
+<div class="arithmatex">\[ \pi_{T,\alpha}(\cdot\mid s_{t}) = \mathrm{softmax}\Big(z_{\mathrm{base}}(s_{t}) + \alpha\big(z^{+}(s_{t}) - z^{-}(s_{t})\big)\Big), \]</div>
+<p>where <span class="arithmatex">\(z^{\pm}\)</span> are the contrast pair's logits on the same prefix and <span class="arithmatex">\(\alpha \ge 0\)</span> is an amplification coefficient trading signal strength against distributional proximity. This is decoding-time expert composition (DExperts-style) turned into a <em>training target</em>. Two birds, one stone: anchoring at the student's base keeps the supervision inside a distribution the student already realizes (fixing the mismatch problem), and the weak models enter only through their difference, never their absolute level (fixing the capability-ceiling problem).</p>
+<p>Multi-teacher merging falls out for free — sum several directions on the shared anchor:</p>
+<div class="arithmatex">\[ \pi_{T,\bm{\alpha}}(\cdot\mid s_{t}) = \mathrm{softmax}\Big(z_{\mathrm{base}}(s_{t}) + \sum_{k=1}^{K}\alpha_{k}\big(z^{+}_{k}(s_{t}) - z^{-}_{k}(s_{t})\big)\Big), \]</div>
+<p>with <span class="arithmatex">\(\alpha_k\)</span> per-direction strengths; setting <span class="arithmatex">\(\alpha_k\in\{0,1\}\)</span> routes each query to its domain's contrast pair, so one distillation run consolidates multiple domains into the student.</p>
+<h2>How it works</h2>
+<p>The three instantiations of the contrast pair (all anchored on Qwen3-8B base, the student):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Positive <span class="arithmatex">\(m^{+}\)</span></th>
+<th>Negative <span class="arithmatex">\(m^{-}\)</span></th>
+<th>What the difference isolates</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pre-RL / Post-RL</td>
+<td>Qwen3-4B after domain GRPO</td>
+<td>same 4B before RL</td>
+<td>the skill RL instilled (RL cost paid at 4B, not 8B)</td>
+</tr>
+<tr>
+<td>Smaller / Larger</td>
+<td>Qwen3-4B base</td>
+<td>Qwen3-0.6B base</td>
+<td>capability from scale — free, no training</td>
+</tr>
+<tr>
+<td>Correct / Wrong hints</td>
+<td>4B + correct hint</td>
+<td>4B + wrong hint (same format)</td>
+<td>instance-level direction to the solution; format shift cancels</td>
+</tr>
+</tbody>
+</table>
+<p>Setup: student is Qwen3-8B non-thinking; a frozen copy serves as anchor. The 4B math expert is GRPO-trained 500 steps on DeepMath-103K level-6, the code expert 300 steps on Eurus-RL-Code. Both W2S-OPD and the OPD baseline train 100 steps under identical configs. Evaluation: AIME24/25, HMMT25 (Feb./Nov.) for math; HumanEval+, MBPP+, LiveCodeBench-V6 for code; 32 samples/problem (math) and 4 (code) at temperature 1.0.</p>
+<pre><code class="language-text"># W2S-OPD training step (from Secs. 2-3)
+frozen: z_base (student's base), {(m+_k, m-_k)}  # contrast pairs
+trainable: student π_S (init = base)
+for step = 1..100:
+  sample prompts x ~ D
+  y ~ π_S(·|x)                       # on-policy rollouts
+  for each token position t in y:
+    s_t = (x, y_&lt;t)
+    compute logits z_base(s_t), z+_k(s_t), z-_k(s_t)   # 3 fwd passes
+    # (multi-teacher: route query to its domain pair, α_k ∈ {0,1})
+    π_T = softmax(z_base + Σ_k α_k (z+_k − z-_k))      # proxy teacher
+    loss_t = KL(π_S(·|s_t) || π_T(·|s_t))              # reverse KL, top-k
+  update π_S on Σ_t loss_t
+# α: too small → signal ~ base model, weaker than OPD;
+#    too large → teacher drifts off-distribution; moderate is best
+</code></pre>
+<p>The paper also gives an interpretation of the objective as reward maximization under a KL trust region (Appendix B), and a diagnostic for <em>what</em> each contrast teaches: score every token of a shared student-generated solution by</p>
+<div class="arithmatex">\[ \Delta_{t} = \log\pi^{+}(x_{t}\mid s_{t}) - \log\pi^{-}(x_{t}\mid s_{t}), \qquad \pi^{\pm} = \mathrm{softmax}(z^{\pm}), \]</div>
+<p>i.e., how strongly the capability direction reinforces the realized token <span class="arithmatex">\(x_t\)</span>; then classify the top-1% highest-<span class="arithmatex">\(\Delta\)</span> tokens into Schoenfeld problem-solving episodes with an automatic classifier (ThinkARM) over 200 math traces.</p>
+<h2>Results</h2>
+<p><strong>Pre-RL/post-RL contrast (Table 2).</strong> Math avg: negative 4B 14.9, positive 4B-RL 48.8, student base 17.0. Single-teacher: SFT 45.7, OPD 46.5, <strong>W2S-OPD 51.8</strong> (+5.3 abs / 11.4% rel over OPD, and <em>above the teacher</em>). Code avg: OPD 58.7, W2S-OPD 60.9 (teacher 61.5 — gap narrowed, not crossed). Multi-teacher (math+code experts merged): W2S-OPD 52.1 math / 61.1 code vs. OPD's 46.5 / 59.5. Training curves show W2S-OPD ahead of OPD throughout.</p>
+<p><strong>Smaller/larger contrast (Table 3).</strong> With only off-the-shelf Qwen3-4B (14.9 math) and 0.6B (1.7 math) — both far below the 17.0 student — the student still gains <strong>+6.0 math / +1.2 code</strong> absolute over its base. Purely free supervision.</p>
+<p><strong>Hint contrast (Table 4).</strong> One 4B model plus reference solutions: +1.4 math / +1.1 code. Smallest gains, but cheapest construction requiring a single weak model.</p>
+<p><strong><span class="arithmatex">\(\alpha\)</span> sweep (Fig. 4).</strong> Performance is an inverted U: small <span class="arithmatex">\(\alpha\)</span> underperforms OPD (signal barely injected), moderate <span class="arithmatex">\(\alpha\)</span> is best, large <span class="arithmatex">\(\alpha\)</span> declines as the proxy teacher drifts from the student's distribution — matching the theory of the trade-off.</p>
+<p><img alt="Effect of the amplification coefficient alpha across math and code benchmarks" src="assets/weak-to-strong-opd/fig4.png" />
+<em>Figure 4 from the paper: W2S-OPD beats the OPD reference (gray line) over a wide range of <span class="arithmatex">\(\alpha\)</span>, with degradation at both extremes — too little injected direction or too much distributional drift.</em></p>
+<p><strong>OOD (Table 5).</strong> Trained only on math: GPQA-Diamond 38.9 → 56.5 (OPD: 54.4); on IFBench OPD <em>degrades</em> the student below base (25.9 vs. 26.3) — absorbing the small expert's limitations — while W2S-OPD improves it to 27.0. The anchor really does protect general capability.</p>
+<p><strong>Token analysis (Table 6).</strong> Relative to the all-token distribution, the RL contrast shifts top-<span class="arithmatex">\(\Delta\)</span> mass to Plan (15.7 vs. 8.6 base) and Monitor; the scale contrast keeps mass on Analyze/Implement; the hint contrast concentrates 16.4% on Answer tokens (an artifact of conditioning on answers) plus Plan (20.2). Complementary signals, which is presumably why merging directions works.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>OPD-Squared / On-Policy Delta Distillation (this list):</strong> the closest relative. OPD² distills the <em>delta</em> between a teacher's tuned and base versions; W2S-OPD generalizes the same "contrast isolates the added capability" insight, but re-anchors the direction on the <em>student's</em> base — which is what unlocks weak-to-strong (the pair can be smaller than the student) and multi-direction composition. Worth reading side by side.</li>
+<li><strong>OPD Isn't a Free Lunch / MOPD (this list):</strong> two of that thread's failure modes are precisely what W2S-OPD targets — stronger teachers transferring less when distributional overlap is low (here the teacher is <em>constructed</em> to be adjacent), and the cost of training expert teachers (here RL runs at 4B). The third failure mode (per-token KL can't fix early wrong turns) applies to W2S-OPD unchanged.</li>
+<li><strong>OPD Survey (this list):</strong> slots W2S-OPD into the taxonomy as a new supervision-source axis: not strong-to-weak, not same-origin consolidation, but synthesized-teacher weak-to-strong. The survey's open question "where does frontier supervision come from?" is exactly this paper's discussion section.</li>
+<li><strong>Multi-Turn OPD via Teacher Replay (this list):</strong> orthogonal axis — ReOPD fixes <em>where states come from</em> in multi-turn OPD, W2S-OPD fixes <em>who the teacher is</em>. An agentic version of W2S-OPD would have to confront ReOPD's prefix-trap findings; nothing here is multi-turn yet.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The result that most needs scrutiny is also the headline one: surpassing the teacher. It's shown convincingly only in the RL-contrast math setting (51.8 vs. 48.8); on code the student stays below the expert, and the scale/hint contrasts deliver much smaller gains (+1.1 to +6.0). Everything is Qwen3-family, non-thinking mode, 100 training steps — one architecture, one scale ratio (4B→8B), short horizon. Whether a "capability direction" extracted at 4B remains meaningful when the anchor is 200B rather than 8B is the actual frontier-relevant question, and it is asserted (directions are "largely disentangled from model scale") rather than tested beyond this single ratio. Note also the requirement that all pair members share the student's vocabulary/tokenizer for logits to be subtractable — fine within Qwen3, restrictive across families (inferred from the construction — verify in the paper). Cost is real too: every training token needs forward passes through three extra frozen models (base anchor + positive + negative), though all are small. And <span class="arithmatex">\(\alpha\)</span> is a genuine hyperparameter with an inverted-U response — a wrong guess <em>underperforms vanilla OPD</em>, and the paper offers no principled selection rule. Finally, the concurrent Direct-OPD (Feng et al. 2026) transfers the same pre/post-RL log-ratio as a dense reward, so the RL-contrast idea is in the air; W2S-OPD's distinctive contributions are the base-model re-anchoring, the multiple contrast sources, and the multi-direction composition. Those are good contributions — the elegant part is that this is DExperts-style logit arithmetic promoted from a decoding trick to a supervision synthesizer.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Proxy teacher = student base + α·(weak-positive − weak-negative) in logit space</strong>: the subtraction cancels shared weakness and isolates the capability direction; the anchor keeps the target distributionally adjacent to the student. Reverse-KL OPD on student rollouts does the rest.</li>
+<li>Weak supervision comes in at least three cheap flavors — RL-instilled skill (post-RL vs. pre-RL), scale (4B vs. 0.6B, free), and privileged context (correct vs. wrong hints) — and they teach <em>different tokens</em>: framework (Plan/Monitor) vs. procedure (Analyze/Implement).</li>
+<li>An 8B student beat its 4B-RL teacher on competition math (51.8 vs. 48.8) and improved from <em>strictly weaker</em> sources — while OPD from the same expert degraded instruction-following below baseline. Anchoring, not imitation, is what makes weak-to-strong distillation work.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-09 14:55 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
