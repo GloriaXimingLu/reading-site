@@ -11,12 +11,17 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">257 papers/posts · 40 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-08-09</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">36</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">40</span></a><a href="#distillation">Distillation <span class="count">13</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">26</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">12</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">13</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">27</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">7</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">37</span></a><a href="#data">Data &amp; Datasets <span class="count">8</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">20</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">18</span></a></nav><section id="latest"><h2>🆕 Latest additions</h2><p class="latest-row">2026-08-09 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>EvoHarness-RL: Training Harness Usage as a Capability (UIUC/Meta)</strong> · <a href="tutorials/evoharness-rl.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#distillation">Distillation</a> · <strong>Weak-to-Strong On-Policy Distillation via Proxy-Teacher Logit Contrast (Microsoft)</strong> · <a href="tutorials/weak-to-strong-opd.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Frozen Weights, Degrading Behavior: Memory Poisoning in Self-Improving Agents</strong></p><p class="latest-row">2026-08-09 · <a href="#reasoning">Reasoning &amp; Test-Time Compute</a> · <strong>Argus: A General-Purpose Agentic Runtime for Long-Horizon Reasoning</strong> · <a href="tutorials/argus-agentic-runtime.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>Harness Rankings Are Model-Dependent: Codex Overoptimizes for Large Models</strong></p><p class="latest-row">2026-08-09 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>The Loss Does Not See the Basis, but Adam Does</strong></p><p class="latest-row">2026-08-09 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>Shadow Evaluation: Can Agents Do Unpublished NeurIPS Research? (Princeton)</strong></p><p class="latest-row">2026-08-09 · <a href="#tools">Tools &amp; Infrastructure</a> · <strong>Shepherd: Agent-Native Version Control for Long-Task State (Stanford)</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
+<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">262 papers/posts · 43 tutorials · 0 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-08-09</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">37</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">42</span></a><a href="#distillation">Distillation <span class="count">13</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">26</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">12</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">13</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">28</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">7</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">38</span></a><a href="#data">Data &amp; Datasets <span class="count">8</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">20</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">18</span></a></nav><section id="latest"><h2>🆕 Latest additions</h2><p class="latest-row">2026-08-09 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>EvoHarness-RL: Training Harness Usage as a Capability (UIUC/Meta)</strong> · <a href="tutorials/evoharness-rl.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#distillation">Distillation</a> · <strong>Weak-to-Strong On-Policy Distillation via Proxy-Teacher Logit Contrast (Microsoft)</strong> · <a href="tutorials/weak-to-strong-opd.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Frozen Weights, Degrading Behavior: Memory Poisoning in Self-Improving Agents</strong></p><p class="latest-row">2026-08-09 · <a href="#reasoning">Reasoning &amp; Test-Time Compute</a> · <strong>Argus: A General-Purpose Agentic Runtime for Long-Horizon Reasoning</strong> · <a href="tutorials/argus-agentic-runtime.html">📖 tutorial</a></p><p class="latest-row">2026-08-09 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>Harness Rankings Are Model-Dependent: Codex Overoptimizes for Large Models</strong></p><p class="latest-row">2026-08-09 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>The Loss Does Not See the Basis, but Adam Does</strong></p><p class="latest-row">2026-08-09 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>Shadow Evaluation: Can Agents Do Unpublished NeurIPS Research? (Princeton)</strong></p><p class="latest-row">2026-08-09 · <a href="#tools">Tools &amp; Infrastructure</a> · <strong>Shepherd: Agent-Native Version Control for Long-Task State (Stanford)</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card">
 <div class="card-head"><span class="title">Frozen Weights, Degrading Behavior: Memory Poisoning in Self-Improving Agents</span><span class="badge feed">feed</span></div>
 <p class="snippet">A self-improving agent can keep its weights frozen and still get worse through the memories it learns to trust.
 
 These agents store past episodes, score them with an LLM, and reuse…</p>
 <p class="card-meta">@rohanpaul_ai · added 2026-08-09 · <a href="https://x.com/rohanpaul_ai/status/2086435490119713248">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">Adversarial Protocol Review for Reliable Agentic Scientific Research</span><span class="badge feed">feed</span></div>
+<p class="snippet">Every successful scientific project eventually enters a battle-testing phase in which the team is actively trying to show that their results don&#x27;t hold. In a new post, @mmooritz an…</p>
+<p class="card-meta">@ChrisGPotts, @ChrisGPotts · added 2026-08-09 · <a href="https://github.com/bigspinai/reliable-agentic-science">GitHub</a> · <a href="https://x.com/ChrisGPotts/status/2084308148450677032">X post</a> · <a href="https://bigspin.ai/resources/adversarial-protocol-review-for-reliable-agentic-scientific-research">bigspin.ai</a></p>
 <p class="card-actions"> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">Survey of Self-Evolving Coding Agents: Overfitting, Safety, Cost, Generalization</span><span class="badge feed">feed</span></div>
@@ -311,6 +316,20 @@ Recursive Synthesis for Long…</p>
 What if the next scaling axis for generative models is not a …</p>
 <p class="card-meta">@rohanpaul_ai · added 2026-08-09 · <a href="https://x.com/rohanpaul_ai/status/2086370187784470962">X post</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">IPE: Q-Function Pretraining for Online RL Fine-Tuning Needs Diverse-Policy Rollouts</span><span class="badge feed">feed</span></div>
+<p class="snippet">Pretraining a Q-function often doesn’t actually help RL finetuning, compared to initializing Q from scratch.
+
+We find that pretraining Q-functions on data from diverse policies is …</p>
+<p class="card-meta">@chelseabfinn · added 2026-08-09 · <a href="https://arxiv.org/abs/2607.27203">arXiv</a> · <a href="https://x.com/chelseabfinn/status/2086449418027270646">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/ipe-q-pretraining.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">SP3O: Reward-Model-Free Policy Optimization from Segment Preferences</span><span class="badge feed">feed</span></div>
+<p class="snippet">Just came across this really clever paper out of University of Michigan that actually tackles two of the biggest headaches in RLHF at once.
+
+If you’ve ever worked with Preference-B…</p>
+<p class="card-meta">@gurtej__gill_ · added 2026-08-09 · <a href="https://arxiv.org/abs/2608.02951">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2086174604415136151">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/sp3o-segment-pbrl.html">📖 Tutorial · 8 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">Is One Layer Enough? Single-Layer Updates Recover Most RL Post-Training Gains</span><span class="badge feed">feed</span></div>
 <p class="snippet">Really enjoyed this paper: “Is One Layer Enough?” 
@@ -1108,6 +1127,12 @@ LLaDA2.2 gives diffusion language model…</p>
 <p class="card-meta">@jiqizhixin · added 2026-08-09 · <a href="https://github.com/inclusionAI/LLaDA2.X">GitHub</a> · <a href="https://x.com/jiqizhixin/status/2086153468440703000">X post</a> · <a href="https://huggingface.co/inclusionAI/LLaDA2.2-flash">huggingface.co</a></p>
 <p class="card-actions"> </p>
 </div><div class="card">
+<div class="card-head"><span class="title">Do Language Models Use Their Depth Efficiently? (Residual-Stream Analysis)</span><span class="badge feed">feed</span></div>
+<p class="snippet">@apaz_cli @CoreAutoAI I think actually the opposite has been found in research. One example is this work (@robert_csordas ,  @chrmanning , @ChrisGPotts):  https://t.co/FwwFrBnBez
+A…</p>
+<p class="card-meta">@incrementaliser · added 2026-08-09 · <a href="https://arxiv.org/abs/2505.13898">arXiv</a> · <a href="https://x.com/incrementaliser/status/2084595740748230827">X post</a> · <a href="https://www.youtube.com/watch?v=7knwihgj0fU">youtube.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card">
 <div class="card-head"><span class="title">ELT: Elastic Looped Transformers - Memory/Speed Tradeoffs of Unrolled Loops</span><span class="badge feed">feed</span></div>
 <p class="snippet">Updated &quot;ELT: Elastic Looped Transformers&quot; with new experiments from our @eccvconf rebuttal!  
 
@@ -1375,6 +1400,11 @@ It means progress is directed towards the hard…</p>
 <p class="snippet">[AI] Permission Denied: Policy-Graded Evaluation of Coding Agents in Hardened Environments D Davidovich, Y Amar, H Rozencwajg, O Hiltch [Accomplish AI] (2026) https://t.co/Tca4wWQH…</p>
 <p class="card-meta">@fly51fly · added 2026-08-09 · <a href="https://arxiv.org/abs/2608.02670">arXiv</a> · <a href="https://x.com/fly51fly/status/2086207069942943899">X post</a></p>
 <p class="card-actions"> </p>
+</div><div class="card">
+<div class="card-head"><span class="title">DelusionEval: Measuring Delusion-Linked Behaviors in AI Chatbots</span><span class="badge feed">feed</span></div>
+<p class="snippet">Which LLMs tend to facilitate delusion-linked behaviors in realistic multi-turn conversations? We tested 14 models with DelusionEval and found that every evaluated LLM exhibited so…</p>
+<p class="card-meta">@jaredlcm, @HEI · added 2026-08-09 · <a href="https://arxiv.org/abs/2608.05004">arXiv</a> · <a href="https://x.com/jaredlcm/status/2085387885096865813">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/delusioneval.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card">
 <div class="card-head"><span class="title">Frontier Agents Given 6 Days Fail to Reproduce Unpublished NeurIPS Research</span><span class="badge feed">feed</span></div>
 <p class="snippet">Frontier agents got 6 days and thousands of dollars in compute to solve the central research questions behind 2 unpublished NeurIPS 2026 papers.
@@ -2004,6 +2034,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-08-09 14:55 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-09 15:58 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>

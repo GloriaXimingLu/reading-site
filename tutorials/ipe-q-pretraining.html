@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPE: Q-Function Pretraining Doesn&#x27;t Transfer — Bootstrap from Policy Ensembles Instead</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>IPE: Q-Function Pretraining Doesn&#x27;t Transfer — Bootstrap from Policy Ensembles Instead</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.27203">arXiv:2607.27203</a> · <a href="https://arxiv.org/abs/2607.27203">arXiv</a> · <a href="https://x.com/chelseabfinn/status/2086449418027270646">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "Do You Really Need to Pretrain Q-Functions for Online RL Fine-Tuning?" (arXiv 2607.27203, v2 Aug 3 2026). Authors: Perry Dong, Ron Polonsky, Dorsa Sadigh, Chelsea Finn.</p>
+<h2>TL;DR</h2>
+<ul>
+<li>Given a pretrained base policy, <strong>pretraining the Q-function on offline data before online RL fine-tuning often buys you almost nothing</strong> over a randomly initialized Q — a systematic result across six sparse-reward manipulation benchmarks, contradicting the "of course you should pretrain the value too" default.</li>
+<li>The diagnosis is an <strong>objective mismatch</strong>: offline value learning converges toward <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span>, the value of the frozen base policy, but online fine-tuning needs <span class="arithmatex">\(Q^{\pi^*_{\text{RL}}}\)</span>, the value of the policy RL will converge to. The gap persists even after offline value <em>maximization</em> — <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span> is near chance (0.52) at preferring optimal-RL actions over base actions, where <span class="arithmatex">\(Q^{\pi^*_{\text{RL}}}\)</span> prefers them at 0.76.</li>
+<li>The fix is not a better value loss but <strong>better data</strong>: Initialization via Policy Ensemble (IPE) trains N diverse policies on the same demonstrations and pools their rollouts to seed the online replay buffer, yielding an average <strong>1.26× improvement</strong> in fine-tuning performance over naive Q-pretraining.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Pretrain-then-finetune is the dominant recipe for policies, and the reflexive extension is to pretrain every component — including the critic. This paper is a clean counterexample to that reflex, and the shape of the argument matters well beyond robot manipulation. The value function you can learn from offline data is the value of the <em>data-generating</em> policy (or something near it); the value function online RL needs is the value of the <em>improved</em> policy it is heading toward. Those are different objects, and no amount of offline polishing of the first gets you the second.</p>
+<p>For this tracker's core interest — RL post-training of LLMs — the analogy is direct. Whether to pretrain/warm-start the critic (or process reward model, or advantage estimator) before RLHF/RLVR is a recurring design decision, usually resolved by intuition. This paper says the intuition has a hole: a critic distilled from base-policy behavior systematically misranks exactly the actions that RL exploration needs to discover. And its proposed cure — inject <em>policy diversity</em> into the bootstrap data rather than refine the value target — reads like a value-side justification for practices like sampling from multiple checkpoints or heterogeneous policies when building training buffers. The result also rhymes with the recent "critic-free" drift in LLM RL (GRPO-family methods): if pretrained critics start out wrong in precisely the direction that matters, group-relative baselines computed from fresh rollouts look less like a compromise and more like a principled choice.</p>
+<h2>The core idea</h2>
+<p><img alt="Figure 1: naive Q-pretraining targets the wrong Q-function; IPE's diverse rollouts give the coverage needed to learn the right one" src="assets/ipe-q-pretraining/fig1.png" />
+<em>Figure 1 from the paper: (left) the RL-optimal policy differs from the base policy, and <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span> barely prefers optimal-RL actions over base actions (0.52 vs. 0.76 for <span class="arithmatex">\(Q^{\pi^*_{\text{RL}}}\)</span>); (middle) an ensemble of diverse policies gives better action coverage; (right) IPE beats direct Q-pretraining on average success rate.</em></p>
+<p>The question is posed precisely: you already have a pretrained base policy <span class="arithmatex">\(\pi_{\text{base}}\)</span> (e.g. behavior-cloned from demonstrations). Should you also pretrain <span class="arithmatex">\(Q_\phi\)</span> on the offline data before online fine-tuning? The conventional pipeline says yes — an accurate value estimate should make early online updates less destructive. The paper's experiments say the benefit mostly isn't there, and its analysis explains why.</p>
+<p>Offline value pretraining — whether plain policy evaluation or offline value maximization à la offline RL — produces a Q-function anchored to the base policy's behavior distribution:</p>
+<div class="arithmatex">\[ Q_{\text{pretrain}} \approx Q^{\pi_{\text{base}}}, \qquad \text{but online fine-tuning needs } Q^{\pi^*_{\text{RL}}}, \]</div>
+<p>where <span class="arithmatex">\(\pi^*_{\text{RL}}\)</span> is the policy online RL converges to (notation condensed from the paper's framing — verify exact statement in the paper). The two value functions agree on states the base policy visits but diverge exactly where fine-tuning creates improvement: on the actions the base policy rarely takes. The paper's preference-accuracy probe makes this concrete — even for a <em>near-optimal</em> base policy, <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span> ranks optimal-RL actions above base actions barely better than a coin flip. So the pretrained critic starts out confidently wrong about the comparisons that drive policy improvement, and online TD learning has to unlearn it — which is why random initialization does about as well.</p>
+<p>The constructive insight: what actually transfers from pretraining is not value <em>accuracy</em> but data <em>coverage</em>. A single trained policy produces a narrow action distribution; a Q-function bootstrapped only from it collapses toward <span class="arithmatex">\(V^{\pi_{\text{base}}}\)</span>. Multiple policies trained independently on the <em>same</em> demonstrations target the same behavior but land in different places, and their pooled rollouts cover a broader slice of action space — enough for the online Q-function to see the contrasts it needs.</p>
+<h2>How it works</h2>
+<p><strong>Online fine-tuning setup.</strong> The Q-function is trained by standard TD learning on replay data:</p>
+<div class="arithmatex">\[ \mathcal{L}(\phi)=\mathbb{E}_{(s_t,a_t,s_{t+1})\sim\mathcal{D}}\Big[\big(r_t+\gamma Q_{\phi'}(s_{t+1},\tilde{a}^*_{t+1})-Q_{\phi}(s_t,a_t)\big)^2\Big], \]</div>
+<p>where <span class="arithmatex">\(\phi'\)</span> is a target network and <span class="arithmatex">\(\tilde{a}^*_{t+1}\)</span> the next action selected for the bootstrap target. Policy improvement happens through an <em>edit policy</em> <span class="arithmatex">\(\pi_{\text{edit}}\)</span> that outputs residual corrections <span class="arithmatex">\(\hat{a}_t\)</span> on top of the base action, trained with an entropy-regularized objective:</p>
+<div class="arithmatex">\[ \mathcal{L}(\pi_{\text{edit}})=-\mathbb{E}_{(s_t,a_t)\sim\mathcal{D},\,\hat{a}_t\sim\pi_{\text{edit}}}\Big[Q_{\phi}(s_t,a_t+\hat{a}_t)-\alpha\log\pi_{\text{edit}}(\hat{a}_t\mid s_t,a_t)\Big], \]</div>
+<p>where <span class="arithmatex">\(a_t + \hat{a}_t\)</span> is the edited action and <span class="arithmatex">\(\alpha\)</span> the entropy temperature — fine-tuning as learned deltas on a frozen base, rather than full re-optimization.</p>
+<p><strong>IPE itself is almost embarrassingly simple.</strong> Three stages:</p>
+<ol>
+<li>Pretrain the base policy <span class="arithmatex">\(\pi_{\text{base}}\)</span> on demonstrations (supervised learning), as usual.</li>
+<li>Train N additional policies on the identical data/action distribution — same target behavior, independent optimization, hence diverse action tendencies.</li>
+<li>Roll out all N+1 policies in the environment and pool the trajectories to initialize the online replay buffer. Online RL (TD + edit policy above) then runs from a <em>randomly initialized</em> Q-function but a diversity-rich buffer.</li>
+</ol>
+<pre><code class="language-text"># IPE (condensed from the paper's method description)
+D_demo ← offline demonstrations
+π_base ← supervised pretraining on D_demo
+for i = 1..N:                     # diverse policy ensemble
+    π_i ← independent training run on D_demo (same action distribution)
+B ← {}                            # replay buffer
+for π in {π_base, π_1, ..., π_N}:
+    B ← B ∪ rollouts(π, env)      # pooled, diverse coverage
+Q_φ ← random init                 # NOT pretrained
+repeat (online fine-tuning):
+    collect env data with current policy → B
+    update Q_φ by TD loss on B          (Eq. 1)
+    update π_edit by entropy-reg. loss  (Eq. 2)
+</code></pre>
+<p>The point of the design: nothing about the <em>value learning</em> changes. All the leverage is in what data the Q-function gets to bootstrap from.</p>
+<h2>Results</h2>
+<p><img alt="Figure 2: pretrained Q vs randomly initialized Q across six manipulation tasks — the curves nearly coincide" src="assets/ipe-q-pretraining/fig2.png" />
+<em>Figure 2 from the paper: across Robomimic (square, can, lift) and OGBench (cube-double, scene, puzzle-4x6), fine-tuning with a pretrained Q-function (grey) barely differs from a randomly initialized one (yellow) — and on <code>can</code>, random init is clearly better.</em></p>
+<p>The negative result comes first and is the paper's backbone. On six sparse-reward continuous-control benchmarks — Robomimic's lift/can/square (7-DoF manipulation) and OGBench's cube-double (pick-and-place), scene (long-horizon), and puzzle-4x6 (combinatorial) — fine-tuning curves with Pretrain-Q and Random-Q are nearly indistinguishable on most tasks, and on <code>can</code> the random initialization actually wins. Whatever the pretrained critic learned, online RL doesn't cash it in.</p>
+<p>The preference probe (their Fig. 3) sharpens the mechanism: <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span> and <span class="arithmatex">\(Q^{\pi^*_{\text{RL}}}\)</span> are measurably different functions even when the base policy is near-optimal, and the pretrained critic is at ~0.52 accuracy — chance level — at preferring optimal-RL actions over base actions.</p>
+<p>IPE, by contrast, delivers: an average <strong>1.26× improvement</strong> in fine-tuning performance over naive Q-function pretraining across the benchmark suite, with the average-success-rate curve dominating direct pretraining through most of online training (Fig. 1, right panel). Consistent with the diagnosis, the gain comes from coverage — the ensemble's pooled rollouts let the online critic learn contrasts a single policy's data never exposes.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>HL-Gauss PPO (this list):</strong> that work improves <em>how</em> the value function is represented and regressed; this paper says the binding constraint at initialization is <em>what data</em> the value learns from, not the loss. The two are complementary levers on the same critic.</li>
+<li><strong>RL pretraining scaling law (this list):</strong> both live in the pretrain-then-RL regime and ask what pretraining artifacts actually help downstream RL. IPE's answer — behavioral diversity transfers, value estimates don't — is a useful qualitative constraint on how to spend pretraining compute.</li>
+<li><strong>One-layer RL post-training (this list):</strong> IPE's edit-policy formulation (learned residuals on a frozen base) is the continuous-control cousin of minimal-update post-training for LLMs; both treat fine-tuning as a small correction on a strong prior rather than re-optimization.</li>
+<li><strong>ISO RLVR optimizer (this list):</strong> GRPO-style critic-free methods sidestep exactly the failure mode documented here — a warm-started critic that misranks the actions exploration needs. This paper is de facto evidence for why fresh, rollout-grounded baselines are competitive with learned critics early in training.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The scope is narrower than the title question suggests. Everything here is continuous-control manipulation with a residual/edit-policy fine-tuning architecture; "Q-pretraining doesn't help" is demonstrated for <em>this</em> pipeline, and the paper's own framing (Q-functions pretrained on data from diverse policies are the useful kind — per the thread) hints the negative result is about naive single-policy pretraining, not value pretraining per se. The headline 1.26× is measured against naive Q-pretraining — the fairer everyday baseline, random init, is close behind naive pretraining on most tasks, so the practical delta over "just don't pretrain" is what you should price in, and it's visible but less dramatic in the average curve. IPE also isn't free: N extra policy-training runs plus N+1 rollout collections shift cost from pretraining into environment interaction, which is exactly the expensive resource in the settings (real robots) where this recipe would matter most. How diversity scales is untested — independent seeds on identical data is the weakest possible diversity mechanism, and it's plausible the effect shrinks as base policies get stronger and more mode-collapsed. Finally, the transfer of the <em>diagnosis</em> to LLM RLHF (KL-anchored, discrete, off-policy-lite) is my inference from the structure of the argument, not something the paper tests — verify before leaning on it. None of this dents the paper's real contribution: a crisp, mechanistic account of <em>why</em> an intuitively good idea fails, which is rarer and more useful than another method that works.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Offline value pretraining learns <span class="arithmatex">\(Q^{\pi_{\text{base}}}\)</span>; online fine-tuning needs <span class="arithmatex">\(Q^{\pi^*_{\text{RL}}}\)</span></strong> — and the two disagree precisely on the base-vs-improved action comparisons that drive learning (0.52 vs. 0.76 preference accuracy). That's why pretrained critics wash out against random init.</li>
+<li><strong>What transfers is coverage, not accuracy</strong>: IPE seeds the replay buffer with rollouts from N+1 independently trained policies on the same data and gets 1.26× over naive Q-pretraining — without changing the value loss at all.</li>
+<li>When designing pretrain→RL pipelines (robots or LLMs), <strong>budget for behavioral diversity in the bootstrap data</strong> before budgeting for a fancier critic initialization.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-09 15:58 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
