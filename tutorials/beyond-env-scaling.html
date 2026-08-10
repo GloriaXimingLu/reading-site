@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beyond Simply Environment Scaling: Ability-Aware Selection and Hierarchical Difficulty Curricula for Multimodal Agents</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Beyond Simply Environment Scaling: Ability-Aware Selection and Hierarchical Difficulty Curricula for Multimodal Agents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.03571">arXiv:2608.03571</a> · <a href="https://arxiv.org/abs/2608.03571">arXiv</a> · <a href="https://github.com/GaryStack/Beyond-MMEnv-Scaling">GitHub</a> · <a href="https://x.com/HuggingPapers/status/2086732882714742912">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Beyond Simply Environment Scaling" (arXiv 2608.03571; Kejian Zhu, Zhuoran Jin, Dongqi Huang, Hongbang Yuan, Yupu Hao, Kang Liu, Jun Zhao — CASIA/UCAS) shows on a 200-environment multimodal pool that naively adding environment <em>types</em> at fixed compute does not monotonically help and can hurt — multimodal mixed training drops 10.7% vs. single-environment training, against only 1.3% for text-symbolic versions of the <em>same</em> tasks, with visibly more polarized cross-environment gradient conflicts.</li>
+<li>Two fixes: <strong>AES</strong> (Ability-aware Environment Selection) profiles each environment by the atomic abilities agents actually exercise in trajectories (GPT-5-segmented, aggregated into 72 core meta-abilities), then greedily selects a subset maximizing new ability coverage minus redundancy and gradient conflict — 30 selected environments beat training on all 200. <strong>HDC</strong> (Hierarchical Difficulty Curriculum) targets the two measured multimodal bottlenecks (visual state extraction, world modeling) with an outer curriculum that <em>weakens textual harnesses</em> (H0→H4) and an inner curriculum over state scale.</li>
+<li>On Qwen3-VL-4B/8B, AES+HDC yields a <strong>143.2% average relative gain</strong> over the base model across ID/OOD environments (vs. 43.4% for all 200 envs, ~44.6% for random-30); ablations show conflict control is the load-bearing part of AES (removing it collapses OOD gain from 40.3% to 2.8%) and the two HDC axes are complementary (11.5% scale-only, 18.1% harness-only, 27.7% both).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The field is racing to scale agent-training environments the way it scaled pretraining corpora — build thousands, train on everything. This paper is a well-controlled "data curation matters" result for the environment era: at fixed compute, <em>which</em> environments and <em>in what order</em> dominates <em>how many</em>. Two ideas travel beyond multimodal agents. First, measuring environment diversity by <strong>induced abilities</strong> (what agents actually do in trajectories) rather than by task-description embeddings is the environment-space analogue of moving from surface dedup to skill-aware data selection. Second, treating the <strong>harness as an annealable scaffold</strong> — start training with rich textual assists, then progressively remove them — is a genuinely new curriculum axis, and it inverts how this tracker usually encounters harnesses (as capabilities to exploit, not crutches to withdraw). For anyone building environment pools or RL curricula for agents, the negative result alone (more env types ≠ better, worse in multimodal) is worth the read.</p>
+<h2>The core idea</h2>
+<p>Environment distributions should be evaluated on two dimensions: <strong>diversity</strong> (broad ability coverage, low redundancy, low optimization conflict) and <strong>difficulty structure</strong> (a progression the agent can actually climb). For diversity, each environment <span class="arithmatex">\(e\)</span> gets a <em>meta-ability profile</em> <span class="arithmatex">\(P_e\)</span> built from 40 trajectories (half Qwen3-VL-4B, half Gemini-3-Flash, so both failures and successes appear), segmented by GPT-5 into atomic abilities and aggregated into an ability graph with frequencies; abilities are split into core (stable, task-critical) and soft. AES then selects greedily. The scoring pieces (exact LaTeX from the paper):</p>
+<div class="arithmatex">\[ \mathrm{NewCoverage}(e,S)=\sum_{a\in C(e)\setminus C(S)}w_{a}, \qquad \mathrm{Redundancy}(e,S)=\max_{e^{\prime}\in S}\mathrm{sim}(P_{e},P_{e^{\prime}}), \]</div>
+<div class="arithmatex">\[ \mathrm{Conflict}(e,S)=\max_{e^{\prime}\in S}\max\!\big(0,-\cos(g_{e},g_{e^{\prime}})\big), \]</div>
+<div class="arithmatex">\[ \mathrm{Gain}(e\mid S)=\lambda_{1}\,\mathrm{NewCoverage}(e,S)-\lambda_{2}\,\mathrm{Redundancy}(e,S)-\lambda_{3}\,\mathrm{Conflict}(e,S), \]</div>
+<p>where <span class="arithmatex">\(C(e)\)</span> is <span class="arithmatex">\(e\)</span>'s weighted ability coverage set, <span class="arithmatex">\(w_a\)</span> the weight of ability <span class="arithmatex">\(a\)</span>, <span class="arithmatex">\(\mathrm{sim}\)</span> a weighted profile similarity, and <span class="arithmatex">\(g_e\)</span> the training gradient of environment <span class="arithmatex">\(e\)</span> (negative cosine similarity = update directions in conflict). Selection adds the max-gain environment until all core abilities are covered — here, 30 of 200 environments reach full coverage of the 72 core meta-abilities.</p>
+<p><img alt="Overview: left, trajectory collection → atomic ability segmentation → meta-ability profiles → AES greedy selection; right, HDC's outer harness-weakening curriculum (H0→H4) wrapping an inner state-scale curriculum." src="assets/beyond-env-scaling/fig2.png" />
+<em>Figure 2 from the paper: the full pipeline for evaluating and designing environment distributions.</em></p>
+<h2>How it works</h2>
+<p><strong>Why difficulty needs a multimodal-specific axis.</strong> Manual error analysis of 200 Qwen3-VL-4B failure trajectories shows the bottlenecks are <em>visual state extraction</em> and <em>world modeling</em> — not the state-scale knobs (grid size etc.) that text-era curricula tune. So the authors define four textual <strong>harnesses</strong> — text observations, text states, text hints, rule descriptions — that scaffold exactly these bottlenecks (with full harness, single-turn success more than doubles: 13.5→31.7 avg with text states). Harness levels <span class="arithmatex">\(H_0\)</span> (all scaffolds) through <span class="arithmatex">\(H_4\)</span> (raw pixels + task description only) form the outer curriculum.</p>
+<p><strong>Smoothed sampling, per-environment state.</strong> Each environment keeps its own harness frontier <span class="arithmatex">\(r_e\)</span> and scale window <span class="arithmatex">\([\ell_e, u_e]\)</span>. Harness levels are sampled from a distribution that puts mass <span class="arithmatex">\(p_{\mathrm{cur}}\)</span> on the frontier and spreads the rest over earlier (easier) levels with exponential decay (exact form from the paper):</p>
+<div class="arithmatex">\[ h\sim D_{e}(h\mid r_{e}), \qquad w_{h}=\exp\big(-\alpha(r_{e}-h)\big), \]</div>
+<p>which avoids abrupt distribution shifts and mitigates forgetting; scale is sampled uniformly from a sliding window <span class="arithmatex">\(s\sim\mathrm{Uniform}(\{\ell_e,\ldots,u_e\})\)</span> with <span class="arithmatex">\(\ell_e=\max(0,u_e-\Delta d)\)</span>.</p>
+<pre><code class="language-text"># Algorithm 1: Hierarchical Difficulty Curriculum (from the paper)
+Input: training envs E_train; harness distribution D_e;
+       scale range [l_e, u*_e]; thresholds tau_scale, tau_harness
+Init:  r_e = 0 (full harness), u_e = l_e  for each e
+for each training step:
+    sample environment  e ~ E_train
+    sample harness level h ~ D_e(h | r_e)      # frontier + easier levels
+    sample scale level   s ~ Uniform({l_e..u_e})
+    generate concrete instance (e, h, s); update policy with RL
+    estimate recent performance p_e at scale u_e
+    if p_e &gt; tau_scale:                        # inner curriculum advance
+        u_e &lt;- min(u_e + 1, u*_e)
+    if u_e == u*_e and p_e &gt; tau_harness:      # outer curriculum advance
+        r_e &lt;- r_e + 1                         # weaken the harness
+        u_e &lt;- l_e                             # restart scale progression
+</code></pre>
+<p>Each environment progresses independently — no global difficulty schedule.</p>
+<h2>Results</h2>
+<p>Main experiments: Qwen3-VL-4B/8B-Instruct, RL at a fixed compute budget, evaluated on ID environments, held-out OOD environments, and general benchmarks (MathVision, MMMU, MMStar).</p>
+<ul>
+<li><strong>Naive scaling fails:</strong> performance fluctuates and sometimes degrades as environment-type count grows at fixed compute (their Figure 3, below); mixed training costs −10.7% in multimodal vs. −1.3% in text-symbolic versions of the same logic, and gradient cosine similarities are visibly more polarized (including strongly negative pairs) in the multimodal versions.</li>
+</ul>
+<p><img alt="Effect of naively scaling the number of training environment types at fixed compute: non-monotonic, sometimes degrading performance." src="assets/beyond-env-scaling/fig3.png" />
+<em>Figure 3 from the paper: more multimodal environment types is not reliably better.</em></p>
+<ul>
+<li><strong>AES (30 envs) beats All-200 and Random-30:</strong> averaged over ID/OOD and both model scales, AES gets a 95.6% relative gain over base vs. 43.4% (all 200) and 44.6% (random 30 balanced over human categories). Selection transfers: profiles/gradients computed with 4B still give the 8B model +144.3% ID / +47.1% OOD.</li>
+<li><strong>AES+HDC is the headline: 143.2% average relative gain</strong>; e.g. 4B ID single-turn 15.7→45.0, OOD multi-turn 9.5→16.8. General multimodal benchmarks are roughly preserved (±1.5% relative), i.e. agentic training didn't tax MMMU/MathVision.</li>
+<li><strong>Ablations localize the value:</strong> dropping AES's redundancy term cuts OOD relative gain 40.3%→25.3%; dropping conflict control collapses it to 2.8% — gradient-conflict filtering, the most expensive component, is also the most necessary. For HDC: scale-only +11.5%, harness-only +18.1%, both +27.7% (on top of AES).</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Echoverse: Deep Evolving Environments for Computer-Use Agents (tracked item)</strong> — Echoverse pushes environment <em>generation</em> (depth and evolution); this paper is the complementary claim that generation without distribution design wastes compute, and AES-style ability profiling is a natural selection layer over any generated pool.</li>
+<li><strong>OSGym: Scalable OS Infrastructure for Computer-Use Agents (tracked item)</strong> — OSGym is exactly the "scale the pool" infrastructure this paper stress-tests. The −10.7% multimodal mixed-training drop and gradient-conflict analysis are the failure modes an OSGym-scale pool should screen for before training on everything.</li>
+<li><strong><a href="evoharness-rl.html">EvoHarness-RL: Training Harness Usage as a Capability</a></strong> — a sharp mirror image. EvoHarness-RL treats the harness as a <em>capability target</em> (agents learn to exploit richer harnesses); HDC treats it as <em>scaffolding to anneal away</em> (agents graduate from harness assistance to raw pixels). Both establish the harness as a first-class training variable rather than fixed plumbing — worth a note on when each framing applies: deployment-time harnesses you keep, training-time harnesses you remove.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The two negative results (non-monotonic scaling; multimodal negative transfer with matched task logic) are the most defensible contributions — clean controls, useful numbers. The positive results are real but the headline needs deflating: "143.2% average relative gain" is an average of relative gains over a very weak base model (e.g., 13.1 ST → 45.0 is genuinely large, but relative-gain averaging over-weights the near-zero baselines, and OOD absolute numbers remain modest — 22.1 ST / 16.8 MT at 4B). Everything is Qwen3-VL; transfer of the AES selection is shown 4B→8B within the family only, and the ability profiles depend on GPT-5 segmentation with manual filtering — a subjective, hard-to-reproduce pipeline step (prompts are in the appendix, at least). Gradient-based conflict scores require per-environment training gradients offline, which the authors admit is costly; and since fixed compute means some of the 200-env runs may be undertrained, part of the "selection beats scaling" effect could be a compute-dilution artifact — selection concentrates compute per environment as well as choosing better ones. The paper acknowledges the budget confound in its limitations. I'd still bet the qualitative claims survive: conflict-aware selection and harness annealing both have sensible mechanisms behind their numbers.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>At fixed compute, environment count is not the metric.</strong> Multimodal mixed training lost 10.7% vs. single-env training (text-symbolic: −1.3%), with polarized gradient conflicts; 30 well-chosen environments beat all 200.</li>
+<li><strong>Select environments by induced abilities, not descriptions:</strong> profile trajectories into meta-abilities, then greedily maximize new coverage − redundancy − gradient conflict. Conflict control is the make-or-break term (40.3% → 2.8% OOD gain without it).</li>
+<li><strong>Anneal the harness.</strong> Start with textual observations/states/hints/rules scaffolding the real multimodal bottlenecks (visual state extraction, world modeling), advance state-scale inside each harness level, then weaken the harness and restart — outer/inner curriculum gains stack (+27.7% over AES alone).</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 14:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

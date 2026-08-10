@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Same Task, Different Work: Prompt-Induced Waste in Coding Agents</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Same Task, Different Work: Prompt-Induced Waste in Coding Agents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.01347">arXiv:2608.01347</a> · <a href="https://arxiv.org/abs/2608.01347">arXiv</a> · <a href="https://x.com/dair_ai/status/2086499472733835296">X post</a> · <a href="../index.html#benchmarks">Benchmarks &amp; Evaluation</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Same Task, Different Work: Prompt-Induced Waste in Coding Agents" (arXiv 2608.01347; Sarel Weinberger, Amir Hozez, PointFive) is a <strong>preregistered</strong> benchmark of 4,644 valid runs across 24 deterministic coding tasks, six ≥500B-class open reasoning models, and two real harnesses (PI.DEV and Claude Code), asking what work a prompt's wording buys — with the task, acceptance criteria, and test command held fixed.</li>
+<li>Wording that requests work reliably causes that work, with zero success gain: "develop several distinct approaches" inflates reasoning <strong>2.4–7.4x</strong> on all six holdout models and produces ~3 elaborated-then-discarded solution branches per run; "be absolutely certain" spawns verification loops whose highest observed level costs <strong>18.25x</strong> the clean-run median with 15 vs. 6 median tool calls. A length-matched verbose restatement stays at ~1.0x.</li>
+<li>The two waste mechanisms have different cost carriers — branch tournaments are token-borne, verification loops are tool-borne — and the harness amplifies both: Claude Code carries a 12–15x larger static prefix, uses 2–7x more turns, and costs <strong>5–30x more per success</strong> than PI.DEV on matched cells. A "bounded efficiency" instruction (smallest sufficient change + explicit stop rule) avoids all measured waste while preserving diagnosis and validation.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Everyone who runs coding agents has folk beliefs about prompt phrasing — "think deeply", "consider alternatives", "make sure it's right". This paper is the first controlled attempt I've tracked to measure what those phrases actually cost when everything else (task, model, harness, evaluator) is frozen, and it lands on a framing worth internalizing: <strong>prompt engineering is work design, not text compression</strong>. A short sentence is expensive if it requests expensive behavior; a long restatement is free if it requests nothing new. For anyone operating agents at scale — or building harnesses — the decomposition into token-borne vs. tool-borne waste is directly actionable, because the fixes differ: elaboration constraints for the former, stop rules and duplicate-action guards for the latter. The harness result is equally practical: prefix size, turn discipline, and tool-mix policy can dominate the user-prompt effect entirely, so benchmarking models without instrumenting the harness silently misattributes cost.</p>
+<h2>The core idea</h2>
+<p>A coding prompt does more than specify an objective — it allocates computation. Two instructions attached to the same bug fix can both yield the correct patch while inducing radically different workloads: one launches an internal tournament of candidate solutions, the other a bounded execution path. The authors preregistered hypotheses, metrics, and waste-classification rules before collecting results, then ran nine semantically controlled prompt variants (baseline, verbose repetition, deep thinking, exhaustive exploration, multiple approaches, max certainty, adjacent cleanup, autonomy, bounded efficiency) plus stress variants that intentionally break semantic equivalence (misleading hints, ambiguous scope, etc.).</p>
+<p>The primary metric is a paired reasoning ratio. Notation reconstructed from the Appendix A.5 prose — verify in the paper:</p>
+<div class="arithmatex">\[ R_{\text{run}} \;=\; \frac{\text{reasoning tokens}(\text{run})}{\operatorname{median}\big(\text{reasoning tokens of baseline runs in the same model–harness–task block}\big)} \]</div>
+<p>where the denominator pairs each run against its own block's baseline, removing model/task/harness level effects. A variant is classified <em>wasteful</em> only when the median ratio exceeds 1.5, the task-clustered 95% CI lower bound exceeds 1.1, there is no material success gain, and the effect appears on multiple tasks (rule stated in the paper; symbolic form reconstructed).</p>
+<h2>How it works</h2>
+<p><strong>Setup.</strong> 24 deterministic tasks (8 low/8 medium/8 high complexity; Python/JavaScript/Go), each with a clean fixture, visible tests, and <em>hidden</em> deterministic evaluators that never exist in the workspace. Sixteen tasks form a development split; eight were frozen as holdout, with per-model variant selections frozen before any holdout run. Six models (DeepSeek-V4-Pro, Kimi-K2.6, Kimi-K2.7-Code, Nemotron-3-Ultra-550B-A55B, Inkling, GLM-5.2) run under PI.DEV (OpenAI chat completions) and Claude Code (Anthropic Messages via a pinned LiteLLM gateway), with dual-side reverse proxies capturing both sides of the gateway. Post-registration studies add Kimi-K3 and first-party claude-sonnet-5.</p>
+<p><strong>Trace annotation.</strong> 2,801 provider-exposed reasoning traces get condition-blind semantic annotation against a frozen rubric (14 composition counts, six waste mechanisms), with mandatory evidence quotes; 91.1% of nonzero counts are evidence-backed, and agreement is highest exactly on the hypothesis-critical fields (alternatives, unused branches, redundant verification; κ 0.55–0.68 cross-judge).</p>
+<pre><code class="language-text"># Benchmark protocol (per preregistered phase)
+freeze hypotheses, metrics, waste-classification rules, prompts
+for task in 24 tasks:                       # 16 dev + 8 frozen holdout
+    render 18 frozen prompt variants        # byte-exact, SHA-256 vs run ledger
+for (model, harness, task, variant) in paired blocks:
+    run agent to completion; capture both gateway sides
+    record reasoning tokens, tool calls by type, turns,
+           latency, cache fields, cost; grade on hidden tests
+for trace in provider-exposed reasoning traces:
+    annotate condition-blind (judge never sees variant labels):
+        alternatives considered / elaborated / implemented,
+        redundant verification level, unsupported assumptions
+for variant in variants:
+    R = per-block paired reasoning ratios vs baseline median
+    wasteful iff median(R) &gt; 1.5 and CI_low &gt; 1.1
+            and no material success gain and multi-task
+holdout: rerun dev-selected top-3 waste variants on 8 unseen tasks x5
+</code></pre>
+<p><strong>Mechanism decomposition.</strong> The <code>multiple_approaches</code> instruction produces +3.5 considered / +3.0 elaborated / +1.0 implemented approaches vs. baseline — an internal tournament whose losers never reach the repository. The first discarded branch raises median no-cache run cost ~1.9x while median tool calls stay at 7–8: token-borne. <code>max_certainty</code> instead propagates into actions: +1.75 median post-success tool calls, repeated already-green test runs (worst case: Kimi-K2.6 rerunning a green suite six times), and 3x wall-clock at the top verification level: tool-borne, because every tool result re-enters context and can trigger another turn.</p>
+<p><img alt="Left: the first discarded solution branch nearly doubles median no-cache run cost while tool calls stay flat. Right: redundant verification escalates tool calls, latency, and cost together, reaching 18.25x at level 3+. Success is flat across all displayed levels." src="assets/prompt-induced-waste/fig1.png" />
+<em>Figure 1 from the paper: different waste mechanisms have different cost carriers.</em></p>
+<h2>Results</h2>
+<ul>
+<li><strong>Holdout (frozen, 8 unseen tasks, 5 reps/cell):</strong> multiple approaches confirmed wasteful on 6/6 models (2.44x–7.40x); deep thinking confirmed wherever selected (1.57–2.21x); bounded efficiency confirmed neutral on 6/6 (0.48–1.16x). Verbose repetition ~1.0x — the unit that matters is implied work, not prompt length.</li>
+<li><strong>Verification loops:</strong> condition-blind annotated redundant-verification level 3+ runs (n=213) cost 18.25x the level-0 median [15.13, 21.06], execute 15 vs. 6 median tool calls, take 3x wall-clock — no success gradient. (Descriptive mediator analysis; the causal claim is that certainty wording increases verification behavior.)</li>
+<li><strong>Misdirection beats noise:</strong> a plausible wrong architectural hint raises reasoning 2.61x and pre-first-edit deliberation 4.2x; irrelevant context (1.03x) and conflicting constraints (1.05x) are nearly free. Unsupported assumptions are the only annotated marker negatively associated with success (ρ = −0.19).</li>
+<li><strong>Harness amplification:</strong> PI.DEV transmits 1,147–1,642 prefix tokens vs. Claude Code's 15,983–20,330 (12–15x); Claude Code uses 10–41 turns vs. 5–7, and is verification-heavy (52% of tool calls are test executions vs. 22%; PI.DEV is 40% reads vs. 21%). Net: 5–30x cost-per-success difference at ~equal success. Caching rebates ~61% of the bill (69–75% on Sonnet 5) without changing behavior.</li>
+<li><strong>Robustness:</strong> effects survive four paraphrases per family (waste variants 3.0–6.7x, length-matched controls 0.96–1.05x), a Kimi-K3 replication (16.6x relative inflation off a 55-token baseline — but absolute waste at or below K2 levels, a good lesson in denominators), and a first-party claude-sonnet-5 study (multiple approaches 2.52–2.70x output tokens; max certainty the largest native family at 4.13x; deep thinking only 1.25–1.30x, consistent with adaptive thinking absorbing explicit cues).</li>
+</ul>
+<p><img alt="Baseline tool-call composition: Claude Code is verification-heavy (52% test executions), PI.DEV is inspection-heavy (40% reads)." src="assets/prompt-induced-waste/fig2.png" />
+<em>Figure 2 from the paper: harness tool policy determines how much room certainty language has to propagate.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="harness-generalization.html">No Universally Best Harness for Automated Discovery</a></strong> — that paper showed harness rankings flip across tasks; this one shows <em>why</em> harness mechanics matter even for a fixed task: prefix size, turn discipline, and tool composition are first-order cost variables, not implementation details.</li>
+<li><strong>Harness Rankings Are Model-Dependent (tracked item)</strong> — the Codex-overoptimization finding is the model-side complement: here, goal-only prompts reduce reasoning under Claude Code (whose system prompt supplies methodology) while exploration cues amplify 4–4.8x under Claude Code vs. 1.1–2.4x under PI.DEV. Harness and prompt interact; neither ranking is stable alone.</li>
+<li><strong><a href="agentic-context-management.html">Agentic Context Management</a></strong> — this paper's tool-borne waste channel (every tool result re-enters context, inducing more turns) is exactly the growth process context-management schemes try to tame. But the authors note the limit: compression reduces the <em>price</em> of tool outputs, not the agent's propensity to issue unnecessary calls. Stop rules and context management attack different layers.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The design is unusually honest — preregistration, frozen holdouts, byte-exact prompts, both-sides gateway capture — and the negative-control structure (verbose repetition ~1.0x) is what makes the headline interpretable. Three real caveats. First, the tasks are small (≤4 files) with ~100% success ceilings, so "no success gain" is partly guaranteed by construction; on repository-scale or architectural work, comparing approaches may genuinely pay, and the authors say so. Second, the 18x verification figure is a descriptive join of annotation and telemetry, not a randomized mediator effect — the causal unit is the prompt family, where effects are large but smaller. Third, the authors are a cloud cost-optimization company and the study was executed by Claude "operating as an autonomous research assistant" — the incentives and the pipeline both favor finding waste, even if the preregistration discipline constrains how it could be manufactured. I'd also flag that the harness comparison, while carefully reconciled (they rule out Anthropic-side classifiers by serving open models via Together), compares one verification-heavy harness configuration against one inspection-heavy one; it measures amplification convincingly, but "5–30x" is a property of this pairing, not of harnesses in general.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Prompts allocate work.</strong> "Compare several approaches" buys ~3 discarded reasoning branches (2.4–7.4x tokens) and one implementation; "be absolutely certain" buys repeated green-test reruns (up to 18x cost). Neither improves success on these tasks; a length-matched restatement costs nothing.</li>
+<li><strong>Waste has two carriers, needing two fixes.</strong> Branch tournaments are token-borne (constrain elaboration and deliverables); verification loops are tool-borne (give an executable stop rule: "rerun only after a relevant change or failure; stop when acceptance criteria pass").</li>
+<li><strong>Measure the harness separately from the model.</strong> A 12–15x prefix gap, 2–7x turn gap, and different tool mixes produced a 5–30x cost-per-success spread at equal correctness — larger than any prompt effect in the study.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 14:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

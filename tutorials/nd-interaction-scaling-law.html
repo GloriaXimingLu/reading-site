@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07222">arXiv:2608.07222</a> · <a href="https://arxiv.org/abs/2608.07222">arXiv</a> · <a href="https://x.com/rosinality/status/2086708534989778961">X post</a> · <a href="../index.html#architecture">Architecture &amp; Efficiency</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Skaling: Chinchilla's Exponents Meet Kaplan's Coupling" (arXiv 2608.07222; Mathurin Videau, Badr Youbi-Idrissi, David Lopez-Paz, Kartik Ahuja — Meta) diagnoses a structural flaw in the additive Chinchilla law: it forces <span class="arithmatex">\(\partial^2 L/\partial N \partial D = 0\)</span>, but the measured mixed derivative is non-zero across two full training grids, producing a saddle-shaped residual that grows toward the grid corners where <span class="arithmatex">\(N\)</span> and <span class="arithmatex">\(D\)</span> are most imbalanced.</li>
+<li>The fix is one parameter: <span class="arithmatex">\(L(N,D) = (A/N^{\alpha} + B/D^{\beta})^{k} + E\)</span> — Chinchilla's independent inner exponents with Kaplan's outer coupling. It reduces MAPE <strong>1.5–3x</strong> across interpolation and every extrapolation regime (e.g., far extrapolation on their SK-Grid: 5.17% → 0.70%), with fitted <span class="arithmatex">\(k \approx 0.31\text{–}0.45\)</span>, far from the additive case <span class="arithmatex">\(k=1\)</span>.</li>
+<li>Because the coupled form is anchored by grid <em>edges</em> rather than the interior, an "L-shape" experiment design — sweep <span class="arithmatex">\(D\)</span> on the smallest models, sweep <span class="arithmatex">\(N\)</span> at the shortest horizons — recovers full-grid accuracy with <strong>~10x less profiling compute</strong>, and beats full-grid Chinchilla; the same law wins compute extrapolation to the most expensive runs (pooled MAPE 0.60% vs. 2.34%, a 3.9x reduction).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Scaling laws are the instrument panel for every serious pretraining budget decision, and this paper argues the default instrument is miscalibrated exactly where you need it: predicting big runs from small ones (extrapolation) and pricing over/under-trained regimes (imbalanced <span class="arithmatex">\(N, D\)</span>). The practical payoffs are concrete. First, allocation: Chinchilla's near-flat optimal token-to-parameter ratio vs. Skaling's decreasing one diverge to a ~100x discrepancy in prescribed ratio at frontier compute on the Farseer data — that is not a rounding error in anyone's budget. Second, experiment cost: if the L-shape result holds up, the standing practice of dense log-spaced grids (whose cost is dominated by the expensive corner) is ~10x wasteful, which changes who can afford to fit their own laws. Third, it's a tidy scientific story: the field resolved the Kaplan-vs-Chinchilla dispute by fixing <em>fitting</em> artifacts (parameter counting, warmup, optimizer tuning) while keeping the additive form; this paper says the <em>form</em> itself was also wrong, and that Kaplan's outer exponent was worth keeping.</p>
+<h2>The core idea</h2>
+<p>Ask the loss surface directly whether <span class="arithmatex">\(N\)</span> and <span class="arithmatex">\(D\)</span> interact. Using moving-least-squares derivative estimates on log-spaced grids, first-order projections look nearly separable (same-variable slopes <span class="arithmatex">\(\alpha_N \approx \alpha_D \approx -1.3\)</span>; cross-slopes <span class="arithmatex">\(\gamma_N \approx 0.13\)</span>, <span class="arithmatex">\(\gamma_D \approx 0.07\)</span>). The decisive test is the mixed derivative, since <em>any</em> additive law <span class="arithmatex">\(L = f(N) + g(D) + E\)</span> makes it identically zero. Empirically it is non-zero everywhere and decays as a power law (exact LaTeX from the paper):</p>
+<div class="arithmatex">\[ \ln\left|\frac{\partial^{2}L}{\partial N\,\partial D}\right| = a\,\ln N + b\,\ln D + c, \qquad a \approx b \approx -1.1, \]</div>
+<p>with predominantly <strong>negative sign</strong>: scaling <span class="arithmatex">\(N\)</span> and <span class="arithmatex">\(D\)</span> together lowers loss more than scaling either alone — a synergy additive forms cannot express. The proposed law interpolates between the two classic forms:</p>
+<div class="arithmatex">\[ L(N,D)=\left(\frac{A}{N^{\alpha}}+\frac{B}{D^{\beta}}\right)^{k}+E, \]</div>
+<p>where <span class="arithmatex">\(A, B\)</span> are amplitudes, <span class="arithmatex">\(\alpha, \beta\)</span> independent per-axis decay exponents, <span class="arithmatex">\(E\)</span> the irreducible loss, and <span class="arithmatex">\(k\)</span> the single new coupling exponent: <span class="arithmatex">\(k=1\)</span> recovers Chinchilla exactly; <span class="arithmatex">\(k \neq 1\)</span> reinstates a Kaplan-style interaction. Kaplan's own form, for contrast (exact from the paper),</p>
+<div class="arithmatex">\[ L(N,D)=\bigl[(N_{c}/N)^{\alpha_{N}/\alpha_{D}}+D_{c}/D\bigr]^{\alpha_{D}}, \]</div>
+<p>ties the inner exponents through a ratio; Skaling unties them while keeping the outer exponent. Since <span class="arithmatex">\(k&gt;0\)</span>, the law stays monotone decreasing in both variables, and minimizing under a compute constraint reduces to the same stationarity condition as Chinchilla — the compute-optimal allocation keeps its closed form (though the fitted parameters, and hence the recommended ratio, differ).</p>
+<p><img alt="Signed percentage error of fitted Chinchilla (left) and Skaling (center) across the (N, D) grid, plus the per-run error ratio (right). Chinchilla's residual is saddle-shaped and grows toward the corners; Skaling stays near zero, winning at 76% of configurations (median 2.2x)." src="assets/nd-interaction-scaling-law/fig1.png" />
+<em>Figure 1 from the paper: the additive law's boundary-concentrated bias, removed by one coupling exponent.</em></p>
+<h2>How it works</h2>
+<p><strong>Data.</strong> Two grids: <strong>Farseer</strong> (404 <span class="arithmatex">\((N,D)\)</span> configs, 25 model sizes 100M–6.4B, 55 data budgets 1B–512B tokens, up to <span class="arithmatex">\(4.1\times10^{21}\)</span> FLOPs, plus 7 far-extrapolation runs at 2.3B–25B params) and <strong>SK-Grid</strong>, their own 134-config grid (15 sizes 134M–4.9B, 16 budgets 316M–316B tokens), trained with StepLaw near-optimal hyperparameters so the fits measure architecture scaling, not mistuning. All laws (Chinchilla, the 9-parameter Farseer law, Skaling) are fit with the same Huber-in-log-space objective via L-BFGS-B with basin-hopping, and evaluated by MAPE (exact definition from the paper):</p>
+<div class="arithmatex">\[ \mathrm{MAPE}(\mathcal{S})=\frac{100}{\lvert\mathcal{S}\rvert}\sum_{i\in\mathcal{S}}\frac{\bigl\lvert\hat{L}_{i}-L_{i}\bigr\rvert}{L_{i}}\;[\%], \]</div>
+<p>on interpolation, extrapolation-in-<span class="arithmatex">\(N\)</span>, extrapolation-in-<span class="arithmatex">\(D\)</span>, and far-extrapolation sets over repeated CV folds.</p>
+<p><strong>The L-shape rationale.</strong> As <span class="arithmatex">\(D\to\infty\)</span>, <span class="arithmatex">\(L \to (A/N^{\alpha})^{k}+E\)</span>, isolating the size parameters; as <span class="arithmatex">\(N\to\infty\)</span>, symmetrically for data parameters. So cheap edge sweeps anchor each axis's decay rate, and the coupling does the rest:</p>
+<pre><code class="language-text"># L-shape profiling protocol (vs. dense log-spaced grid)
+1. D-band: fix the SMALLEST model sizes
+     sweep data budgets D across the full range      # fits (B, beta)
+2. N-band: fix the SHORTEST training horizons
+     sweep model sizes N across the full range       # fits (A, alpha)
+   (total compute ~= 10x less than the full grid:
+    the dense grid's cost is dominated by its top-right corner)
+3. fit L(N,D) = (A/N^a + B/D^b)^k + E jointly on the L
+     Huber loss in log space, L-BFGS-B + basin-hopping
+4. validate: interpolation MAPE, extrapolation in N, in D,
+     and far extrapolation beyond both axes
+5. allocate: closed-form compute-optimal N*(C), D*(C)
+     (same stationarity condition as Chinchilla, new parameters)
+</code></pre>
+<p><img alt="Sampling strategies on the (N, D) grid: random spreads held-out points everywhere; the L-shape restricts training runs to the two low-compute edges." src="assets/nd-interaction-scaling-law/fig4a.png" />
+<em>Figure 4(a) from the paper: the L-shape grid concentrates measurement where runs are cheap.</em></p>
+<h2>Results</h2>
+<ul>
+<li><strong>Full-grid accuracy:</strong> Skaling beats Chinchilla and the 9-parameter Farseer law everywhere. Farseer data: interpolation MAPE 0.41 vs. 0.77, Ext-N 0.47 vs. 1.48, Ext-D 0.88 vs. 1.98. SK-Grid far extrapolation: <strong>0.70 vs. 5.17</strong>.</li>
+<li><strong>L-shape robustness:</strong> restricted to the cheap edges (~10x less fitting compute), Chinchilla degrades badly (SK-Grid far extrapolation 14.63%; Ext-N 6.09%) while Skaling holds at 1.15% and 0.77% — better than <em>full-grid</em> Chinchilla.</li>
+<li><strong>Stable, sub-unit coupling:</strong> fitted <span class="arithmatex">\(k \approx 0.31\text{–}0.45\)</span> across grids and sampling schemes; the fitted irreducible loss drops (Farseer: 0.45 → 0.03), which the authors correctly read as a <span class="arithmatex">\(k\)</span>–<span class="arithmatex">\(E\)</span> trade-off in how the surface flattens, not a vanishing loss floor.</li>
+<li><strong>Compute extrapolation (the frontier-lab use case):</strong> refit only on cheap runs, predict the 112 highest-compute Farseer runs grouped by <span class="arithmatex">\(D/N\)</span> regime. Skaling: pooled MAPE <strong>0.60 ± 0.27%</strong>, never above 0.9% in any regime; Chinchilla 2.34% pooled and 3.47% in the compute-optimal band; only per-recipe 1-D power laws edge it near the optimum (0.77 vs. 0.88%) — and those can't inform joint allocation.</li>
+<li><strong>Allocation consequence:</strong> on Farseer, model-free gradient estimates give a token-to-parameter ratio that <em>decreases</em> with compute (exponents −0.14/−0.15), matching Skaling's analytic −0.11 and contradicting Chinchilla's +0.03; one OOM beyond the data the prescriptions differ ~10x. But on SK-Grid the fitted exponents flip the direction (<span class="arithmatex">\(\alpha &gt; \beta\)</span>) — coupling changes allocation, the <em>direction</em> is dataset/architecture-specific.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="rl-pretraining-scaling-law.html">Scaling Law for Pretrain vs. RL Compute Allocation</a></strong> — same genre of decision (joint allocation across two compute axes), and the same lesson applies with more force: if pretraining's own two axes need an interaction term to extrapolate, additive-form fits of pretrain-vs-RL trade-offs should be treated as interior-only until someone checks their cross-derivative.</li>
+<li><strong>Scaling Laws for Knowledge Injection via Hypernetwork LoRA (tracked item)</strong> — a reminder that every new scaling axis (injected knowledge, adapters) inherits this functional-form question; the authors here explicitly expect similar couplings "along other axes of model scaling", and their MLS mixed-derivative diagnostic is a reusable test before trusting any additive fit.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The diagnosis is the strongest part: the mixed-derivative test is model-free, the saddle residual is visually undeniable, and nesting Chinchilla at <span class="arithmatex">\(k=1\)</span> means the extra flexibility is disciplined — on near-additive data (Farseer-code, original Chinchilla measurements, <span class="arithmatex">\(k \approx 0.77\text{–}0.90\)</span>) the law gracefully degrades to Chinchilla-level accuracy rather than overfitting. Honest caveats too (the <span class="arithmatex">\(k\)</span>–<span class="arithmatex">\(E\)</span> trade-off; the allocation-direction flip between grids). What would temper enthusiasm: both evaluation grids are ≤6.4B-parameter models with far extrapolation to 25B — every "frontier" claim (the 100x ratio discrepancy) is an <em>extrapolation of the extrapolator</em>, exactly the failure mode the paper criticizes in others. The SK-Grid fitted parameters (<span class="arithmatex">\(A, B \sim 10^{6}\text{–}10^{7}\)</span>, <span class="arithmatex">\(\alpha \approx 0.73\)</span>) look wildly different from Farseer's fit of the same functional form, hinting at identifiability looseness: several <span class="arithmatex">\((A,\alpha,k,E)\)</span> combinations can describe similar surfaces, which matters if you interpret the exponents rather than just predict with them. The idea itself is also less novel than the framing suggests — Busbridge et al.'s distillation-scaling-law paper used the identical untied outer-exponent form in passing (the authors cite this properly); the contribution is making the interaction the object of study with controlled evidence. Finally, StepLaw-tuned hyperparameters everywhere means the law describes well-tuned training; mistuned regimes may bend differently.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Additive scaling laws force <span class="arithmatex">\(\partial^2 L/\partial N\partial D = 0\)</span>; reality disagrees</strong> — the measured mixed derivative is non-zero, power-law-decaying, and negative (N and D are synergistic), producing Chinchilla's corner-concentrated errors.</li>
+<li><strong>One outer exponent fixes it:</strong> <span class="arithmatex">\(L=(A/N^{\alpha}+B/D^{\beta})^{k}+E\)</span> with fitted <span class="arithmatex">\(k\approx0.31\text{–}0.45\)</span> cuts MAPE 1.5–3x, keeps a closed-form compute-optimal allocation, and recovers Chinchilla when data are truly additive.</li>
+<li><strong>Fit on the cheap edges:</strong> an L-shaped grid (D-sweeps on small models + N-sweeps on short horizons) matches or beats full-grid fits at ~10x less compute — but only with a coupled form; additive Chinchilla falls apart off the dense grid (far-extrapolation MAPE 14.6%).</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 14:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Case Against Generation for Retrieval: Discriminative LLMs as Two-Tower Retrievers</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>The Case Against Generation for Retrieval: Discriminative LLMs as Two-Tower Retrievers</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.25346">arXiv:2607.25346</a> · <a href="https://arxiv.org/abs/2607.25346">arXiv</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"The Case Against Generation for Retrieval" (arXiv 2607.25346; Zhe Xu et al., 20 authors listed alphabetically, Meta) argues that for web-scale retrieval/recommendation, LLMs should be <strong>discriminative representation backbones inside the classic two-tower architecture</strong>, not generative engines emitting semantic item IDs — sidestepping autoregressive decoding latency and token-to-item grounding failures entirely.</li>
+<li>The recipe: a cross-encoder teacher scoring relevance as the yes/no next-token <strong>logit difference</strong> plus a user-conditioned next-token-prediction auxiliary loss; a two-tower student with a <strong>shared Qwen3-0.6B encoder</strong>, EOS pooling, cross-dataset mid-training, candidate-set <strong>KL distillation</strong> from the teacher, and one Coconut-style latent reasoning step in the user tower only (item embeddings stay precomputable).</li>
+<li>On the TIGER Amazon benchmarks, the 0.6B cross-encoder beats OneRec-Think (8B backbone) on 10/12 dataset–metric combos (Sports R@10 +64.3%); the two-tower student wins R@10 on all three datasets. In production: NE parity with a tuned DLRM using <strong>0.5% of the training data</strong> (CE: 0.15%), +5.5% NE on tail items, and — the standout — a <em>frozen</em> LLM-native model still beats the daily-retrained DLRM baseline three days later (+2.23%) while a frozen DLRM decays to −4.30%.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Generative retrieval (TIGER, OneRec, semantic IDs) has been the fashionable answer to "how do LLMs do retrieval", and it drags in autoregressive decoding on the serving path plus a token→item translation step that fails outside the model. This paper is a large industrial data point for the opposite position — one that generalizes well beyond recommender systems. The interesting results are the production ones, because they isolate <em>why</em> text-grounded representations win operationally: <strong>staleness resilience</strong> (a stable token vocabulary vs. ephemeral item-ID embeddings means the model doesn't rot between retrains), <strong>sample efficiency</strong> (parity at 0.5% of the data), and <strong>tail generalization</strong> (+5.5% NE on the bottom-15%-engagement items, where ID-based models have nothing to memorize). For this tracker's memory/context thread, the architectural pattern — expensive joint-attention scorer as teacher, factorized dot-product retriever as student, latent (never decoded) reasoning only on the query side — is a template that transfers directly to agent memory and RAG stacks.</p>
+<h2>The core idea</h2>
+<p>Keep the two-tower factorization that makes web-scale retrieval feasible — user embedding <span class="arithmatex">\(\mathbf{z}_u\)</span>, precomputed item embeddings <span class="arithmatex">\(\mathbf{z}_i\)</span>, score <span class="arithmatex">\(s_{\mathrm{TT}}(u,i)=\mathbf{z}_u^{\top}\mathbf{z}_i\)</span>, ANN search — but make both towers a <em>shared</em> decoder LLM used discriminatively, and close the expressiveness gap to joint-attention models with distillation. The teacher is a cross-encoder that reads a prompt containing both user history and item text and answers yes/no; its relevance score is the verbalized logit difference (exact LaTeX from the paper):</p>
+<div class="arithmatex">\[ s_{\mathrm{CE}}(u,i)=\ell_{\mathrm{yes}}(u,i)-\ell_{\mathrm{no}}(u,i), \]</div>
+<p>trained with an in-batch softmax contrastive loss plus a <strong>user-conditioned</strong> NTP auxiliary — predicting the item's text given the user context, so item semantics are learned <em>in relation to</em> preferences rather than as unconditional LM smoothing:</p>
+<div class="arithmatex">\[ \mathcal{L}_{\mathrm{CE}}=\mathcal{L}_{\mathrm{con}}(s_{\mathrm{CE}})+\lambda_{\mathrm{ntp}}\,\mathcal{L}_{\mathrm{ntp}}, \qquad \mathcal{L}_{\mathrm{ntp}}=-\!\!\sum_{(u,i)\in\mathcal{S}}\sum_{\ell=1}^{L_{i}-1}\log p_{\theta}\!\left(t_{i,\ell+1}\mid x_{u},t_{i,1},\ldots,t_{i,\ell}\right). \]</div>
+<p>The student absorbs the teacher's ranking behavior over each candidate set via temperature-scaled KL on score distributions:</p>
+<div class="arithmatex">\[ \mathcal{L}_{\mathrm{KD}}=T^{2}\sum_{u}\operatorname{KL}\!\left(q_{\mathrm{CE}}(\cdot\mid u,\mathcal{C}_{u})\,\big\|\,p_{\theta}^{\mathrm{TT}}(\cdot\mid u,\mathcal{C}_{u})\right), \]</div>
+<p>where <span class="arithmatex">\(q_{\mathrm{CE}}\)</span> and <span class="arithmatex">\(p_{\theta}^{\mathrm{TT}}\)</span> are softmaxes of teacher/student scores over candidate set <span class="arithmatex">\(\mathcal{C}_u\)</span> at temperature <span class="arithmatex">\(T\)</span>.</p>
+<p><img alt="Overview: the cross-encoder teacher jointly encodes user and item prompts for a high-quality relevance score; the two-tower student encodes them separately for efficient retrieval; the dashed arrow is candidate-set score-distribution distillation." src="assets/discriminative-retrieval/fig1.png" />
+<em>Figure 1 from the paper: the teacher–student LLM-native retrieval framework.</em></p>
+<h2>How it works</h2>
+<p><strong>Student enhancements, each ablated:</strong> (1) a <strong>shared encoder</strong> for user and item text embeds both in one semantic space and halves trainable parameters; (2) <strong>EOS pooling</strong> — the final token's hidden state under causal attention as the sequence embedding — beats mean pooling; (3) <strong>cross-dataset transfer</strong>: mid-train the shared encoder on all recommendation datasets (<span class="arithmatex">\(\mathcal{L}_{\mathrm{mid}}=\frac{1}{R}\sum_r \mathcal{L}^{(r)}_{\mathrm{con}}\)</span>), then fine-tune per target; (4) <strong>CE2TT distillation</strong> as above; (5) <strong>latent reasoning in the user tower only</strong>: encode the user text without EOS, take the last hidden state as a continuous thought token <span class="arithmatex">\(\mathbf{c}_u\)</span>, re-feed <span class="arithmatex">\([x_u; \mathbf{c}_u; \mathrm{EOS}]\)</span>, and pool the new EOS state (exact from the paper):</p>
+<div class="arithmatex">\[ \mathbf{H}_{u}^{(0)}=g_{\theta}(x_{u}),\;\; \mathbf{c}_{u}=\mathbf{H}_{u}^{(0)}[-1]; \qquad \mathbf{H}_{u}^{(1)}=g_{\theta}([x_{u};\mathbf{c}_{u};\mathrm{EOS}]),\;\; \mathbf{z}_{u}=\mathbf{H}_{u}^{(1)}[-1]. \]</div>
+<p><span class="arithmatex">\(\mathbf{c}_u\)</span> is never decoded to a word — it's one extra continuous refinement step, and because it lives on the user side only, item embeddings remain precomputable.</p>
+<pre><code class="language-text"># LLM-native two-tower retrieval: train + serve
+# Teacher (cross-encoder, Qwen3-0.6B)
+for (user u, item i) batches:
+    prompt = Prompt(x_u, x_i)  -&gt;  next-token logits
+    s_CE = logit(&quot;yes&quot;) - logit(&quot;no&quot;)
+    L = contrastive(s_CE, in-batch negatives)
+        + lambda * NTP(item tokens | user context)
+# Student (two-tower, SHARED Qwen3-0.6B encoder)
+mid-train on all R datasets (contrastive), fine-tune on target
+for user u with candidate set C_u:
+    z_u = EOS-pool( g([x_u ; c_u ; EOS]) )   # c_u = latent thought token
+    z_i = EOS-pool( g(x_i) )                 # plain, precomputable
+    L = contrastive(z_u.z_i) + T^2 * KL( softmax(s_CE/T) || softmax(z_u.z_i/T) )
+# Serving (decoupled, nearline + online)
+on item create/update: embed item, index in real time (ANN)
+periodically:          re-embed users from fresh histories -&gt; KV store
+online request:        fetch z_u (ms) -&gt; kNN over item index -&gt; rankers
+</code></pre>
+<p><strong>Serving is where the "case against generation" bites:</strong> one user-side encoding pass (+1 cached decoding step if latent reasoning is on) and a parallelizable maximum-inner-product search, vs. prefill + <span class="arithmatex">\(N_{\mathrm{gen}}-1\)</span> inherently sequential decoding steps for generative retrieval — plus whatever machinery maps generated tokens back to valid items.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Public benchmarks</strong> (Amazon Beauty/Sports/Toys, TIGER protocol, Qwen3-0.6B): the CE teacher is the new SoTA on 10/12 combos — vs. OneRec-Think on its own reported table, with a 13x smaller backbone (0.6B vs. 8B): Sports R@10 0.0677 (+64.3%), Toys R@10 0.1223 (+53.5%). The TT student beats ORT on R@10 everywhere (+4.3/+31.6/+35.3%) though NDCG is mixed (Beauty N@5 −32.9%).</li>
+<li><strong>Teacher ablation:</strong> yes/no head alone is dataset-dependent (helps Beauty/Toys, <em>hurts</em> Sports); adding user-conditioned NTP fixes the inconsistency and wins all 12 combos — the auxiliary objective is what makes verbalized scoring reliable.</li>
+<li><strong>Student ablation:</strong> CE2TT distillation is the most consequential component (removing it: R@10 −13.3%/−23.1%/−8.0%); transfer learning and latent reasoning give smaller but uniformly positive R@10 gains.</li>
+<li><strong>Production (internal, relative NE):</strong> TT matches the tuned DLRM retriever with 0.5% of training data; CE with 0.15%, and CE scales better with data (2x/3x data: +1.59/+2.19% vs. DLRM's +1.30/+1.80%). Segment analysis: +5.5% NE on tail items, +2.3% on head users. Staleness: frozen DLRM decays −2.68%/−4.30% at ds+2/ds+3; frozen LLM-native CE holds +2.21%/+2.23% <em>vs. the daily-retrained fresh baseline</em>. Serving optimizations (FSQ soft tokens for numeric features, depth pruning, vocab pruning, FP8) net +19.7/+10.6/+2.0/+13.6% QPS at ~zero NE cost. Headroom: 4B backbone +1.90% NE, MoE +0.91%, latent reasoning +0.41%.</li>
+</ul>
+<p><img alt="Serving architecture: nearline item-embedding pipeline (embed + index on create/update), nearline user-embedding pipeline (periodic refresh into a distributed KV store), and an online retrieval layer doing kNN over the item index within tight latency budgets." src="assets/discriminative-retrieval/fig2.png" />
+<em>Figure 2 from the paper: intensive LLM inference is isolated off the online serving path.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Zero-Mem: Generation-Free Agent Memory (tracked item)</strong> — the same thesis applied to agent memory: retrieval-shaped problems don't need generation on the hot path. Zero-Mem removes generation from memory reads; this paper removes it from candidate retrieval. Both trade expressive decoding for indexable, stale-tolerant structure.</li>
+<li><strong>PageIndex: Vectorless, Chunk-Free Retrieval (tracked item)</strong> — the opposite corner of the design space: PageIndex drops embeddings in favor of LLM-navigated structure (reasoning at query time), while this paper doubles down on embeddings and moves <em>all</em> LLM reasoning offline/nearline. The latency-vs-flexibility trade is explicit: dot products in milliseconds vs. navigation depth.</li>
+<li><strong>RAG Scaling Study: BM25 Overtakes Agentic Search at ~10M Tokens (tracked item)</strong> — same operational moral at corpus scale: as the index grows, cheap-per-query discriminative scoring beats clever-but-slow query-time computation. LLM-native two-tower is the trainable middle ground between BM25 and agentic search.</li>
+<li><strong><a href="memory-decoder.html">Memory Decoder: Swappable Parametric Memory</a></strong> — complementary distillation directions: Memory Decoder distills a <em>retriever</em> into a parametric model; CE2TT distills a <em>joint-attention scorer</em> into a factorized retriever. Both show KL-matching a score distribution transfers ranking/lookup behavior across architecture classes.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The production section is the paper's real evidence, and it's unusually concrete for an industrial report (staleness table, segment breakdowns, QPS itemization) — but it's all relative NE on an unnamed internal system, unverifiable and possibly cherry-picked across surfaces. On the public side, the headline comparison has an asymmetry worth noticing: baselines are copied from OneRec-Think's table (different training stacks), the CE "SoTA" is a <em>ranker</em> being compared in a retrieval table, and the actually-deployable TT student is mixed on NDCG — it retrieves well at K=10 but orders less well, which is fine for first-stage retrieval but weakens the rhetorical framing. The title oversells: this is the case against generation <em>for first-stage retrieval at scale</em>, not against generative recommenders broadly — reasoning-heavy reranking and cold-start explanation still favor generation, and their own headroom table shows the discriminative stack importing generation's tricks (latent reasoning +0.41% is modest). The 0.6B backbone choice is smart engineering, but it leaves open whether the two-tower bottleneck (a single dot product) caps what larger discriminative backbones can express — the +1.90% from a 4B CE suggests the ceiling is in the factorization, not the encoder. None of this undermines the operational argument, which I find convincing: stable token vocabularies beat ephemeral ID embeddings on staleness, data efficiency, and tails.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Discriminative beats generative on the retrieval serving path:</strong> yes/no logit-difference scoring + two-tower factorization gives millisecond ANN retrieval with no decoding loop and no token→item grounding, while matching or beating an 8B generative recommender with a 0.6B encoder.</li>
+<li><strong>The transferable recipe:</strong> shared encoder + EOS pooling; user-conditioned NTP to stabilize the verbalized teacher; candidate-set KL distillation (the single most important component, up to −23% R@10 without it); latent reasoning only on the query side so the index stays precomputable.</li>
+<li><strong>Text grounding is an operational superpower:</strong> parity with a tuned DLRM at 0.5% of the data, +5.5% on tail items, and near-zero decay over three days frozen (vs. −4.3% for a frozen DLRM) — because the representation vocabulary doesn't churn with the item catalog.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 14:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
