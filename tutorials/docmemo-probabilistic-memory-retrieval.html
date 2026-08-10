@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocMemo: Probabilistic Memory-Guided Retrieval for Long Documents</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>DocMemo: Probabilistic Memory-Guided Retrieval for Long Documents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07067">arXiv:2608.07067</a> · <a href="https://arxiv.org/abs/2608.07067">arXiv</a> · <a href="https://github.com/Harrygof/DocMemo">GitHub</a> · <a href="https://x.com/_reachsumit/status/2086671928014798899">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"DocMemo: Dynamic Evidence Discovery via Probabilistic Memory-Guided Retrieval for Multi-Modal Document Understanding" (arXiv 2608.07067; Hanshu Yao, Janfeng Zhong, Niu Lian, Jinpeng Wang; code released) reframes long-document QA as <em>dynamic evidence exploration</em>: instead of committing to a fixed top-k page set up front, maintain an explicit probabilistic belief over page relevance and update it with reasoning feedback each round.</li>
+<li>The machinery is a tri-level memory — offline Document Schema Memory (structure priors), Page Belief Memory (a Beta distribution per page, updated by Beta–Bernoulli conjugacy), and Question Episodic Memory (evidence notes + query rewrites) — driving Thompson-sampled page selection with spatial propagation to neighboring pages.</li>
+<li>It reports state-of-the-art on three long-document benchmarks: 71.3% overall on MMLongBench-Doc (+3.7 points over the strongest agentic baseline), +8.8 on LongDocURL, +15.0 on PaperTab; evidence recall climbs from 28.3% (round 1) to 69.6% (round 3), and ablating the Bayesian updating costs 2.5 points overall.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The memory systems this tracker follows (Zero-Mem, HiGram, MemexRL, AgentRunbook-C) mostly answer "what should the agent remember across a long horizon?" DocMemo answers a narrower but very load-bearing question: <strong>what should retrieval remember across rounds of a single task?</strong> Standard RAG is stateless — every round re-ranks by similarity to some query, and an early retrieval miss is unrecoverable because nothing records which pages have been tried, confirmed, or ruled out. Iterative-retrieval systems exist, but as the authors note, they haven't formalized how cross-round state should <em>propagate</em>.</p>
+<p>DocMemo's answer is the classic bandit toolkit, applied at the page level: relevance is a latent Bernoulli parameter per page, the retriever's score is a prior, the reasoner's per-round verdicts are observations, and page selection is Thompson sampling over the posterior. That's a principled uncertainty-aware exploration story — uncertain pages keep getting chances, confirmed pages get exploited, refuted pages decay — rather than the usual "append the LLM's notes to the prompt" memory. For anyone doing context engineering over large corpora (not just PDFs), the pattern of <em>retrieval state as posterior beliefs updated by reasoning feedback</em> is the transferable idea, and it echoes the recsys-style retrieval angle this tracker recently picked up.</p>
+<h2>The core idea</h2>
+<p>Given a document <span class="arithmatex">\(D=\{p_i\}_{i=1}^{N}\)</span> and query <span class="arithmatex">\(q\)</span>, DocMemo runs at most <span class="arithmatex">\(T\)</span> retrieval–reasoning rounds, maintaining memory state <span class="arithmatex">\(\mathcal{M}^{(t)}=(\mathcal{M}_{\text{schema}},\mathcal{M}_{\text{belief}}^{(t)},\mathcal{M}_{\text{epi}}^{(t)}\)</span>) — persistent document knowledge, dynamic retrieval state, and query-local reasoning experience, respectively (the paper cites the complementary-learning principle of separating persistent from dynamic information).</p>
+<p>The heart is Page Belief Memory: each page's latent relevance is modeled by a Beta distribution <span class="arithmatex">\(\operatorname{Beta}(\alpha_i^{(t)},\beta_i^{(t)})\)</span>. Initialization comes from ColQwen2.5 late-interaction visual retrieval,</p>
+<div class="arithmatex">\[\tilde{c}_{i}=\sum_{k=1}^{|q|}\max_{j}\cos(\mathbf{q}_{k},\mathbf{f}_{i,j}),\]</div>
+<p>where <span class="arithmatex">\(\mathbf{q}_k\)</span> are query-token embeddings and <span class="arithmatex">\(\mathbf{f}_{i,j}\)</span> page <span class="arithmatex">\(p_i\)</span>'s visual patch embeddings; after normalizing to <span class="arithmatex">\(c_i\in[0,1]\)</span>, the prior is <span class="arithmatex">\(\alpha_i^{(0)}=Sc_i+1,\ \beta_i^{(0)}=S(1-c_i)+1\)</span>, with <span class="arithmatex">\(S\)</span> controlling prior strength. So the retriever's opinion enters as <em>pseudo-counts</em>, not as a hard ranking — it can be overturned by evidence.</p>
+<h2>How it works</h2>
+<p><strong>Bayesian belief updating.</strong> After round <span class="arithmatex">\(t\)</span> the reasoner labels a set of useful pages <span class="arithmatex">\(U_t\)</span> and irrelevant pages <span class="arithmatex">\(V_t\)</span> (unlabeled pages stay neutral). By Beta–Bernoulli conjugacy:</p>
+<div class="arithmatex">\[\alpha_{i}\leftarrow\alpha_{i}+\mathbb{I}[i\in U_{t}],\qquad \beta_{i}\leftarrow\beta_{i}+\mathbb{I}[i\in V_{t}],\qquad \mu_{i}=\frac{\alpha_{i}}{\alpha_{i}+\beta_{i}}\]</div>
+<p>with posterior mean <span class="arithmatex">\(\mu_i\)</span> as accumulated relevance confidence. Because evidence in documents is spatially local, positive feedback also propagates to neighbors: for <span class="arithmatex">\(i\in U_t\)</span> and <span class="arithmatex">\(0&lt;|j-i|\le r\)</span>, <span class="arithmatex">\(\alpha_j\leftarrow\alpha_j+\gamma^{|j-i|}\)</span> (decay <span class="arithmatex">\(\gamma\)</span>, radius <span class="arithmatex">\(r\)</span>); negative feedback is deliberately <em>not</em> propagated, to avoid suppressing relevant nearby pages.</p>
+<p><strong>Thompson-sampled retrieval.</strong> Each round samples <span class="arithmatex">\(\theta_i^{(t)}\sim\operatorname{Beta}(\alpha_i^{(t)},\beta_i^{(t)})\)</span> and blends it with fresh visual similarity <span class="arithmatex">\(c_i^{(t)}\)</span> to the <em>current rewritten query</em> <span class="arithmatex">\(\hat{q}_t\)</span>:</p>
+<div class="arithmatex">\[\operatorname{score}_{i}^{(t)}=(1-\lambda_{t})\,c_{i}^{(t)}+\lambda_{t}\,\theta_{i}^{(t)},\]</div>
+<p>so retrieval shifts from similarity-driven to belief-driven as rounds accumulate. Top-scored candidates are reranked by an LLM using page summaries plus schema and episodic memory, merged into the cross-round accumulated set <span class="arithmatex">\(\mathcal{A}_t=\mathcal{A}_{t-1}\cup\mathcal{P}_t\)</span>, and evidence pages are chosen from <span class="arithmatex">\(\mathcal{A}_t\)</span> by posterior mean — so earlier pages can be revisited when new evidence arrives.</p>
+<p><strong>The reasoner closes the loop.</strong> Reading the evidence pages plus memory context, it either answers, returns <code>not_answerable</code>, or emits a refined query <span class="arithmatex">\(\hat{q}_{t+1}\)</span> and note <span class="arithmatex">\(n_t\)</span> (appended to episodic memory) along with the labels <span class="arithmatex">\(U_t, V_t\)</span> that drive the next belief update. For visually dense pages, adaptive-granularity access supplements full pages with high-resolution local regions (the paper flags table-heavy documents as the main beneficiary).</p>
+<p><img alt="DocMemo overview" src="assets/docmemo-probabilistic-memory-retrieval/fig1.png" />
+<em>Figure 2 of the paper: tri-level memory (left) and the memory-guided retrieval loop with Thompson sampling and Bayesian belief updating (right).</em></p>
+<pre><code class="language-text">Offline: page embeddings + summaries; schema memory (type, section index, global summary)
+Init:    alpha_i = S*c_i + 1, beta_i = S*(1-c_i) + 1   from ColQwen2.5 scores
+A_0 = {}; q_hat_1 = q
+for t = 1..T:
+    sample theta_i ~ Beta(alpha_i, beta_i) for all pages         # Thompson sampling
+    score_i = (1 - lambda_t) * sim(page_i, q_hat_t) + lambda_t * theta_i
+    C_t  &lt;- top-scoring candidate pages
+    P_t  &lt;- LLM rerank of C_t using schema + episodic memory
+    A_t  &lt;- A_{t-1} U P_t; evidence &lt;- top pages of A_t by posterior mean mu_i
+    out  &lt;- reasoner(evidence + local regions, memory context)
+    if out is answer or not_answerable: return out
+    else: (q_hat_{t+1}, note n_t, U_t, V_t) &lt;- out
+          episodic memory += (n_t, q_hat_{t+1})
+          alpha_i += 1 for i in U_t;  beta_i += 1 for i in V_t
+          alpha_j += gamma^|j-i| for neighbors j of each i in U_t (|j-i| &lt;= r)
+return best available answer
+</code></pre>
+<h2>Results</h2>
+<p>On <strong>MMLongBench-Doc</strong>, DocMemo reaches <strong>71.3%</strong> overall — the best reported, and +3.7 points over the strongest agentic baseline — with the biggest category gains on tables (73.3%) and unanswerable questions (78.8%), the latter suggesting accumulated retrieval state helps the system <em>know when it hasn't found evidence</em> rather than hallucinate. For calibration: direct-reading proprietary models on the same leaderboard sit far lower (GPT-4o 46.3, Claude-4-Sonnet 50.4, Gemini-2.5-Pro 52.1). On <strong>LongDocURL</strong> the margin over the best agentic baseline is +8.8 points, and on <strong>PaperTab</strong> +15.0. A controlled comparison (same backbone, retriever, page budget, round budget, GPT-4.1 evaluation) preserves the win.</p>
+<p>Ablations: removing tri-level memory drops overall accuracy 71.3 → 68.5; removing Bayesian belief updating → 68.8; disabling adaptive-granularity access hurts tables most. The iterative-retrieval analysis is the clearest evidence for the framing: cumulative evidence recall rises 28.3% → 69.6% and all-hit rate 12.9% → 58.1% across three rounds (round 2 contributing most), and against SimpleDoc it uses 0.41× the iterations at 1.18× the accuracy — a 2.40× efficiency ratio as they compute it.</p>
+<p><img alt="Iterative evidence discovery" src="assets/docmemo-probabilistic-memory-retrieval/fig2.png" />
+<em>Figure 3 of the paper: evidence recall and all-hit rate improve over retrieval–reasoning iterations (a); efficiency comparison vs SimpleDoc (b).</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>The Case Against Generation for Retrieval</strong> (tracked, tutorial): Meta's argument that LLMs should power <em>representations</em> rather than generate over the index; DocMemo is the complementary move at inference time — the LLM never generates page IDs, it updates beliefs that gate a fast retriever.</li>
+<li><strong>Zero-Mem, HiGram, MemexRL</strong> (tracked): agent-memory systems organized around structure (entity graphs, hierarchical subgraphs, archive-index-dereference). DocMemo's distinctive contribution to this cluster is <em>calibrated uncertainty</em> as the memory content — pseudo-counts instead of notes.</li>
+<li><strong>AgentOPSD</strong> (tracked, tutorial): also maintains a recursive Bayesian belief state, but over trajectory success for credit assignment; the shared pattern — accumulate LLM-derived evidence in a conjugate posterior — is becoming a design motif.</li>
+<li><strong>DataSpace</strong> (tracked): found multimodal evidence integration is the failure mode for data agents; DocMemo is a direct attack on that failure mode for documents.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The Bayesian dressing is more principled than most memory papers, but look at what the "observations" are: <span class="arithmatex">\(U_t\)</span> and <span class="arithmatex">\(V_t\)</span> are an LLM's own judgments of usefulness, so the posterior is accumulating <em>model opinions</em>, not ground truth — a page repeatedly misjudged as irrelevant gets confidently buried, and the conjugate math launders that into what looks like calibrated confidence. The exploration story also does double duty: Thompson sampling's benefit vs simply taking the union of top-k over rewritten queries is not isolated in the ablations (only whole-module removals are), so we can't tell how much the <em>sampling</em> — as opposed to the accumulation — matters. The headline Table-1 comparison inherits leaderboard heterogeneity (different backbones per row); the controlled Table-2 comparison is the honest one, and its margins are presumably narrower (verify in the paper — the thread and HTML don't spell them out). Add four sensitivity-bearing hyperparameters (<span class="arithmatex">\(S\)</span>, <span class="arithmatex">\(\lambda_t\)</span>, <span class="arithmatex">\(r\)</span>, <span class="arithmatex">\(\gamma\)</span>) and offline per-page summarization/embedding costs, and this is a strong engineering recipe with good diagnostics rather than a settled paradigm. The transferable idea survives the caveats, though: retrieval state as an explicit posterior, updated by reasoning feedback, beats stateless re-retrieval on every metric they measure.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Make retrieval stateful: model each candidate's relevance as a Beta posterior seeded by retriever scores (<span class="arithmatex">\(\alpha=Sc+1\)</span>), updated by the reasoner's useful/irrelevant verdicts via conjugacy, and select with Thompson sampling blended with fresh similarity.</li>
+<li>Propagate positive evidence to spatial neighbors (decayed, radius-bounded) and never propagate negative evidence — document locality is a prior worth encoding, suppression is not.</li>
+<li>The payoff shows up as <em>recovery</em>: evidence recall 28.3% → 69.6% over three rounds and the largest gains on tables and unanswerable questions — exactly the cases where stateless top-k RAG silently fails.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 16:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCSD: Observation-Calibrated Self-Distillation for Agentic RL</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>OCSD: Observation-Calibrated Self-Distillation for Agentic RL</h1><p class="meta">7 min read · <a href="https://arxiv.org/abs/2608.04788">arXiv:2608.04788</a> · <a href="https://arxiv.org/abs/2608.04788">arXiv</a> · <a href="https://github.com/yiy1x/OCSD">GitHub</a> · <a href="https://x.com/gurtej__gill_/status/2086741441737302418">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Agentic Reinforcement Learning with Observation-Calibrated Self-Distillation" (arXiv 2608.04788; Yi Yang, Cong Qin, Xiaodan Liu, Chishui Chen, Qing Dong, Yan Zhang, and colleagues — Nanjing University, work done at Meituan; code released) identifies a confound at the heart of privileged-replay self-distillation: when you re-score a rollout with future observations in context, the score shift mixes the <em>information</em> in those observations with artifacts of the <em>replay scaffold</em> itself.</li>
+<li>The fix is a controlled contrast: score every token under two structurally matched replay views — Full (real future observations) and Observation-Ablated (same scaffold, observation content replaced by "not provided") — and use only the <em>residual</em> between them, applied as a bounded modulation of GRPO advantages at the highest-uncertainty steps.</li>
+<li>On ALFWorld, WebShop, and Search-QA with Qwen3 at 1.7B/4B/8B, OCSD beats GRPO and four self-distillation baselines everywhere reported: e.g. ALFWorld overall 46.6 → 55.5 at 1.7B and 70.6 → 82.8 at 4B, while naive OPSD alone <em>collapses</em> (14.6 at 1.7B).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The OPSD line — re-scoring on-policy tokens under a privileged view to get dense token-level supervision from sparse trajectory rewards — is one of the most active threads in this tracker (AgentOPSD, u-OPSD, W2S-OPD, FutureBridge-OPD, multi-turn OPD replay). Every one of those methods implicitly assumes that the log-prob shift induced by the privileged context <em>is</em> the privileged signal. OCSD is the first paper here to test that assumption and show it fails in the agentic setting: replaying future observations requires reconstructing an extended scaffold (replay format, future-action placeholders), and that scaffold alone moves token scores. Their diagnosis shows Full-view support and scaffold-only support agree on many tokens that have nothing to do with the environment's feedback.</p>
+<p>This is a measurement-error argument, and it explains an otherwise confusing empirical pattern: pure OPSD can be <em>worse than nothing</em> in agentic RL (14.6 vs GRPO's 46.6 on ALFWorld at 1.7B) even though the privileged information is genuinely useful. If the dense signal is confounded, densifying credit assignment amplifies noise. Anyone building hindsight-replay distillation into an agent training stack should treat the ablated-view control as a required component, not an ablation.</p>
+<h2>The core idea</h2>
+<p>Standard OPSD defines token-level support as the log-prob shift between a teacher view (same policy, privileged replay evidence <span class="arithmatex">\(E_{i,k}\)</span>) and the student view:</p>
+<div class="arithmatex">\[\delta_{i,k,t}(E_{i,k})=\log\pi_{T}\left(y_{i,k,t}\mid h_{i,k,t},E_{i,k}\right)-\log\pi_{S}\left(y_{i,k,t}\mid h_{i,k,t}\right)\]</div>
+<p>where <span class="arithmatex">\(y_{i,k,t}\)</span> is token <span class="arithmatex">\(t\)</span> of interaction step <span class="arithmatex">\(k\)</span> in trajectory <span class="arithmatex">\(i\)</span>, and <span class="arithmatex">\(h_{i,k,t}\)</span> its generation context. OCSD instantiates two teachers: the <strong>Full</strong> view <span class="arithmatex">\(E^{F}\)</span> contains the actual future observations plus naturalized schemas of future actions (argument values replaced by semantic-role phrases), while the <strong>Observation-Ablated</strong> view <span class="arithmatex">\(E^{A}\)</span> keeps the identical scaffold but replaces observation content with the fixed phrase "Observation: not provided". The <em>observation residual</em> cancels everything the two views share:</p>
+<div class="arithmatex">\[e_{i,k,t}=\delta^{F}_{i,k,t}-\delta^{A}_{i,k,t}=\log\pi_{F}\bigl(y_{i,k,t}\mid h_{i,k,t},E^{F}_{i,k}\bigr)-\log\pi_{A}\bigl(y_{i,k,t}\mid h_{i,k,t},E^{A}_{i,k}\bigr)\]</div>
+<p>(the student term cancels in the difference). The motivating example: the agent generates "take the mug from shelf 1" and the environment replies "there is no mug on the shelf". Both views shift scores on generic tokens like <em>I</em>, <em>should</em>, <em>from</em>; only the Full view, seeing the real observation, selectively shifts <em>take</em>, <em>mug</em>, <em>shelf</em> — the residual isolates exactly that.</p>
+<p><img alt="Deriving the observation residual" src="assets/ocsd-observation-calibrated-self-distillation/fig1.png" />
+<em>Figure 1 of the paper: structurally matched Full and Observation-Ablated replay views assign similar support to scaffold-driven tokens; the residual isolates observation-driven support.</em></p>
+<h2>How it works</h2>
+<p><strong>Bounded signal.</strong> The unbounded residual is squashed to <span class="arithmatex">\(q_{i,k,t}=\tanh(e_{i,k,t}/2)\in[-1,1]\)</span>: sign says whether the real observation raises or lowers support for the token, magnitude says how much the two views disagree.</p>
+<p><strong>Where to apply it.</strong> Not everywhere — only at steps where the rollout policy was uncertain. Step uncertainty is average token NLL under the old policy,</p>
+<div class="arithmatex">\[u_{i,k}=-\frac{1}{T_{i,k}}\sum_{t=1}^{T_{i,k}}\log\pi_{\theta_{\mathrm{old}}}\left(y_{i,k,t}\mid h_{i,k,t}\right),\]</div>
+<p>and within each trajectory only the top-<span class="arithmatex">\(\rho\)</span> fraction of steps by <span class="arithmatex">\(u_{i,k}\)</span> is selected (at least one per trajectory).</p>
+<p><strong>Sign-preserving integration with GRPO.</strong> The trajectory-level GRPO advantage <span class="arithmatex">\(\widehat{A}_{i}\)</span> keeps the update <em>direction</em>; the residual only modulates per-token <em>strength</em> on selected steps:</p>
+<div class="arithmatex">\[\widehat{A}^{\mathrm{OCSD}}_{i,k,t}=\begin{cases}\widehat{A}_{i}\left[1+\beta\operatorname{sgn}(\widehat{A}_{i})\,q_{i,k,t}\right],&amp;k\in\mathcal{S}_{i},\\ \widehat{A}_{i},&amp;k\notin\mathcal{S}_{i},\end{cases}\]</div>
+<p>with <span class="arithmatex">\(\beta\in[0,1]\)</span>. Since <span class="arithmatex">\(q\in[-1,1]\)</span>, the bracket is non-negative and the advantage never flips sign: in a successful trajectory, observation-supported tokens are reinforced harder; in a failed one, observation-<em>contradicted</em> tokens are punished harder. The modulated advantage drops into the standard clipped GRPO surrogate with KL regularization, unchanged otherwise.</p>
+<pre><code class="language-text">Algorithm (condensed from the paper's Algorithm 1):
+
+for each task x:
+    sample G trajectories from pi_old; compute GRPO advantages A_i
+    for each trajectory tau_i:
+        compute step uncertainty u_ik (mean token NLL)
+        S_i &lt;- top-rho steps by u_ik
+        for each step k in S_i:
+            build Full view  E^F  (real future obs + naturalized action schemas)
+            build Ablated view E^A (same scaffold, &quot;Observation: not provided&quot;)
+            for each token t in step k:
+                delta_F = log pi(y | h, E^F) - log pi(y | h)   # same weights
+                delta_A = log pi(y | h, E^A) - log pi(y | h)
+                q = tanh((delta_F - delta_A) / 2)
+                A_ikt &lt;- A_i * (1 + beta * sgn(A_i) * q)
+    update theta with clipped GRPO surrogate on token-level advantages
+</code></pre>
+<h2>Results</h2>
+<p>On <strong>ALFWorld</strong> (Qwen3-1.7B): GRPO reaches 46.6 overall success; OPSD alone collapses to 14.6; GRPO+OPSD 41.7; the stronger RLSD and SDAR baselines reach 44.5 and 51.6; OCSD hits <strong>55.5</strong> (±2.3). At <strong>4B</strong>: GRPO 70.6 → OCSD <strong>82.8</strong>, with RLSD at 79.2 and SDAR at 73.2. On <strong>WebShop</strong> success (4B): 69.5 → <strong>73.7</strong>. Gains hold at 8B and on Search-QA per the paper, and improvements are consistent across ALFWorld task categories and under distribution shift.</p>
+<p>The diagnostic section is arguably the more important contribution: over 150 training checkpoints, the residual signal separates valid from invalid actions (AUROC) better than raw Full-view support, and word-level analysis shows Full and Ablated upper tails share scaffold-driven words while the residual concentrates on observation-linked words. An observation-swapping test (Figure 5) confirms the residual tracks the <em>actual</em> future observation rather than generic plausibility. Compute-wise, the two extra replay scorings are forward passes only on selected steps; Figure 6 reports the per-iteration overhead on 8×A100 as a modest addition to standard GRPO.</p>
+<p><img alt="OCSD training framework" src="assets/ocsd-observation-calibrated-self-distillation/fig2.png" />
+<em>Figure 3 of the paper: rollout, dual replay scoring, residual computation, and sign-preserving integration with GRPO.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>AgentOPSD</strong> (tracked, tutorial): same benchmarks, same Meituan orbit, complementary axis — AgentOPSD builds <em>turn-level</em> credit by accumulating self-teacher evidence in a Bayesian belief state; OCSD cleans the <em>token-level</em> evidence itself. The obvious composition: feed OCSD's deconfounded residual into AgentOPSD's belief filter.</li>
+<li><strong>u-OPSD</strong> (tracked): removes the supervision requirement for OPSD; OCSD removes the scaffold confound. Both are corrections to the same base method, discovered within weeks of each other.</li>
+<li><strong>W2S-OPD and FutureBridge-OPD</strong> (tracked): proxy-teacher and future-bridging variants of OPD whose privileged views involve even heavier scaffolds — the confound OCSD measures is plausibly <em>larger</em> there, making the ablated-view control worth retrofitting.</li>
+<li><strong>GiGPO</strong> (tracked): the RL-native route to step-level credit (grouped anchor states) — OCSD gets a similar granularity from distillation machinery with no extra rollouts.</li>
+<li><strong>Training-Inference Numeric Mismatch in RL</strong> (tracked): another case where the <em>measurement stack</em>, not the learning signal, was the real problem.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The confound diagnosis is genuinely valuable and the control is clean, but three caveats temper the headline. First, the calibration is only as good as the structural matching: "Observation: not provided" is itself a distribution shift (models react to explicit absence markers), so the residual subtracts the scaffold <em>plus</em> whatever the absence phrase induces — a second-order confound the paper doesn't ablate. Second, sign preservation means OCSD is deliberately conservative: it can never rescue a good action inside a failed trajectory, only reweight within the GRPO verdict, so the ceiling on credit-assignment improvement is bounded by trajectory-level reward quality. Third, scope: Qwen3 only, three text-observation environments with short observations; whether the residual stays informative when observations are long documents or tool outputs (where the scaffold-to-content ratio changes drastically) is untested. The tanh(·/2) squashing and the β, ρ knobs also add hyperparameters the appendix shows are not fully insensitive. Still — of the five OPSD-family papers tracked here, this is the first that treats replay scoring as a measurement problem, and the AUROC evidence that the residual aligns with real environment feedback is more convincing than the usual benchmark-only case.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Privileged-replay support conflates the privileged information with the replay scaffold; naive OPSD can collapse (14.6 vs GRPO's 46.6 on ALFWorld) because it densely trains on that confounded signal.</li>
+<li>The fix is a controlled contrast: score under Full and Observation-Ablated views that differ <em>only</em> in the real observation, and use the residual <span class="arithmatex">\(q=\tanh((\delta^F-\delta^A)/2)\)</span> — applied only at high-NLL steps, never flipping the GRPO advantage's sign.</li>
+<li>It works across scales (ALFWorld 46.6→55.5 at 1.7B, 70.6→82.8 at 4B) and, more importantly, the residual demonstrably tracks real environment feedback (AUROC, observation-swapping) — a diagnosis worth retrofitting to every hindsight-distillation method in this tracker.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-10 16:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

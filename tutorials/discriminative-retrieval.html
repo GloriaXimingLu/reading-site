@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>The Case Against Generation for Retrieval: Discriminative LLMs as Two-Tower Retrievers</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.25346">arXiv:2607.25346</a> · <a href="https://arxiv.org/abs/2607.25346">arXiv</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>The Case Against Generation for Retrieval: Discriminative LLMs as Two-Tower Retrievers</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.25346">arXiv:2607.25346</a> · <a href="https://arxiv.org/abs/2607.25346">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2086709122406490501">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
 <ul>
 <li>"The Case Against Generation for Retrieval" (arXiv 2607.25346; Zhe Xu et al., 20 authors listed alphabetically, Meta) argues that for web-scale retrieval/recommendation, LLMs should be <strong>discriminative representation backbones inside the classic two-tower architecture</strong>, not generative engines emitting semantic item IDs — sidestepping autoregressive decoding latency and token-to-item grounding failures entirely.</li>
 <li>The recipe: a cross-encoder teacher scoring relevance as the yes/no next-token <strong>logit difference</strong> plus a user-conditioned next-token-prediction auxiliary loss; a two-tower student with a <strong>shared Qwen3-0.6B encoder</strong>, EOS pooling, cross-dataset mid-training, candidate-set <strong>KL distillation</strong> from the teacher, and one Coconut-style latent reasoning step in the user tower only (item embeddings stay precomputable).</li>
@@ -76,6 +76,6 @@ online request:        fetch z_u (ms) -&gt; kNN over item index -&gt; rankers
 <li><strong>The transferable recipe:</strong> shared encoder + EOS pooling; user-conditioned NTP to stabilize the verbalized teacher; candidate-set KL distillation (the single most important component, up to −23% R@10 without it); latent reasoning only on the query side so the index stays precomputable.</li>
 <li><strong>Text grounding is an operational superpower:</strong> parity with a tuned DLRM at 0.5% of the data, +5.5% on tail items, and near-zero decay over three days frozen (vs. −4.3% for a frozen DLRM) — because the representation vocabulary doesn't churn with the item catalog.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-10 14:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-10 16:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
