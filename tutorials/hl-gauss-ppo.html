@@ -63,6 +63,6 @@ support: m=101 bins on [v_min, v_max] = [-0.1, 1.1], Δ ≈ 0.0119
 <li>The fix is a <strong>training-objective swap, not a new algorithm</strong>: 101-bin categorical head, cross-entropy against Gaussian-smoothed HL-Gauss targets, expectation-decoded back to the same scalar GAE consumes — near-zero overhead, advantage ratio back to ~1.0, +2.86 avg@256 / +9.58 pass@256 over strong PPO.</li>
 <li>The controls are the intellectually interesting part: <strong>smoothed, metric-aware targets are the active ingredient</strong> — one-hot (same head size) and Bernoulli two-bin (binary classification) both fail to reproduce the gains, so it's neither dimensionality nor classification per se.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-12 16:10 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-12 19:00 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
