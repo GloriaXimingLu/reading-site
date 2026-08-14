@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07222">arXiv:2608.07222</a> · <a href="https://arxiv.org/abs/2608.07222">arXiv</a> · <a href="https://x.com/rosinality/status/2086708534989778961">X post</a> · <a href="../index.html#architecture">Architecture &amp; Efficiency</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07222">arXiv:2608.07222</a> · <a href="https://arxiv.org/abs/2608.07222">arXiv</a> · <a href="https://x.com/rosinality/status/2086708534989778961">X post</a> · <a href="https://alphaxiv.org/abs/2608.07222">alphaxiv.org</a> · <a href="../index.html#architecture">Architecture &amp; Efficiency</a></p><h2>TL;DR</h2>
 <ul>
 <li>"Skaling: Chinchilla's Exponents Meet Kaplan's Coupling" (arXiv 2608.07222; Mathurin Videau, Badr Youbi-Idrissi, David Lopez-Paz, Kartik Ahuja — Meta) diagnoses a structural flaw in the additive Chinchilla law: it forces <span class="arithmatex">\(\partial^2 L/\partial N \partial D = 0\)</span>, but the measured mixed derivative is non-zero across two full training grids, producing a saddle-shaped residual that grows toward the grid corners where <span class="arithmatex">\(N\)</span> and <span class="arithmatex">\(D\)</span> are most imbalanced.</li>
 <li>The fix is one parameter: <span class="arithmatex">\(L(N,D) = (A/N^{\alpha} + B/D^{\beta})^{k} + E\)</span> — Chinchilla's independent inner exponents with Kaplan's outer coupling. It reduces MAPE <strong>1.5–3x</strong> across interpolation and every extrapolation regime (e.g., far extrapolation on their SK-Grid: 5.17% → 0.70%), with fitted <span class="arithmatex">\(k \approx 0.31\text{–}0.45\)</span>, far from the additive case <span class="arithmatex">\(k=1\)</span>.</li>
@@ -71,6 +71,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>One outer exponent fixes it:</strong> <span class="arithmatex">\(L=(A/N^{\alpha}+B/D^{\beta})^{k}+E\)</span> with fitted <span class="arithmatex">\(k\approx0.31\text{–}0.45\)</span> cuts MAPE 1.5–3x, keeps a closed-form compute-optimal allocation, and recovers Chinchilla when data are truly additive.</li>
 <li><strong>Fit on the cheap edges:</strong> an L-shaped grid (D-sweeps on small models + N-sweeps on short horizons) matches or beats full-grid fits at ~10x less compute — but only with a coupled form; additive Chinchilla falls apart off the dense grid (far-extrapolation MAPE 14.6%).</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-13 16:44 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-14 05:59 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
