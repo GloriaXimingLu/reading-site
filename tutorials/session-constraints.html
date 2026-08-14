@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost in Compaction: Evaluating Side-Constraint Loss under Context Compaction</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Lost in Compaction: Evaluating Side-Constraint Loss under Context Compaction</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.11242">arXiv:2608.11242</a> · <a href="https://arxiv.org/abs/2608.11242">arXiv</a> · <a href="https://x.com/dair_ai/status/2087930434323959894">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Lost in Compaction" (arXiv 2608.11242; Zhiqi Wang, Yichi Zhang, Dongwon Lee, Yuchen Yang — Penn State) names a failure class: <strong>Side Constraints (SCs)</strong> — session-scoped standing rules like "do not delete any emails until I confirm" — are silently dropped when an agent's context is compacted, after which the agent keeps doing the task while violating how the user asked it to be done.</li>
+<li>Their suite <strong>CompInt</strong> (3 environments × 50 stitched 100K-token contexts × 15 SCs = 750 instances per condition) finds compactors retain only <strong>17% of injected SCs on average</strong>: truncation and LLMLingua-2 retain 0%, open-weight LLM compactors 0–36.3%, and GPT-5.4-mini swings from 98% to 6.7% depending on dataset and prompt. Most compactors leave behavioral compliance <em>below</em> the uncompacted baseline.</li>
+<li>The loss is structural — it varies with compactor, prompt, context length, phrasing, and injection position, and an SC-targeted compaction prompt still stays under 40% retention on WildChat — but a plug-and-play <strong>SC-aware extractor</strong> (Qwen3.5-9B scanning only user turns, appending a running SC list to the summary) recovers 90.3–95.6% retention without touching the compactor or the model.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This is the memory-side twin of the instruction-surface problem: my standing rules live in a context that the harness actively rewrites. Every long Claude Code session compacts eventually, and the compaction prompt is optimized for <em>task continuity</em> — objective, working state, next steps — not for constraints on <em>how</em> the task proceeds. The motivating failure is exactly the scenario safety folks worry about: "confirm before any action" is honored for hours, the window fills, the summary keeps the task progress but drops the confirmation gate, and the agent starts executing unilaterally — silently, with no signal to the user that the rule is gone. Two design lessons carry directly. For users: state constraints strictly and explicitly, restate them late in the session, and expect none of that to be sufficient (best framing gains still leave retention below 40%). For harness builders: constraint preservation should not be entrusted to the summarizer at all — it's a cheap separate extraction pass with different recall requirements, which is arguably how durable-memory and rules-file mechanisms should treat any in-session standing instruction.</p>
+<p><img alt="CompInt overview: SC taxonomy, framing and injection conditions, and retention/compliance evaluation." src="assets/session-constraints/fig2-compint-overview.png" />
+<em>Figure 2 from the paper: the three components of CompInt — a five-category SC taxonomy; injection conditions crossing framing (strength × explicitness) with location (top/middle/bottom/multi); and evaluation of both retention (LLM-as-a-judge on the summary) and compliance (behavioral MCQ probe).</em></p>
+<h2>The core idea</h2>
+<p>Formalize the thing that gets lost, then measure it end to end. An SC <span class="arithmatex">\(s\)</span> is a clause in a user prompt that (1) is not part of the task, (2) constrains the model's behavior within the session, and (3) has no intended use outside it. Linguistically it's a <em>generic</em> directive (targets a kind of action — "show me the draft before sending <strong>anything</strong>") rather than an <em>episodic</em> one ("email Sarah"). Those three properties are exactly what makes SCs fragile: a task-centric compactor has no explicit reason to keep them, casual users phrase them as soft preferences, and they're embedded inside task-focused turns. The taxonomy has five types by what the constraint binds: <strong>Action</strong> and <strong>Information</strong> (what the agent does/emits), <strong>Process</strong> (how it gets there), <strong>Preference</strong> (which task-equivalent answer to pick), <strong>Output</strong> (textual properties of responses).</p>
+<p>The compaction setting: when history <span class="arithmatex">\(H^t\)</span> exceeds a threshold fraction of the window, a compactor <span class="arithmatex">\(C\)</span> replaces it,</p>
+<div class="arithmatex">\[
+\tilde{H}^{t}=C(H^{t}),
+\]</div>
+<p>where <span class="arithmatex">\(H^t\)</span> is the turn sequence and <span class="arithmatex">\(\tilde H^t\)</span> the summary that conditions all subsequent turns. CompInt injects an SC into <span class="arithmatex">\(H^t\)</span> at controlled locations, compacts, and then asks two separate questions: is the SC still <em>semantically present</em> in <span class="arithmatex">\(\tilde H^t\)</span> (Retention, judged by GPT-5.4), and does the downstream model still <em>behave</em> accordingly (Compliance, via a two-option probe like "Email Sarah…" → A: show draft and wait / B: send)?</p>
+<h2>How it works</h2>
+<p><strong>Environments.</strong> Three 100K-token filler settings (≈80% of a 128K window, the realistic trigger point), 50 contexts each: WildChat (many-turn human–ChatGPT chat, stitched, mean 519 turns), Hermes Agent (tool-calling agent trajectories, mean 120 turns), and OpenResearcher (native single-user-turn deep-research trajectories). <strong>Compactors:</strong> Recent-5 truncation; LLMLingua-2 (500-token budget); gpt-oss-120b, Qwen3-30B-A3B, and Gemma-4-E4B with the Anthropic compaction prompt; gpt-oss-120b with the pi-mono (OpenClaw) prompt; plus GPT-5.4-mini on both prompts. <strong>Injection axes:</strong> location (top / middle / bottom / multi via the operator <span class="arithmatex">\(H^{t}_{s,I}=\texttt{Inj}(H^{t},s,I)\)</span>, which appends <span class="arithmatex">\(s\)</span> to the user turns indexed by <span class="arithmatex">\(I\)</span>), and framing — Strength (Strict prepends "This is an important constraint:") × Explicitness (Direct prepends "For the rest of this session").</p>
+<p><strong>Metrics.</strong> Compliance is measured over four context conditions — full context with SC, full context without SC (the model's prior tendency), compacted-with-SC-injected, and an upper bound where the SC is appended verbatim after compaction:</p>
+<div class="arithmatex">\[
+\bar{c}_{g}=\frac{1}{N}\sum_{i=1}^{N}\mathbb{1}\left[LLM_{\text{prob}}(x^{i}_{\text{prob}},K^{i}_{g})=y^{i}_{\text{prob}}\right],
+\]</div>
+<p>where <span class="arithmatex">\(K_g\)</span> is the condition-<span class="arithmatex">\(g\)</span> context, <span class="arithmatex">\(x_{\text{prob}}\)</span> the probe question, and <span class="arithmatex">\(y_{\text{prob}}\)</span> the compliant option. The headline normalization is <strong>Effect Retention</strong>,</p>
+<div class="arithmatex">\[
+\text{Effect Retention}=\frac{\bar{c}_{\text{comp}}-\bar{c}_{\text{lctx}}}{\bar{c}_{\text{ub}}-\bar{c}_{\text{lctx}}},
+\]</div>
+<p>the compaction condition's compliance gain over the SC-free baseline, normalized by the upper bound's gain — 1 means lossless behavioral preservation, 0 means the compacted SC does nothing.</p>
+<p><strong>The fix.</strong> The SC-aware extractor <span class="arithmatex">\(E\)</span> (Qwen3.5-9B, training-free) processes <em>only user turns</em>, maintains a running list <span class="arithmatex">\(S^t\)</span> of extracted SCs, and splices it into the compacted state:</p>
+<div class="arithmatex">\[
+\tilde{H}^{t}=C(H^{t})\oplus S^{t},
+\]</div>
+<p>so retained SCs land in the position the upper-bound condition showed is most effective. Because it ignores assistant/tool turns, it's fast on think-heavy trajectories (0.03 s per 100K-token OpenResearcher context; 12.93 s worst case on 257-user-turn WildChat).</p>
+<pre><code class="language-text"># CompInt protocol + SC-aware extraction (per instance)
+build filler context H (100K tokens; WildChat | Hermes | OpenResearcher)
+choose SC s (1 of 15; 5 types), framing (strength x explicitness),
+       location I (top | middle | bottom | multi)
+H_inj = Inj(H, s, I)                    # append s to user turns in I
+summary = C(H_inj)                      # compactor under test
+Retention  = judge(s &quot;semantically present in&quot; summary)   # GPT-5.4, 0/1
+for g in {lctx_sc, lctx, comp, ub}:     # four compliance conditions
+    answer = LLM_prob(probe, K_g)       # 2-option MCQ probe
+Effect_Retention = (c_comp - c_lctx) / (c_ub - c_lctx)
+
+# mitigation: run extractor alongside the compactor
+S = []
+for each user turn u in H:              # user turns only
+    if extractor_SLM detects an SC in u: S.append(SC)
+compacted_state = C(H) ++ S             # constraints survive by construction
+</code></pre>
+<h2>Results</h2>
+<p><strong>RQ1 — retention is uniformly low.</strong> Non-LLM compactors: 0% everywhere (Recent-5's window has scrolled past; LLMLingua-2's token-level compression at 500-token budget destroys the clause). Open-weight LLM compactors: 0–36.3%, prompt- and dataset-dependent — pi-mono beats the Anthropic prompt by ~14.5% on average on Hermes/OpenResearcher-style data. GPT-5.4-mini spans 98.0% (OpenResearcher, pi-mono) down to 6.7% (WildChat, pi-mono). Compliance tells the sharper story: most compactors land <em>below</em> the uncompacted long-context baseline — e.g., on Hermes Agent, baseline-with-SC compliance is 65.1% while compacted compliance runs 48.4–60.7% for the open compactors — i.e., compacting made constraint-following worse than doing nothing, and effect retention runs 0–27.8% for everything except GPT-5.4-mini.</p>
+<p><strong>RQ2 — system-side factors.</strong> Compaction is aggressive (≈182× shorter at 100K input) and output length is nearly invariant to input length (output grows 0.84–1.28× while input grows 10×), so the information bottleneck tightens as sessions lengthen. Retention is ~90% at 10K context on Hermes and declines monotonically with length; compactor rankings stay stable across lengths. Compacting <em>earlier</em> helps, but that trades away the very context budget compaction exists to extend.</p>
+<p><strong>RQ3 — user-side factors.</strong> Later injection is better retained — the authors attribute this to proximity to the compaction instruction (confirmed by a 50K ablation where top/middle improve but bottom doesn't), a monotonic pattern that diverges from the U-shaped "lost in the middle" retrieval literature. Strict framing helps more than explicit scoping; combining both adds only ~1.3% over the better single framing. Repetition helps but converges after ~30 turns. By type, Process SCs are retained least across all compactors; Preference SCs are best for LLM compactors — but no type exceeds 36% average retention under any compactor.</p>
+<p><img alt="SC retention rate by type: no compactor exceeds 36% average retention on any SC type." src="assets/session-constraints/fig6-retention-by-type.png" />
+<em>Figure 6 from the paper: retention by SC type averaged over the three datasets. Process constraints — the "how", like confirmation gates — fare worst everywhere.</em></p>
+<p><strong>RQ4 — the extractor.</strong> 95.6% retention on Hermes Agent, 95.1% on OpenResearcher, 90.3% on WildChat — beating every open compactor and beating GPT-5.4-mini by 62 points on WildChat, with a 9B model and no training. An SC-targeted compaction prompt (one added preservation instruction) improves things but stays under 40% on WildChat, which is the paper's argument that the fix must be <em>architectural separation</em>, not better summarizer prompting.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Agentic context management (this list):</strong> that line of work treats compaction as a capability lever (what to keep for task success); this paper shows the same operation is a <em>policy</em> lever with a failure mode invisible to task metrics — compliance can crater while task continuity looks fine. Any context-management scheme in this tracker should be re-audited for constraint retention specifically.</li>
+<li><strong>Why Does CLAUDE.md Keep Growing? (2608.11095, tracked):</strong> one plausible driver of context-file accretion is exactly this failure — users promote session rules into CLAUDE.md because in-session statements don't survive. A reliable SC extractor is the principled middle layer: session-scoped rules that persist through compaction without becoming permanent file cruft.</li>
+<li><strong>PRO-LONG programmatic memory (this list):</strong> PRO-LONG's "keep history accessible, not accessed" premise is the general solution family here — the SC list <span class="arithmatex">\(S^t\)</span> is a tiny, typed, always-in-context register while the bulk history gets compressed, the same separation of durable control state from replayable log.</li>
+<li><strong>Argus agentic runtime (this list):</strong> Argus's typed control-plane state (goals/gates/evidence with admission rules) is the heavyweight version of the same invariant: constraints must not live in the same untyped buffer the runtime is allowed to lossily rewrite.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The problem identification is the contribution, and it's a good one — "Session Constraints" gives a name and a measurement to something practitioners know anecdotally. But mind the gap between the headline and the evidence. Retention is judged by GPT-5.4 LLM-as-a-judge (with agreement checks against another LLM and humans in the appendix), and compliance rests on two-option MCQ probes with a single probing model — the authors themselves flag the single-<span class="arithmatex">\(LLM_{\text{prob}}\)</span> limitation, and a free-generation robustness check lives in the appendix with wide NEI-handling bounds. The SC injection is synthetic: one manually crafted constraint appended to stitched filler contexts, whereas real SCs arise organically amid genuinely related turns — stitched WildChat topic drift may make retention <em>harder</em> than reality, while a lone crisp constraint sentence may make extraction <em>easier</em>. The 90%+ extractor number should be read with that in mind: it's recall of well-formed injected constraints, not of messy real-world ones, and the extractor adds a false-positive surface (over-extracted "constraints" accumulating in <span class="arithmatex">\(S^t\)</span>) that the paper doesn't quantify. Also note the frontier gap — compactors tested are small-to-mid open models plus GPT-5.4-mini; flagship deployed compaction is untested for cost reasons. Directionally I buy it completely; the 17% figure specifically averages over deliberately weak compactors.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Compaction is a policy-relevant operation, not a lossy-but-harmless one: standing rules survive it only ~17% of the time in this suite, most compactors leave constraint compliance <em>worse than not compacting</em>, and the user gets no signal when a rule is dropped.</li>
+<li>Every user-side mitigation is weak: strict + explicit framing, late placement, and repetition all help marginally, but no compactor exceeds 36% retention on any SC type — Process constraints (confirmation gates, verification steps) fare worst.</li>
+<li>The fix is architectural, not prompt-level: a 9B extractor that scans only user turns and appends a running constraint list to the summary hits 90–96% retention, training-free — constraint preservation and task summarization want to be separate modules.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-14 06:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
