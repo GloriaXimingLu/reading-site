@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoDesign: Meta-Harness Optimization for Long-Horizon Agentic Design</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AutoDesign: Meta-Harness Optimization for Long-Horizon Agentic Design</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.13560">arXiv:2608.13560</a> · <a href="https://arxiv.org/abs/2608.13560">arXiv</a> · <a href="https://x.com/dair_ai/status/2088298364458930462">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>AutoDesign</strong> (arXiv 2608.13560; Luo, Jiang, Zou, et al.) puts the harness itself inside the optimization loop: an outer "meta-harness" reads rollout trajectories and evaluator scores across tasks, identifies recurrent failures, and directs a coding agent to propose a bounded rewrite of the design harness — accepted only if it improves the training score without degrading the dev score.</li>
+<li>Instantiated on paper-to-poster generation with the new <strong>PosterBench</strong> (100 papers, five disciplines), AutoDesign scores 78.32, beating the closed-source Claude Design by 7.45 points; one autonomous run is 253 tool calls and 11 editing turns in 40 minutes for under $3.</li>
+<li>The learned <strong>DesignHarness</strong> is portable scaffold knowledge, not a fit to one model: dropped into seven other code-agent–model configurations it lifts the average PosterBench score from 54.99 to 67.39, and a system-blind human study ranks AutoDesign's posters highest.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Most harness-evolution work this tracker follows optimizes prompts or skills inside a fixed loop; AutoDesign is the cleanest published version of the more radical move — treat the <em>entire harness</em> (the code that decides how the agent ingests sources, generates, critiques, and revises) as the parameter, and a fixed model as the constant. That inverts the usual RL framing: instead of <span class="arithmatex">\(\max_\theta\)</span> with a fixed harness, it's <span class="arithmatex">\(\max_H\)</span> with frozen <span class="arithmatex">\(\pi_\theta\)</span>. Two design choices matter beyond the poster domain. First, the acceptance gate is a train/dev double check, which is a direct answer to the overfitting critique that <strong>Harness Delta Attribution</strong> and <strong>Rethinking Harness Evolution</strong> leveled at self-evolving harnesses — the authors gate every harness edit on held-out tasks <em>during</em> evolution rather than discovering the overfit afterwards. Second, the transfer experiment is the right falsification test: if harness gains were benchmark memorization or model idiosyncrasy, moving DesignHarness across seven agent–model stacks would not add +12.4 points on average. Design tasks are also a shrewd testbed — rewards are human-preference-shaped rather than verifiable, so this doubles as a case study of harness RSI under judge-based (not unit-test) evaluation.</p>
+<p><img alt="AutoDesign overview: the inner loop generates and revises an artifact under critic feedback; the outer meta-harness loop evaluates rollouts across tasks and directs a coding agent to rewrite the design harness." src="assets/autodesign-meta-harness/fig3_overview.png" />
+<em>Figure 3 from the paper: the inner loop (design harness: generate → critique → revise an editable artifact) nested inside the outer loop (meta-harness: rollout aggregation → failure diagnosis → bounded harness update → train/dev acceptance gate).</em></p>
+<h2>The core idea</h2>
+<p>Formally, a design harness <span class="arithmatex">\(H\)</span> wraps a fixed model <span class="arithmatex">\(\pi_\theta\)</span> and maps a task input <span class="arithmatex">\(x\)</span> with source context <span class="arithmatex">\(c\)</span> to an artifact:</p>
+<div class="arithmatex">\[
+y \sim H(\pi_{\theta}, x, c),
+\]</div>
+<p>and the meta-objective is the expected evaluator score over the task distribution:</p>
+<div class="arithmatex">\[
+J(H)=\mathbb{E}_{(x,c)\sim p_{\mathrm{task}},\; y\sim H(\pi_{\theta},x,c)}\left[R_{\mathrm{meta}}(y,x,c)\right],
+\qquad
+H^{\star}=\underset{H}{\operatorname{arg\,max}}\; J(H),
+\]</div>
+<p>where <span class="arithmatex">\(R_{\mathrm{meta}}\)</span> is a human-preference-grounded evaluator (initialized from annotated reference artifacts). The optimizer is not gradient-based: at iteration <span class="arithmatex">\(t\)</span>, a meta-harness optimizer produces the next harness candidate from the current harness, this round's trajectories <span class="arithmatex">\(\bm{\tau}_t\)</span>, scores <span class="arithmatex">\(\bm{s}_t\)</span>, and a persistent optimization record <span class="arithmatex">\(\mathcal{L}\)</span>:</p>
+<div class="arithmatex">\[
+H^{\prime}_{t+1}=P\left(H_{t},\bm{\tau}_{t},\bm{s}_{t},\mathcal{L}\right),
+\]</div>
+<p>with <span class="arithmatex">\(P\)</span> implemented as a coding agent instructed to make a <em>bounded</em> update targeting diagnosed recurrent failures. The candidate is admitted through an acceptance gate:</p>
+<div class="arithmatex">\[
+\operatorname{Accept}(H^{\prime}_{t+1})\iff J_{\mathrm{train}}(H^{\prime}_{t+1})&gt;J_{\mathrm{train}}(H_{t})\ \land\ J_{\mathrm{dev}}(H^{\prime}_{t+1})\geq J_{\mathrm{dev}}(H_{t}).
+\]</div>
+<p>The record <span class="arithmatex">\(\mathcal{L}\)</span> logs what has been tried, supporting comparison, reproducibility, and rollback; the outer loop deliberately keeps a <em>single active harness</em> per iteration — no tree search over harness variants.</p>
+<h2>How it works</h2>
+<p><strong>Inner loop (the design harness).</strong> The harness transforms the source paper into an editable output (not a one-shot render), then iteratively revises it under critic feedback until a stopping condition. The optimized DesignHarness that evolution converges to has three stages — paper ingestion, artifact generation and revision, and validation/finalization — i.e., the outer loop rediscovered and then refined a classic generate-critique-revise architecture with domain-specific checks.</p>
+<p><strong>Outer loop (the meta-harness), per iteration:</strong> rollout → evaluation → update proposal → acceptance:</p>
+<pre><code class="language-text"># AutoDesign meta-harness optimization (Algorithm 1, abridged)
+Given: frozen model π_θ, initial harness H_0, evaluator R_meta,
+       task sets D_train, D_dev, iterations T
+run H_0 on D_train → trajectories τ_0, scores s_0
+run H_0 on D_dev   → scores s_dev_0
+for t = 0 .. T-1:
+    diagnosis  = meta_optimizer.analyze(τ_t, s_t, record L)
+                 # recurrent failure patterns across tasks
+    H'_{t+1}   = coding_agent.bounded_update(H_t, diagnosis)
+    evaluate H'_{t+1} on D_train and D_dev
+    if J_train improves AND J_dev does not degrade:
+        H_{t+1} = H'_{t+1}          # accept
+    else:
+        H_{t+1} = H_t               # reject, log to L
+    append (H'_{t+1}, scores, decision) to L   # enables rollback
+return H_T, L
+</code></pre>
+<p><strong>Grounding the evaluator.</strong> <span class="arithmatex">\(R_{\mathrm{meta}}\)</span> is initialized from annotated reference artifacts so that "better" is anchored to human design priors, with optional natural-language guidance as a steering channel. For PosterBench scoring, a rubric reward aggregates seven weighted dimensions:</p>
+<div class="arithmatex">\[
+R_{\mathrm{rubric}}(p_{i},A_{i})=\sum_{j=1}^{7}\alpha_{j}\,q_{i,j}/10,
+\qquad
+\bm{\alpha}=(10,10,15,10,20,25,10),
+\]</div>
+<p>where <span class="arithmatex">\(q_{i,j}\)</span> is the 0–10 judge score of poster <span class="arithmatex">\(p_i\)</span> on dimension <span class="arithmatex">\(j\)</span> given paper assets <span class="arithmatex">\(A_i\)</span>, and <span class="arithmatex">\(\alpha_j\)</span> are the dimension weights.</p>
+<p><strong>Human evaluation.</strong> The blind study uses pairwise comparisons fit with a Bradley–Terry model,</p>
+<div class="arithmatex">\[
+\Pr(i\succ j)=\frac{\exp(\beta_{i})}{\exp(\beta_{i})+\exp(\beta_{j})},
+\]</div>
+<p>with <span class="arithmatex">\(\beta_i\)</span> the latent quality of system <span class="arithmatex">\(i\)</span>, over <span class="arithmatex">\(|\mathcal{T}|=100\binom{4}{2}=600\)</span> comparisons (100 papers × all pairs of 4 systems).</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Main track:</strong> 78.32 on PosterBench (100 papers, five disciplines), +7.45 over the closed-source commercial Claude Design — with the fully autonomous loop costing under $3 per poster (253 tool calls, 11 editing turns, ~40 minutes), reaching average conference-poster quality in human evaluation.</li>
+<li><strong>Transfer (the key result):</strong> integrating the learned DesignHarness into seven controlled code-agent–model configurations raises the average PosterBench score from 54.99 to 67.39. Whatever the outer loop learned, it is largely model-agnostic scaffold knowledge.</li>
+<li><strong>Optimization dynamics:</strong> the trace on a representative paper (Figure 1a) shows autonomous optimization improving the initial harness before plateauing — after which optional human natural-language guidance can redirect the evaluator/optimizer (the loop is autonomous but steerable).</li>
+</ul>
+<p><img alt="Meta-harness optimization trace on a representative paper, and per-configuration gains from dropping in the learned DesignHarness." src="assets/autodesign-meta-harness/fig1_evolve.png" />
+<em>Figure 1 from the paper: (a) poster score across meta-harness iterations — autonomous improvement, then a plateau; (b) PosterBench gains when the learned DesignHarness is integrated into other code-agent–model configurations.</em>
+- <strong>Human preference:</strong> highest preference among the evaluated systems in the system-blind Bradley–Terry study; the paper's own poster (Figure 2) is generated by the system itself, which is a nice self-referential demo.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Recursive Harness Self-Improvement (Sakana/Berkeley)</strong> — the closest sibling: harness-as-specification evolved from execution feedback. AutoDesign's distinct contributions are the explicit train/dev acceptance gate and the cross-stack transfer evaluation.</li>
+<li><strong>Harness Delta Attribution</strong> and <strong>Rethinking Harness Evolution</strong> — the skeptics' corner of this tracker: both showed harness-evolution gains are often overfitting or extra test-time compute. AutoDesign's dev-gate is a built-in defense, and its +12.4-point transfer across seven configurations is exactly the kind of evidence those posts demanded — though transfer across <em>task domains</em> remains untested.</li>
+<li><strong>HarnessCompass</strong> — shares the "guide harness evolution toward generalization" goal; HarnessCompass steers the proposal direction, AutoDesign filters at the acceptance gate. The two mechanisms are composable.</li>
+<li><strong>GEPA</strong> — added the same day: reflective, natural-language-mediated optimization with selection discipline (Pareto front there, train/dev gate here) as the sample-efficient alternative to gradient RL. AutoDesign is GEPA's philosophy applied to the whole harness rather than the prompt.</li>
+<li><strong>CAKE</strong> — also added today: co-evolving the kernel IR and verifier inside the harness. Same thesis at a different layer of the stack: the substrate the agent works through should itself be under evolution, with the workload telling you what's missing.</li>
+<li><strong>Harness-R1</strong> and <strong>Living-Harness</strong> — runtime/episodic harness edits; AutoDesign's edits are offline across a task corpus with an explicit record <span class="arithmatex">\(\mathcal{L}\)</span> and rollback, closer to "harness training" than "harness memory."</li>
+</ul>
+<h2>Critical take</h2>
+<p>The elephant: PosterBench is introduced by the same paper whose system tops it, and <span class="arithmatex">\(R_{\mathrm{meta}}\)</span> both drives evolution and (via the rubric) grades the final comparison — self-evaluation-adjacent even with the annotated-reference grounding and the blind human study as partial counterweights. The rubric weights <span class="arithmatex">\(\bm{\alpha}\)</span> are stated but not derived, and a judge-scored aesthetic task is exactly where judge idiosyncrasies become harness "knowledge" (the Wiggle result this tracker added today says judge verdicts are alarmingly movable). Second, the acceptance gate is greedy hill-climbing with a single active harness — no exploration over harness space — so the plateau in Figure 1a may be a local optimum that tree search or population methods (à la GEPA's Pareto pool) would escape; the authors note the no-tree-search choice without ablating it. Third, poster generation has a fixed, legible task grammar; the claim that meta-harness optimization "aligns with human design priors" needs a messier domain (data analysis reports, slide decks from meetings) before I'd generalize. What survives skepticism comfortably: the formulation <span class="arithmatex">\(H^\star=\arg\max_H J(H)\)</span> with a coding-agent proposal operator and a dev-gated accept — that pattern is reusable anywhere you can score artifacts, and the seven-stack transfer shows the output is a real, portable artifact rather than benchmark residue.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Make the harness the optimization variable: <span class="arithmatex">\(y\sim H(\pi_\theta,x,c)\)</span>, <span class="arithmatex">\(H^\star=\arg\max_H J(H)\)</span>, with a coding agent as the update operator <span class="arithmatex">\(P(H_t,\bm{\tau}_t,\bm{s}_t,\mathcal{L})\)</span> and a train-improves ∧ dev-doesn't-degrade acceptance gate.</li>
+<li>The transfer test is the honest metric for harness evolution: DesignHarness lifts seven other agent–model stacks from 54.99 to 67.39 average — scaffold knowledge, not benchmark memorization.</li>
+<li>Keep an optimization record with rollback (<span class="arithmatex">\(\mathcal{L}\)</span>) and gate on held-out tasks <em>during</em> evolution — the two cheapest defenses against the overfitting failure mode that has dogged self-evolving harnesses in this tracker.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-15 16:04 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
