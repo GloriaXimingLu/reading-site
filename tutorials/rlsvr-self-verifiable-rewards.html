@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>RLSVR: Task Transformation Induces Self-Verifiable Rewards (SpyRL)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.23802">arXiv:2607.23802</a> · <a href="https://arxiv.org/abs/2607.23802">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2084146592257294662">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>RLSVR: Task Transformation Induces Self-Verifiable Rewards (SpyRL)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.23802">arXiv:2607.23802</a> · <a href="https://arxiv.org/abs/2607.23802">arXiv</a> · <a href="https://github.com/wangqinsi1/RLSVR/tree/SpyRL">GitHub</a> · <a href="https://x.com/HuggingPapers/status/2084146592257294662">X post</a> · <a href="https://mp.weixin.qq.com/s/ijDAG4xEPp0PhmX-yDwhww">mp.weixin.qq.com</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
 <ul>
 <li>"From RLVR to RLSVR: Task Transformation Induces Self-Verifiable Rewards for Open-Ended LLM Self-Improvement" (arXiv 2607.23802; Qinsi Wang et al., Duke / Adobe / Oregon State / Penn State / NUS / Amazon) extends RLVR to open-ended tasks by borrowing self-supervised learning's trick: don't approximate the missing quality label — <em>transform the task</em> into a proxy environment that generates a verifiable label by construction.</li>
 <li>The instantiation, <strong>SpyRL</strong>, turns summarization / writing / math into a "Who Is the Spy?" game: civilians see the full input, one spy sees a degraded version, all perform the same task, then everyone votes on who the spy is. The spy identity is environment-assigned, so voting accuracy is exactly verifiable — and getting voted out correlates with producing the worst output, converting unobservable quality into a rule-based reward.</li>
@@ -82,6 +82,6 @@ for t in 1..T:
 <li><strong>The mechanism</strong>: information asymmetry (spy sees a degraded input) + identity voting converts "which output is best?" (unverifiable) into "who is the spy?" (exactly checkable, since the environment assigned it), with a zero-sum reward that makes quality a <em>relative</em> target among peers.</li>
 <li><strong>The surprise</strong>: a reward designed for summarization and creative writing also improves verifiable math and science reasoning (AIME25 6.7→20.0, GPQA-D 26.3→41.3), and matches a $900 GPT-4o rubric judge at zero verifier cost — evidence the group-competition signal generalizes beyond open-ended domains.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-15 16:04 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-16 16:01 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

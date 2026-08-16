@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOPD: Latent On-Policy Self-Distillation with an End-to-End Learnable Privileged Context</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>LOPD: Latent On-Policy Self-Distillation with an End-to-End Learnable Privileged Context</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.13040">arXiv:2608.13040</a> · <a href="https://arxiv.org/abs/2608.13040">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2088697506976960975">X post</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<ul>
+<li>LOPD (arXiv 2608.13040; Guibin Zhang, Jiayang Lyu, Ran Sun, Xinlei Yu, Haoyu Zhao, Qibing Ren, Shuicheng Yan) attacks the weak point of on-policy self-distillation (OPSD): every existing variant hand-designs what privileged context the self-teacher sees (answers, feedback, skills, trajectories). LOPD makes the privileged context itself <strong>learnable end-to-end</strong> — retrieved past experiences are compressed into continuous latent tokens that condition the teacher.</li>
+<li>A <strong>privileged-margin objective</strong> is the load-bearing trick: without it, the distillation gradient degrades the latent context (EnvScaler reward drops from 0.573 to 0.551); with margin m=0.05 it climbs to 0.637.</li>
+<li>Across agentic tool use (EnvScaler, BFCL-v3, ACEBench) and code generation (LiveCodeBench, HumanEval+/MBPP+) on Qwen3-4B/8B and OLMo3-7B, LOPD beats RLVR/GRPO and the OPSD family (OPSD, SDPO, Skill-SD), and surpasses GRPO and Skill-SD using <strong>less than 30% of their rollout budget</strong>.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The OPSD recipe — let a privileged self-teacher densely supervise the student's own rollouts — has been the most token-efficient alternative to RLVR tracked in this list all year. But its scaling story has a human in the loop: someone has to decide, per domain, whether the teacher's edge is the ground-truth answer, a critique, a distilled skill file, or a replayed trajectory. That design choice is exactly the kind of hand-crafted scaffolding that history suggests gets replaced by something learned. LOPD is the first paper I've tracked that closes this loop: the mapping from raw experience to the teacher's privileged conditioning is itself trained by the distillation objective, so the system decides what past experience is worth injecting and in what (continuous) form. If this holds up beyond 8B models, "what should the teacher know?" stops being a research question and becomes a parameter. The rollout-efficiency claim matters just as much: dense token-level supervision at less than 30% of GRPO's rollout budget is the difference between self-improvement loops that need a cluster and ones that run continually alongside deployment.</p>
+<p><img alt="Three paradigms: RLVR's sparse reward, OPSD with hand-crafted privileged context, and LOPD's learnable latent privileged context." src="assets/lopd-latent-self-distillation/fig1_paradigms.png" />
+<em>Figure 1 from the paper: from sparse-reward RLVR to OPSD with designer-specified privileged artifacts, to LOPD, where the teacher's privileged context is composed from retrieved experience and learned end-to-end.</em></p>
+<h2>The core idea</h2>
+<p>Standard OPSD trains a student policy <span class="arithmatex">\( \pi^S_\theta \)</span> on its own trajectories, with the supervision signal coming from a teacher that shares the same weights but additionally sees a fixed privileged context <span class="arithmatex">\( c_{\mathrm{fix}} \)</span>:</p>
+<div class="arithmatex">\[
+\mathcal{L}_{\mathrm{OPSD}}(\theta) = \mathbb{E}_{\tau\sim\pi^S_\theta}\Big[\sum_{t=1}^{|\tau|}\sum_{n=1}^{L_t} D\big(\mathrm{sg}\!\left[\pi^T_\theta(\cdot\mid s_t, c_{\mathrm{fix}}, a_{t,&lt;n})\right] \big\|\; \pi^S_\theta(\cdot\mid s_t, a_{t,&lt;n})\big)\Big]
+\]</div>
+<p>where <span class="arithmatex">\( s_t \)</span> is the state at turn <span class="arithmatex">\( t \)</span>, <span class="arithmatex">\( a_{t,&lt;n} \)</span> the action prefix, <span class="arithmatex">\( \mathrm{sg} \)</span> stop-gradient, and <span class="arithmatex">\( D \)</span> a token-level divergence (notation follows the paper's Eq. 3, lightly re-typeset). LOPD's move is to replace <span class="arithmatex">\( c_{\mathrm{fix}} \)</span> with a learned constructor <span class="arithmatex">\( c_\phi = \Phi_\phi(x, \mathcal{E}) = \langle e_1\rangle \oplus \cdots \oplus \langle e_K\rangle \)</span>: retrieve experiences <span class="arithmatex">\( \mathcal{E} \)</span> relevant to task <span class="arithmatex">\( x \)</span>, encode them, and compress them into <span class="arithmatex">\( K \)</span> continuous latent tokens that are prepended to the teacher's input. Because the tokens are continuous, gradients flow from the distillation loss through the teacher into the constructor — the privileged context is optimized for how much it actually helps the teacher supervise, not for how plausible it looks as text. Crucially, all of this machinery (retriever, encoder, compressor, latent tokens) is training-time only; the deployed artifact is the bare student.</p>
+<h2>How it works</h2>
+<p><strong>Experience → latent context.</strong> For each task, a dense-embedding retriever pulls the J=3 most similar task–trajectory pairs from an offline bank of successful trajectories. Each retrieved experience <span class="arithmatex">\( m_j \)</span> is encoded with the frozen backbone plus LoRA adapters, <span class="arithmatex">\( H_j = \mathrm{Enc}_\psi(x, m_j) \)</span>, and a lightweight QFormer-style compressor with learned queries cross-attends into K=32 latent tokens per experience: <span class="arithmatex">\( E_j = \mathrm{Comp}_\chi(H_j; Q_\chi) \)</span>. Concatenating these gives the privileged context <span class="arithmatex">\( c_\phi \)</span>, with <span class="arithmatex">\( \phi=(\psi,\chi) \)</span>.</p>
+<p><strong>Distillation.</strong> The student rolls out on-policy; a frozen teacher copy <span class="arithmatex">\( \pi^T_{\bar\theta,\phi} \)</span> re-scores every visited prefix with the latent context attached. The loss is a weighted KL over top-M-plus-tail distributions at each prefix (paper Eq. 10):</p>
+<div class="arithmatex">\[
+\mathcal{L}_{\mathrm{distill}}(\theta,\phi)=\mathbb{E}_{x\sim\mathcal{D}}\,\mathbb{E}_{\tau\sim\pi^S_\theta(\cdot\mid x)}\!\left[\frac{\sum_{t,n}\omega_{t,n}\, D_{\mathrm{KL}}\big(\tilde p^S_{t,n} \,\|\, \tilde p^T_{t,n}\big)}{\sum_{t,n}\omega_{t,n}}\right]
+\]</div>
+<p><strong>The privileged-margin constraint.</strong> Joint optimization has a failure mode: the easiest way to shrink the KL is to make the teacher <em>less</em> informed, collapsing <span class="arithmatex">\( c_\phi \)</span> toward uselessness. LOPD counters by requiring the teacher to stay measurably better than the student on outcome-weighted log-probabilities. Define the per-token privilege <span class="arithmatex">\( \delta_{t,n}(\phi) = \log \pi^T_{\bar\theta,\phi}(a_{t,n}\mid s_t,c_\phi,a_{t,&lt;n}) - \mathrm{sg}[\log \pi^S_\theta(a_{t,n}\mid s_t,a_{t,&lt;n})] \)</span> and its advantage-weighted mean <span class="arithmatex">\( \Delta(\phi) \)</span> with <span class="arithmatex">\( A(\tau)=2r(\tau)-1 \)</span>; the full objective is a Lagrangian (paper Eq. 12–13):</p>
+<div class="arithmatex">\[
+\min_{\theta,\phi}\;\max_{\beta\ge 0}\;\; \mathcal{L}_{\mathrm{distill}}(\theta,\phi) + \beta\big(m-\Delta(\phi)\big) + \lambda\big\|c_\phi-\mathrm{sg}[c_{\phi_0}]\big\|_2^2
+\]</div>
+<p>with margin threshold m=0.05, a dual variable <span class="arithmatex">\( \beta \)</span> updated by gradient ascent, and a proximal term keeping <span class="arithmatex">\( c_\phi \)</span> near its initialization <span class="arithmatex">\( c_{\phi_0} \)</span>. Intuitively: the teacher must assign higher likelihood than the student to actions from <em>successful</em> trajectories (and lower to failed ones) by at least the margin, or <span class="arithmatex">\( \beta \)</span> grows and forces the constructor to re-earn its privilege.</p>
+<pre><code class="language-text"># LOPD training loop (Algorithm 1, condensed)
+init: student pi_S(theta); frozen teacher copy pi_T(theta_bar, phi);
+      composer Phi_phi from phi_0; experience bank B; margin m; beta = 0
+for each iteration:
+    sample tasks {x} from D
+    for each task x:
+        tau ~ pi_S(.|x)                    # on-policy student rollout
+        r = V(tau); A = 2r - 1             # verifier reward -&gt; advantage
+        E = Retrieve(x, B, J=3)            # similar past task-trajectory pairs
+        c_phi = Compose(E)                 # K=32 latent tokens per experience
+        for each prefix (t, n) in tau:
+            KL term:  D_KL(p_S || p_T(c_phi))     # dense token supervision
+            delta = log p_T(a|c_phi) - sg[log p_S(a)]
+        Delta = weighted mean of A * delta
+        update (theta, phi) on Eq. 13
+        beta = max(0, beta + eta * (m - Delta))   # dual ascent
+deploy: student only (retriever/composer/latents discarded)
+</code></pre>
+<h2>Results</h2>
+<p><strong>Tool use.</strong> On Qwen3-8B, LOPD reaches 66.4 on EnvScaler (200 test tasks) vs 60.2 for Skill-SD, the strongest OPSD baseline (+6.2); 29.88 average on BFCL-v3's four subsets vs 27.38 (+2.5); and 62.7 average on ACEBench vs 58.0 for GRPO (+4.7). <strong>Code.</strong> On Qwen3-4B, 48.78% average pass@1 on LiveCodeBench v5/v6 vs 47.32% for Skill-SD, and 81.36% on EvalPlus vs 80.07% for SDFT; on OLMo3-7B, 50.98% LiveCodeBench vs 47.80% (+3.18). The paper notes hand-crafted-context baselines (OPSD, SDPO) show task-dependent reversals — sometimes the prescribed privileged artifact actively hurts — which is the empirical case for learning the context instead.</p>
+<p><strong>Efficiency.</strong> LOPD passes 0.61 EnvScaler reward after ~320 generations while GRPO and Skill-SD climb more slowly, and it sustains the lead through 1,600 generations; the abstract's headline is surpassing both at under 30% of their rollout budget.</p>
+<p><strong>Ablations.</strong> The margin is not optional: frozen composer 0.573, joint training with m=0 drops to 0.551, m=0.05 reaches 0.637. Capacity matters — K∈{8,16} latent tokens stays in a low-capacity regime, K=32 is the threshold; retrieval count n=3 balances the two tool-use suites. Table 3 shows the student <em>internalizes</em> teacher behavior: after training (with no latent context at inference) it takes more environment steps (17.04 vs 11.12), makes fewer tool calls per step (1.11 vs 3.50), and earns more reward per call (0.050 vs 0.038) — procedural change, not just logit sharpening.</p>
+<p><img alt="LOPD framework: retrieval, latent composition, teacher re-scoring, dense distillation with privileged margin." src="assets/lopd-latent-self-distillation/fig2_framework.png" />
+<em>Figure 2 from the paper: the student rolls out on-policy; retrieved experiences are compressed into latent tokens conditioning a frozen teacher copy, which provides dense per-prefix supervision under the privileged-margin constraint.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>The OPSD lineage in this tracker (opsd-without-supervision, agentopsd-recursive-self-distillation, opd-survey):</strong> every entry in that lineage differs mainly in <em>which</em> privileged artifact the teacher gets. LOPD subsumes the axis: the artifact becomes a learned continuous object, and the ablations show the hand-crafted choices are sometimes net-negative.</li>
+<li><strong>Reason Wide, Not Deep (2608.07885, tracked):</strong> the discrete counterpart — distill recurring procedures into an explicit markdown skill in the prompt. LOPD trades that interpretability for gradient access; notably its Skill-SD baseline is exactly the "explicit skill as privileged context" design, and LOPD beats it on every backbone.</li>
+<li><strong>Agent memory distillation &amp; memory-to-skills (agent-memory-distillation, msce-memory-to-skills, tracked):</strong> same pipeline shape (experience bank → retrieval → compressed reusable artifact), but those systems consume the artifact at inference; LOPD consumes it only at training time and ships a clean student.</li>
+<li><strong>A Survey of Agent Memory in the Second Half (2602.06052, tutorial in this list):</strong> the survey's thesis that "memory management itself is becoming a trainable capability" — LOPD is a concrete instance where the read-and-compress path over experience is trained end-to-end by a downstream objective.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The direction is right, but three caveats temper the headline. First, the retriever is <em>not</em> learned — dense-embedding similarity search selects which experiences enter the composer, so "end-to-end" applies to encoding and compression, not selection; if retrieval surfaces the wrong experiences, the learned latents can only mitigate. Second, everything is ≤8B (Qwen3-4B/8B, OLMo3-7B) and margins over the best baseline are modest on code (+1.3 to +3.2 points) versus tool use (+2.5 to +6.2); dense-supervision methods historically shine most where verifiers are sparse, so the tool-use numbers are the ones to trust, and frontier-scale behavior is unknown. Third, the rollout-budget comparison counts rollouts, not FLOPs — each LOPD step pays for teacher re-scoring plus the encoder/compressor forward passes, so the wall-clock advantage is smaller than "under 30%" suggests (inferred from the method's structure — verify against the paper's compute accounting). The self-teacher ceiling also remains: the teacher is the same frozen backbone with hints, so LOPD amortizes what the model can already do when well-conditioned; it cannot inject genuinely new capability the way cross-model distillation can. What I'd want next: a learned retriever, and evidence the latent-context bank can grow online without the margin constraint destabilizing.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>LOPD replaces OPSD's hand-designed privileged context with retrieved experience compressed into K=32 continuous latent tokens, trained end-to-end by the distillation loss itself — the teacher's edge is now a learned quantity.</li>
+<li>The privileged-margin Lagrangian is what makes joint training work: unconstrained, the latents degrade (0.573→0.551); with m=0.05 they improve to 0.637 — expect this constraint pattern to recur wherever teacher context is optimized.</li>
+<li>It beats RLVR/GRPO and all OPSD variants across tool use and code on three backbones at &lt;30% of the rollout budget, and the student retains the behavioral changes with no extra inference cost — the deployable artifact is just the student.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-16 16:01 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

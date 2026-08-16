@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Survey of Agent Memory in the Second Half: Towards Self-Evolving and Long-Horizon Agents</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>A Survey of Agent Memory in the Second Half: Towards Self-Evolving and Long-Horizon Agents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2602.06052">arXiv:2602.06052</a> · <a href="https://arxiv.org/abs/2602.06052">arXiv</a> · <a href="https://x.com/Sa4d_k1/status/2088643503572082837">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>arXiv 2602.06052 (Wei-Chieh Huang, Weizhi Zhang, and ~60 co-authors across UIC, UIUC, Harvard, UCSD, Salesforce — incl. Caiming Xiong — Google-affiliated researchers, and many others; accepted at TMLR with Survey Certification) organizes the entire agent-memory field along <strong>three orthogonal dimensions</strong>: memory substrate (where it lives), cognitive mechanism (what functional role it plays), and memory subject (who it serves — the user or the agent itself).</li>
+<li>Its most forward-looking claim: memory is shifting from a passive storage add-on to <em>the substrate through which agents self-evolve</em> — and "memory management itself is becoming a trainable capability," increasingly learned end-to-end with RL rather than hand-scripted.</li>
+<li>Beyond single-agent read/write, it maps multi-agent memory topologies (private / shared-workspace / hybrid / orchestrated), routing patterns, evaluation practice, and six open-challenge directions, making it the closest thing yet to a field-wide index for the memory work tracked in this list.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Context explosion is the operational wall every long-horizon agent hits: conversations, tool outputs, past decisions, and user preferences accumulate faster than any context window grows, and "put it all in context" scales quadratically in cost while degrading behavior. The memory papers tracked in this list attack slices of the problem — programmatic memory, probabilistic retrieval, memory-to-skill consolidation, plug-in fact/skill stores — but each invents its own vocabulary, which makes cross-paper comparison guesswork. This survey supplies the missing coordinate system. Its three-axis taxonomy answers, for any memory system: what substrate (vector index? text log? KV cache? weights?), what cognitive role (episodic? semantic? procedural?), and what subject (user personalization vs the agent's own experience). Two of its through-lines matter especially for this tracker's core interests. First, the <em>agent-centric</em> column — memory of the agent's own successes, failures, and extracted procedures — is precisely the raw material of self-evolving agents; the survey formalizes the store → distill → reuse loop that skill-evolution and experience-distillation papers implement ad hoc. Second, the argument that memory policies (what to retain, consolidate, discard) should be <em>trained</em>, not engineered, predicts where the field goes next: memory ops as actions in an RL problem.</p>
+<p><img alt="The survey's taxonomy of foundation agent memory: substrates, cognitive mechanisms, and subjects." src="assets/agent-memory-second-half/fig1_taxonomy.png" />
+<em>Figure 2 from the paper: the taxonomy of Foundation Agent Memory — substrates split into internal (weights, latent states, KV cache) and external (vector index, text record, structural and hierarchical stores); cognitive mechanisms spanning sensory, working, episodic, semantic, and procedural memory; subjects split into user-centric and agent-centric.</em></p>
+<h2>The core idea</h2>
+<p>Stop treating "agent memory" as one thing. Any memory design decomposes along three independent axes:</p>
+<p><strong>Axis 1 — Substrate (where).</strong> <em>External</em>: vector indexes (approximate nearest-neighbor top-k retrieval), text records (human-readable summaries and episodic logs), structural stores (tables, graphs, trees), and hierarchical stores with dedicated modules (core / episodic / semantic / procedural / resource). <em>Internal</em>: model weights (pre-training, post-training, targeted editing), latent states carried across steps, and the KV cache. Internal is fast and implicit but hard to audit or edit; external is inspectable and updatable but pays retrieval latency and relevance risk.</p>
+<p><strong>Axis 2 — Cognitive mechanism (what role).</strong> Borrowing the psychology ladder: sensory memory (brief retention of raw recent inputs), working memory (active manipulation under capacity constraints — effectively the context window), episodic memory (persistent cross-session experience), semantic memory (abstract facts and structured knowledge), and procedural memory (reusable how-to patterns — the "skills" of this tracker's vocabulary).</p>
+<p><strong>Axis 3 — Subject (for whom).</strong> User-centric memory serves personalization — preferences, history, standing instructions. Agent-centric memory serves the agent's own improvement — trajectories, errors, and lessons distilled from them. The survey's title thesis is that the field's "second half" is the agent-centric column: memory as the mechanism by which an agent executes a task, stores the experience, extracts knowledge or skill from it, and reuses it — the self-evolution loop.</p>
+<p>The survey presents this framework narratively; as a reconstructed formalization (mine, not the paper's): an agent policy <span class="arithmatex">\( \pi \)</span> acts given observations and a memory state <span class="arithmatex">\( m_t \)</span>, while memory operations close the loop,</p>
+<div class="arithmatex">\[
+a_t \sim \pi\big(\cdot \mid o_{\le t},\, R(m_t, q_t)\big), \qquad m_{t+1} = U\big(m_t, o_t, a_t\big)
+\]</div>
+<p>where <span class="arithmatex">\( R \)</span> is a read/retrieval operator over the store given query <span class="arithmatex">\( q_t \)</span>, and <span class="arithmatex">\( U \)</span> the write/update operator — the design space above is choices of representation for <span class="arithmatex">\( m \)</span>, and implementations of <span class="arithmatex">\( R \)</span> and <span class="arithmatex">\( U \)</span>.</p>
+<h2>How it works</h2>
+<p><strong>Single-agent memory operations.</strong> The survey catalogs five operation families: storage &amp; indexing; loading &amp; retrieval; update &amp; refresh; compression &amp; summarization; forgetting &amp; retention. The useful reframing is lifecycle-shaped — every system answers the same questions in some order:</p>
+<pre><code class="language-text"># The agent-memory lifecycle (distilled from the survey's operations section)
+loop over agent steps / sessions:
+    perceive: o_t arrives (sensory buffer, mostly transient)
+    work:     assemble working memory = context window
+              &lt;- retrieval R(m, q): vector top-k | text scan | graph traversal
+    act:      a_t from policy given working memory
+    write:    U(m, o_t, a_t): store episode (episodic),
+              extract facts (semantic), extract procedures (procedural)
+    manage (online or offline/idle):
+        consolidate: merge duplicates, resolve contradictions
+        compress:    summarize old episodes; check for information loss
+        forget:      decay / evict by relevance, age, capacity
+        promote:     episodic -&gt; semantic/procedural (experience -&gt; knowledge/skill)
+    evolve:   reuse promoted skills next episode  # the agent-centric loop
+</code></pre>
+<p><strong>Multi-agent memory.</strong> Four architectures — private-only (isolated per agent), shared-workspace (common pool), hybrid, and orchestrated (centrally managed) — crossed with three routing patterns: orchestrator-based, agent-initiated, and memory-driven (access triggered by memory state itself). The failure modes the survey highlights are write contention and inconsistency, handled by write control and consistency feedback loops.</p>
+<p><strong>Trainable memory management.</strong> The section most aligned with this tracker: instead of hand-scripted heuristics, "agents are trained end-to-end, typically via reinforcement learning, to decide what to retain, consolidate, or discard." Three levels: step-level decisions (per-step memory ops as actions), trajectory-level representation (learning which episodes matter), and cross-episode / multi-agent memory RL. The implicit claim is that retention/eviction/consolidation policies are credit-assignment problems — the reward for a good write may arrive many episodes later.</p>
+<p><strong>Evaluation.</strong> Metrics split into accuracy-based (factual correctness, task completion), similarity-based, and LLM-as-a-judge; benchmarks split along the subject axis into user-centric (personalization, preference recall) and agent-centric (task learning, experience accumulation). The survey reads the current benchmark landscape as skewed toward user-centric recall, with agent-centric experience-reuse evaluation still immature (inferred from the section's framing — verify against Section 7).</p>
+<p><img alt="Memory management as a learned policy." src="assets/agent-memory-second-half/fig2_learned_policy.png" />
+<em>Figure from the paper's trainable-memory section: memory management framed as a learned policy — step-level retain/discard decisions, trajectory-level representation learning, and cross-episode settings trained with reinforcement learning rather than hand-written rules.</em></p>
+<h2>Results</h2>
+<p>Surveys don't have experiments, but this one contributes three artifacts worth keeping. <strong>(1) The map itself:</strong> a timeline of memory frameworks 2023–2025 categorized by substrate and subject (Figure 1), and a cumulative publication count (Figure 3) showing rapid acceleration through 2025 — evidence the fragmentation problem is real and growing. <strong>(2) The cross-axis placement of existing systems:</strong> hierarchical stores with core/episodic/semantic/procedural modules turn out to be the convergent design among recent agent frameworks, which the taxonomy explains as covering multiple cognitive mechanisms in one substrate. <strong>(3) The open-challenge list</strong>, six directions: continual learning and self-evolving agents; multi-human/multi-agent memory organization; memory infrastructure and efficiency; lifelong personalization with trustworthy (privacy-preserving, verifiable) memory; memory for multimodal/embodied/world-model agents; and real-world benchmarking beyond static recall tasks. TMLR's Survey Certification and the ~60-author breadth make it a reasonable canonical reference for the field's state as of early 2026.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Long-horizon agents survey (tracked, self-improving):</strong> that survey organizes the <em>optimization</em> side (harness × training co-evolution); this one organizes the <em>state</em> side. Together they cover the two halves of self-evolving systems: what improves, and what persists.</li>
+<li><strong>MSCE memory-to-skills and agent-memory-distillation (tracked):</strong> both are instances of the survey's episodic → procedural promotion path — the survey gives the operation a name and situates it as one cell in the lifecycle, alongside consolidation and forgetting.</li>
+<li><strong>PlugMem, DocMemo, Pro-Long (tracked, memory-context):</strong> all three are substrate innovations (fact/skill records, probabilistic retrieval, programmatic memory) that the taxonomy would classify as external stores with different cognitive-mechanism coverage; the survey's axes make explicit what each does <em>not</em> handle.</li>
+<li><strong>LOPD (2608.13040, tutorial in this list, added the same day):</strong> the survey says memory management is becoming trainable; LOPD is the sharpest instance — experience retrieval and compression trained end-to-end by a distillation objective, with the memory consumed at training time and internalized into weights.</li>
+</ul>
+<h2>Critical take</h2>
+<p>As a map, this is the best available; as science, it inherits the survey genre's weaknesses. The three-axis taxonomy is genuinely clarifying, but the cognitive-psychology labels (sensory/working/episodic/semantic/procedural) are an analogy, not a mechanism — nothing in a vector store enforces episodic semantics, and porting the vocabulary can suggest more theoretical grounding than exists. The "memory as the substrate of self-evolution" thesis is directionally right but stated more confidently than the cited evidence supports: the field's demonstrations of experience-driven improvement are mostly the small-scale, benchmark-specific systems this tracker follows, several of which (see the rethinking-self-evolving-skills tutorial, added today) look like sparse validation-filtered search rather than reliable compounding. The trainable-memory section, the part I care most about, is also the thinnest — a three-level categorization of early work rather than a settled recipe, with the hard problem (long-horizon credit assignment for write/evict decisions) named but not solved. And any survey finalized in this field in early 2026 (v1 January, v4 August) starts aging immediately. Use it as an index and a shared vocabulary; don't mistake taxonomy coverage for solved problems.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Classify any memory system by three independent axes — substrate (internal: weights/latent/KV vs external: vector/text/structural/hierarchical), cognitive mechanism (sensory → working → episodic → semantic → procedural), and subject (user-centric vs agent-centric) — and cross-paper comparisons become tractable.</li>
+<li>The "second half" of agent memory is agent-centric: store the experience, distill knowledge/skill from it, reuse it — memory is the persistence layer that turns isolated episodes into self-evolution.</li>
+<li>Memory management is becoming a trainable capability: retain/consolidate/discard as RL decisions at step, trajectory, and cross-episode levels — hand-tuned retrieval heuristics are the part of today's stacks most likely to be learned away.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-16 16:01 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

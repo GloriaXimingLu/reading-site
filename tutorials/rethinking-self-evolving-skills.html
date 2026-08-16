@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rethinking Self-Evolving Agent Skills: Evolution as Sparse, Validation-Filtered Search</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Rethinking Self-Evolving Agent Skills: Evolution as Sparse, Validation-Filtered Search</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.02636">arXiv:2608.02636</a> · <a href="https://arxiv.org/abs/2608.02636">arXiv</a> · <a href="https://x.com/Xudong07452910/status/2088843191189450920">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Rethinking Self-Evolving Agent Skills: Feedback Dynamics over Multiple Rounds" (arXiv 2608.02636; Yuxuan Liu, Zhaochen Su, Yuhao Zhang, and 9 more, incl. Haoran Li and Yangqiu Song) runs 42 controlled skill-evolution runs across 14 model×benchmark settings and finds evolution is <strong>sparse</strong>: of 388 candidate skill revisions, only 55 (14.2%) set a byte-distinct new validation best, and only 11 evolved skills are ultimately selected.</li>
+<li>Feedback composition is decisive: <strong>all 11 selected evolved skills were trained with failure trajectories</strong> in the feedback (Normal in 9 settings, Fail-only in 2, Success-only in 0). Failure-containing feedback yields new bests at 16.5% vs 9.1% for success-only.</li>
+<li>Against oracle test-time-scaling controls, results split: on SearchQA parallel sampling nearly recovers the evolved skill's gain (77.5 vs 77.9), but on SpreadsheetBench the evolved skill (85.8) beats oracle parallel sampling (54.8) by ~31 points — genuine skill learning exists, but it is benchmark- and model-dependent.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Half of this tracker is systems that promise compounding self-improvement: run, reflect, revise the skill, repeat. This paper is the first controlled accounting I've seen of what those loops actually do round by round, and the answer deflates the compounding story without killing it. Most proposed revisions don't survive validation; runs stagnate, regress, and roll back; and when evolution works, it works because the optimizer saw <em>failures</em> to push against. That reframes skill self-evolution from "gradient ascent in prompt space" to <strong>search with a validation gate and rollback</strong> — the value is not in iterating more but in proving, per edit, that the change deserves to persist. It also lands directly on this week's live debate (the tracked argument that self-evolving loops are just test-time scaling in disguise): here, with matched budgets, oracle parallel sampling recovers the gain on one benchmark and misses by 31 points on another. Both sides are right somewhere — which means "did you beat a TTS control?" should become a mandatory ablation for every self-evolving-agent paper, and this paper shows how to run it.</p>
+<p><img alt="Feedback-conditioned skill evolution: execute, build feedback view, propose candidate, validation gate, frozen best checkpoint for controlled evaluation." src="assets/rethinking-self-evolving-skills/fig1_framework.png" />
+<em>Figure 1 from the paper: each round executes the current skill, constructs a feedback view (Normal / Fail-only / Success-only), and proposes a candidate; the validation gate decides the next-round skill and updates the best checkpoint only on strict improvement, which is then frozen for controlled evaluation.</em></p>
+<h2>The core idea</h2>
+<p>Fix the model and the harness; let only a <strong>skill</strong> — a persistent text artifact injected into the agent — evolve across rounds. The agent <span class="arithmatex">\( \mathcal{A} \)</span> produces output <span class="arithmatex">\( o \)</span> for task <span class="arithmatex">\( x \)</span> given skill <span class="arithmatex">\( s \)</span> and context <span class="arithmatex">\( z \)</span>, and a benchmark verifier <span class="arithmatex">\( \mathcal{V} \)</span> labels success:</p>
+<div class="arithmatex">\[
+o = \mathcal{A}(x, s, z), \qquad y = \mathcal{V}(x, o)
+\]</div>
+<p>Each round <span class="arithmatex">\( r \)</span>, an optimizer <span class="arithmatex">\( \mathcal{O} \)</span> proposes a candidate revision from the current skill, the round's trajectories <span class="arithmatex">\( \tau^r \)</span>, and a <strong>feedback view</strong> <span class="arithmatex">\( f^r \)</span>:</p>
+<div class="arithmatex">\[
+\hat{s}^{\,r+1} = \mathcal{O}\big(s^{r}, \tau^{r}, f^{r}\big), \qquad
+s^{r+1} \leftarrow \hat{s}^{\,r+1} \text{ if validation does not decrease, else } s^{r+1} \leftarrow s^{r}
+\]</div>
+<p>(notation follows the paper, lightly re-typeset). The experimental question is not "does this improve the benchmark?" but "what are the <em>dynamics</em>?": how often are candidates accepted, which feedback composition (successes, failures, or both) produces keepable edits, when in the run do improvements arrive, and does the frozen final skill survive robustness/transfer evaluation and test-time-scaling controls.</p>
+<h2>How it works</h2>
+<p><strong>Setup.</strong> Five benchmarks — SearchQA (web-snippet QA), OfficeQA (Treasury-bulletin QA), SpreadsheetBench (spreadsheet manipulation), LiveMath (theorem reasoning), DocVQA (document QA) — crossed with three models (GPT-5.5, Gemini 3.1 Pro, DeepSeek V4-Pro), giving 14 primary settings (DeepSeek–DocVQA excluded for endpoint image constraints). Each feedback run executes 40 training trajectories per round (36 for LiveMath); the verifier labels each success/failure.</p>
+<p><strong>Three feedback views.</strong> From the same trajectories, three conditions are constructed: <strong>Normal</strong> (successes + failures), <strong>Fail-only</strong>, and <strong>Success-only</strong>. The revision optimizer may propose at most four minimal, task-general edits per round. Runs stop at ten rounds, five consecutive regressions/no-ops, or an empty feedback pool.</p>
+<p><strong>Validation gate and rollback.</strong> A candidate becomes the next round's skill only if validation does not decrease; otherwise the incumbent is retained. The <em>best checkpoint</em> updates only on strict validation improvement, and new-best counting requires <strong>byte-distinct</strong> artifacts (byte-identical reruns are treated as execution variability, not evolution).</p>
+<p><strong>Controlled post-evolution evaluation.</strong> The selected best skill is frozen and evaluated on the released test set, on robustness variations (R1–R3: surface, context, contract), and on transfer (T1–T3: new tasks, sources, distribution shifts). For GPT-5.5, matched-budget test-time-scaling controls are added: <strong>Parallel Sampling</strong> (oracle any-success over K independent attempts with the parent skill) and <strong>Sequential Refinement</strong> (K retries, each conditioning on the prior response).</p>
+<pre><code class="language-text"># One evolution run (condensed from the paper)
+s_0 = parent skill; best = s_0
+for round r in 1..10:
+    run 40 training trajectories with s_r          # 36 for LiveMath
+    label each success/fail via benchmark verifier
+    f_r = feedback view: Normal | Fail-only | Success-only
+    s_hat = Optimizer(s_r, trajectories, f_r)      # &lt;= 4 minimal, task-general edits
+    v = validation(s_hat)
+    if v &gt;= validation(s_r):   s_{r+1} = s_hat     # gate: no decrease
+    else:                      s_{r+1} = s_r       # rollback
+    if v &gt; validation(best) and bytes(s_hat) != bytes(best):
+        best = s_hat                                # byte-distinct new best
+    stop if 5 consecutive regressions/no-ops or feedback pool empty
+freeze best; evaluate: released test, R1-R3 robustness, T1-T3 transfer,
+and (GPT-5.5) matched-budget parallel-sampling / sequential-refinement controls
+</code></pre>
+<h2>Results</h2>
+<p><strong>Sparsity.</strong> 42 runs produced 388 candidates; 55 established byte-distinct validation bests (14.2% yield). Across the 14 settings, 11 evolved skills were selected; in 3 settings the parent skill was retained outright. Modification is frequent, <em>accepted</em> improvement is rare — the process is dominated by rejected and rolled-back edits.</p>
+<p><strong>Failures are the signal.</strong> Every one of the 11 selected skills came from feedback that included failed trajectories: Normal won in 9 settings, Fail-only in 2, Success-only in 0. Pooled, failure-containing feedback produced 44 new bests from 267 candidates (16.5%) vs 11 from 121 (9.1%) for success-only. The authors' explanation: successes "provide no direct contrast for identifying what must be corrected" — failure is what tells the optimizer where the skill is wrong, while success mainly protects existing capability.</p>
+<p><strong>Selected skills mostly generalize.</strong> Of the 11 evolved skills: 9 improve the released test set, 9 improve robustness, 9 improve transfer, 7 improve both robustness and transfer — evolution under a validation gate is not just overfitting the validation set, though the exceptions are why the gate alone isn't sufficient evidence.</p>
+<p><strong>Test-time-scaling controls cut both ways.</strong> For GPT-5.5: SearchQA parent 75.6 → evolved 77.9, while oracle parallel sampling reaches 77.5 (gap 0.43 — sampling essentially recovers it). SpreadsheetBench parent 50.5 → evolved 85.8, while oracle parallel reaches only 54.8 (gap 30.96). Sequential refinement recovered neither gain. <strong>Timing:</strong> 38/55 new bests arrive in rounds 1–4, but 6 of the 11 <em>selected</em> skills appeared in rounds 6–9 — late discoveries after many rejections are real, just inconsistent.</p>
+<p><img alt="Per-setting evolution events across models, benchmarks, and feedback views." src="assets/rethinking-self-evolving-skills/fig2_lifecycle.png" />
+<em>Figure from the paper's appendix: lifecycle attribution of evolution events — candidates evaluated, byte-distinct validation bests, and benchmark-level selections across the Normal/Fail-only/Success-only feedback views.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Self-evolving loops as test-time scaling (tracked this week, from @zhuokaiz's thread):</strong> that argument says matched-budget sampling explains away harness/skill evolution gains. This paper ran exactly that control and split the verdict — SearchQA supports it, SpreadsheetBench's 31-point residual refutes it. The reconciliation: evolution pays off where a <em>persistent procedural fix</em> (e.g., spreadsheet manipulation contracts) beats response diversity.</li>
+<li><strong>HiSME / SkillHone / SkillRise (tracked):</strong> the skill-evolution systems in this list report endpoint gains; this paper's round-level accounting suggests their iteration counts matter less than their acceptance gates, and that their reflection prompts should be fed failures, not success summaries.</li>
+<li><strong>Who&amp;When Pro failure attribution (tracked):</strong> failure trajectories are only useful if the optimizer can localize <em>why</em> a run failed — that benchmark showed models are weak at exactly this, which may explain why even fail-fed evolution accepts only ~1 in 6 candidates.</li>
+<li><strong>Reliable self-evolving agents (tracked):</strong> converges on the same design conclusion from the safety side — self-modification needs validation-gated commits and rollback, i.e., version control semantics, not free-running mutation.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The framing — evolution as sparse, validation-filtered search — is the paper's real contribution, and it's convincing because the accounting is conservative (byte-distinct counting, strict-improvement checkpoints). But mind the scale: 40 trajectories per round is a small feedback pool, and acceptance decisions ride on validation sets small enough that the paper itself observes validation-to-test rank divergence; some of the 14.2% "yield" is plausibly noise passing the gate, and some rejected candidates were plausibly good. The TTS control is oracle any-success, which <em>overstates</em> what real parallel sampling delivers (a practical selector would score below the oracle), so the SpreadsheetBench gap is if anything understated — but the control ran only on GPT-5.5, so the headline split rests on one model. The optimizer is capped at four minimal edits per round, which builds in the sparsity conclusion to some degree: larger or structural rewrites might change the dynamics entirely (inferred from the setup — verify the paper's discussion of edit constraints). And nothing here measures cost: ten rounds × 40 trajectories × validation reruns is a big bill for 11 keepable skills across 14 settings. What I'd want next: the same accounting applied to harness/code evolution rather than text skills, and acceptance gates that use failure-attribution quality as a first-class signal.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Skill self-evolution is not steady improvement — it's search: 388 candidates → 55 byte-distinct validation bests → 11 selected skills. Design loops around the gate and rollback, not the iteration count.</li>
+<li>Feed the optimizer failures. All 11 selected skills used failure trajectories; success-only feedback never won a setting (16.5% vs 9.1% new-best yield). Successes preserve capability; failures locate what to fix.</li>
+<li>Always run a matched-budget test-time-scaling control: sampling recovered the SearchQA gain (77.5 vs 77.9) but missed SpreadsheetBench by ~31 points — that single ablation separates real skill learning from repackaged pass@k.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-16 16:01 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
