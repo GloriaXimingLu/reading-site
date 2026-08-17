@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MobileMem: Learning from a Year of Mobile Experiences</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>MobileMem: Learning from a Year of Mobile Experiences</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.13606">arXiv:2608.13606</a> · <a href="https://arxiv.org/abs/2608.13606">arXiv</a> · <a href="https://github.com/zjunlp/MobileMem">GitHub</a> · <a href="https://x.com/zxlzr/status/2089209584695246914">X post</a> · <a href="https://huggingface.co/papers/2608.13606">huggingface.co</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"MobileMem: Learning from a Year of Mobile Experiences" (arXiv 2608.13606; Xinle Deng, Yida Xue, Xiangyuan Ru, et al., with Huajun Chen and Ningyu Zhang — OPPO + OpenKG/ZJUNLP) is a benchmark + synthesis framework for <strong>on-device long-term memory</strong>: instead of reducing a user to a sequence of chats, it models a year of heterogeneous mobile experiences — notes, bills, calendars, to-dos, voice memos, screenshots — as an evolving event stream a memory layer must organize, update, retrieve, and reason over.</li>
+<li>The engine is <strong>KEME</strong>, a knowledge-guided synthesis pipeline: four agents (planner, anchor grounder, realizer, reviser) alternate top-down recursive temporal-event-graph planning with bottom-up experience-driven revision, grounding real user-app sessions as immutable <em>knowledge anchors</em> and evolving a versioned, evidence-linked persona. Two tracks result: a text track (apps push structured events to the assistant) and MobileMem-Omni (multimodal: 16 users, avg 1.72M tokens/user, 19,060 images, 7,415 QA pairs across 7 question types, bilingual EN/ZH).</li>
+<li>Headline findings are negative in the useful way: the best system (EverMemOS) scores only 39.4% LLM-Judge on Omni; abstention is under 20% for most systems because stronger retrievers surface weakly-related evidence and get <em>more</em> confidently wrong on unanswerable questions; converting images to captions helps visual reasoning (+3.50%) but hurts everything else (−4.43%) via memory interference; and KEME-synthesized <em>distractors</em> degrade retrieval more than simply lengthening trajectories.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every memory benchmark this tracker has covered — LongMemEval-style conversation streams, LoCoMo descendants — shares an assumption MobileMem attacks head-on: that a user's history is a dialogue log. Real personal context lives in calendars, bills, notes, screenshots, and app records; it is multimodal, cross-app, temporally evolving, and mostly <em>not addressed to the assistant</em>. If the endgame for personal agents is on-device (privacy, latency, the phone as the natural aggregation point), then memory systems face constraints cloud RAG papers never price in: millions of tokens of distractors, storage/compute budgets, stale facts that must be overwritten, and the need to refuse when evidence is absent.</p>
+<p>Two framing moves are worth stealing regardless of the benchmark. First, the <strong>two-layer memory ecosystem</strong>: a system-level memory layer as a blackboard, with application-specific memories as knowledge sources doing cognitive offloading — a browser's history search and a finance app's monthly aggregates <em>already are</em> memory systems with retrieval and consolidation, so the assistant should query them through a protocol rather than re-parse pixels (a direct critique of screenshot-everything approaches like MineContext). Second, the diagnosis that memory systems "must do more than store additional information": the measured bottlenecks are updating, interference-resistance, temporal reasoning, and knowing when not to answer — not raw recall.</p>
+<h2>The core idea</h2>
+<p>Formally, each benchmark instance is a pair</p>
+<div class="arithmatex">\[(\mathcal{T}, \mathcal{Q}), \qquad \mathcal{Q} = \{(q_j, \mathcal{A}_j)\}_{j=1}^{|\mathcal{Q}|},\]</div>
+<p>where <span class="arithmatex">\(\mathcal{T}\)</span> is an interaction trajectory of sessions of heterogeneous actions (utterances, app operations, notifications, screenshots) and each question <span class="arithmatex">\(q_j\)</span> has gold answer set <span class="arithmatex">\(\mathcal{A}_j\)</span>. Flattening sessions chronologically into <span class="arithmatex">\(\tau = \operatorname{Flatten}(\mathcal{T}) = \{x_i\}_{i=1}^{|\tau|}\)</span>, the memory layer under test consumes the stream online:</p>
+<div class="arithmatex">\[\mathcal{M}_t = \operatorname{Update}(\mathcal{M}_{t-1}, x_t),\]</div>
+<p>where <span class="arithmatex">\(\mathcal{M}_t\)</span> is the memory state after ingesting action <span class="arithmatex">\(x_t\)</span>; answers are generated from the final state <span class="arithmatex">\(\mathcal{M}_{|\tau|}\)</span> and scored end-to-end by an LLM judge. The evaluation therefore stresses the whole construct–organize–retrieve–reason pipeline, not retrieval in isolation.</p>
+<p><img alt="Overview of MobileMem: year-scale heterogeneous mobile experiences flow into a memory layer that must support remembering the past, understanding the present, and adapting to the future" src="assets/mobilemem/fig1.png" />
+<em>Figure 1 from the paper: the MobileMem overview — heterogeneous, multimodal, evolving mobile experiences feeding an on-device memory layer evaluated across reasoning categories.</em></p>
+<p>The hard part is getting year-scale, temporally coherent, <em>personal</em> data without violating privacy. KEME's answer: collect real priors that are safe (interview-derived user profiles; app-usage metadata from volunteers' OPPO phones — explicitly no raw content), treat already-existing sessions as immutable <strong>knowledge anchors</strong>, and synthesize everything else under those constraints. Trajectories aren't statically assembled; they're incrementally expanded so that later experiences are conditioned on earlier ones — which is what makes knowledge-update and temporal questions well-posed.</p>
+<h2>How it works</h2>
+<p><img alt="KEME synthesis framework: user prior knowledge construction, trajectory synthesis via planner/grounder/realizer/reviser agents, QA synthesis, and quality control" src="assets/mobilemem/fig2.png" />
+<em>Figure 4 from the paper: the KEME data-synthesis framework — prior-knowledge construction, top-down planning with bottom-up revision, QA pair synthesis, and quality control across the pipeline.</em></p>
+<p>KEME runs as a two-stage pipeline: from initial persona <span class="arithmatex">\(\mathcal{P}_{\mathrm{start}}\)</span>, anchors <span class="arithmatex">\(\mathcal{K}\)</span>, and horizon <span class="arithmatex">\([T_{\mathrm{start}}, T_{\mathrm{end}}]\)</span>, synthesize trajectory <span class="arithmatex">\(\mathcal{T}\)</span>; then derive <span class="arithmatex">\(\mathcal{Q}\)</span> from <span class="arithmatex">\(\mathcal{T}\)</span>, a question taxonomy <span class="arithmatex">\(\mathcal{B}\)</span>, and the final profile <span class="arithmatex">\(\mathcal{P}_{\mathrm{end}}\)</span>. Four agents implement it:</p>
+<pre><code class="language-text">KEME(P_start, anchors K, horizon [T_start, T_end]):
+  G(root) ← A_plan: partition horizon into coarse life events   # temporal event graph
+  frontier ← {root}
+  while frontier nonempty:                    # top-down knowledge guidance
+    u ← next node in topological order
+    if u carries anchors K(u):
+        A_ground: assign each anchored session to an event whose
+        time interval contains it; revise G(u) until all groundable;
+        summarize grounded content → compatibility context
+        (propagated to descendants as a non-contradiction constraint)
+    for event n in G(u):
+        if depth(n) = d_max and few grounded sessions:
+            S(n) ← A_realize: synthesize the concrete session
+              - anchored content adopted verbatim (immutability)
+              - else human-assistant dialogue consistent w/ constraints
+              - link messages to persona attributes (evidence-grounded
+                reveal); log attribute updates if state genuinely changed
+        else:  expand n into finer sub-event graph G(n)
+        A_revise: update remaining UNEXPANDED events/edges to reflect
+          outcomes just realized            # bottom-up experience evolution
+  QA synthesis: traverse the tree leaves → root with taxonomy B;
+    leaves yield grounded single-hop pairs; internal nodes compose
+    child pairs into multi-hop/temporal questions; propagate 10 unused
+    child pairs upward; taxonomy may grow
+  Quality control: manual segment inspection, LLM evidence-sufficiency
+    checks, dedup; (Omni) MLLM image checks + InsightFace identity match
+</code></pre>
+<p>The persona is a set of dimension-wise attributes with <strong>version histories and message-level evidence links</strong> — attributes start "unrevealed" and only become revealed when a synthesized message links to them, and updates are recorded with operation logs. That bookkeeping is what lets QA synthesis generate answerable knowledge-update questions and verifiable abstention cases.</p>
+<p><strong>Text track (MobileMem).</strong> Seven app types (Bill, Voice Recorder, Screen Memo, Document, Note, Calendar, To-Do List) each fill a message template ("The user creates a note '[Title]' Content: [Content]") and forward structured events to the memory layer. Synthesis backbone GPT-5.2, expansion depth 2, 2–15 events per graph.</p>
+<p><strong>Multimodal track (MobileMem-Omni).</strong> 16 users (8 interviewed volunteers + 8 LLM-generated profiles; 8 English, 8 Chinese), each with a personal relationship graph whose members get generated portraits. Visual memory points become images via three routes: HTML templates rendered into app screenshots, portrait-conditioned photo synthesis, and direct text-to-image (Seedream primary). Scale: 1,589 events, avg 202.6 sessions and 1.72M tokens per user, 155,670 dialogue turns, 19,060 images, 7,415 QA pairs across seven categories (single-hop, multi-hop, knowledge update, temporal, implicit preference, abstention, visual — roughly 770–1,230 each). Trajectories exceeding two million tokens forced dropping the bottom-up revision loop for Omni; persona evolution there is only implicit via conditioning on preceding events.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Text track</strong> (Table 1, judge = Qwen3.5-397B-A17B): A-MEM (79.68 overall, GPT-4.1-mini) and HippoRAG2 (80.06, GPT-5.4-mini) lead — both <em>preserve</em> raw conversational information rather than aggressively compressing or overwriting, and both add retrieval structure (A-MEM's metadata, HippoRAG2's entity graph + personalized PageRank) that survives distractors. NaiveRAG collapses to ~37 despite also keeping raw text — recall of the target memory, not storage, is the differentiator. Mem0 lands at 35–43 (its extraction prompt focuses on user messages and misses app/assistant events); LangMem is worst overall (24.79) yet <em>best on adversarial/unanswerable questions</em> (76.42) — the paper's cleanest evidence that stronger retrieval makes systems more confidently wrong when no answer exists.</li>
+<li><strong>Construction cost matters on-device</strong>: A-MEM burns 5.5M–11.2M tokens per user trajectory to build memory; EverMemOS 7.6M–11.2M. Long Context degrades when the backbone's window shrinks (GPT-5.4-mini's 400K vs GPT-4.1-mini's 1M: 54.51 → 45.19 overall).</li>
+<li><strong>Omni track</strong> (judge = Qwen3-14B, 80.7% human agreement): everything is hard. Best is EverMemOS + GPT-5.4-mini at 39.41 LLM-Judge; abstention is below 20% for most systems; multimodal long context beats caption-based long context on visual reasoning (21.9 vs 12.16) but captions interfere elsewhere — the +3.50%/−4.43% visual-vs-other trade-off from the thread matches Figure 8's NaiveRAG analysis. Chinese questions score consistently below English across all methods; short-term events are hardest.</li>
+<li><strong>KEME as an adversarial tool</strong>: rebuilding 10 LongMemEval questions' surrounding context with KEME (answers preserved, verified manually) drops NaiveRAG from 40% → 20% at top-5 and EverMemOS from 90% → 80%, while producing <em>shorter</em> trajectories — semantically-similar distractors push answer-bearing evidence down the retrieval ranking (normalized rank +10.63pp). Well-designed distractors beat trajectory length as a difficulty axis.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Agentic Context Management (this list):</strong> ACM's lifecycle primitives — scoping, anticipating, compacting-with-consolidation — are exactly the operations MobileMem's failure taxonomy implicates: Long Context fails on memory <em>update</em> (13/20 errors), EverMemOS on answer generation after retrieval interference. MobileMem is the year-scale eval that would pressure-test ACM's compaction decisions.</li>
+<li><strong>MSCE: Converting Agent Memory into Executable Skills (this list):</strong> MSCE's bet is that memory should be <em>distilled</em> into procedures, not accumulated as retrievable text. MobileMem's finding that caption-augmented stores create interference, and that preserving-everything systems (A-MEM) win only via better indexing, supports the thesis that raw accumulation has a ceiling — though MobileMem's preference/temporal questions would stress skill-style consolidation hard.</li>
+<li><strong>Memory Decoder (this list):</strong> the swappable parametric-memory direction is one answer to MobileMem's on-device cost problem (Figure 7: existing memory methods are "slow and resource-intensive, hence unsuitable for on-device scenarios"; A-MEM's 11M construction tokens). A pretrained per-user memory decoder is the opposite pole from EverMemOS-style pipelines on the token-budget axis.</li>
+<li><strong>Survey: Continual Learning in Transition (tracked, no tutorial):</strong> the survey's arc — from task-incremental CL to experience-stream learning — is precisely what MobileMem operationalizes as an eval: knowledge updates without catastrophic forgetting, evolving preferences, distractor-heavy streams.</li>
+<li><strong>Macaron-V1 (this list):</strong> the natural system-side counterpart — open continual learning via self-improvement and mixture-of-LoRA over a personal assistant. Macaron learns <em>into weights</em> per user; MobileMem measures whether any memory substrate actually tracks a user over a year. Running Macaron-style per-user adapters against MobileMem-Omni is the obvious experiment neither paper does.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The benchmark is synthetic in the place it most claims realism. Real data enters only as interview profiles and app-usage <em>metadata</em>; every session, note, bill, and screenshot is LLM-generated (GPT-5.1/5.2) or template-rendered, so "a year of mobile experiences" is really a year-shaped simulation grounded in real scaffolding. That's a defensible privacy trade-off, but it risks circularity: GPT-family judges scoring GPT-family-generated evidence, and distractors hard for embedding retrievers precisely because the same model family wrote them. Quality control leans on "manual inspection revealed no salient inconsistencies" without inter-annotator numbers, and the Omni judge's 80.7% human agreement is mediocre for headline scores sitting in the 20–40% band — a chunk of the reported spread is judge noise. Multi-hop questions are admittedly sometimes compositional stitches of independently answerable hops. And the two-layer memory-ecosystem architecture of Sections 2.2–2.3 is a <em>vision statement</em> — the benchmark instantiates only two simplified corners (template push events; user-shared screenshots), so app-as-memory-system collaboration remains untested design fiction. None of this dulls the useful contributions: KEME's anchor-grounded synthesis is reusable beyond this benchmark (the LongMemEval-hardening study is the proof), and the abstention/interference findings are measured across enough systems to stand as a field-level diagnosis rather than a cherry-pick.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Memory ≠ retrieval</strong>: the systems that win preserve raw experience but index it better (A-MEM metadata, HippoRAG2 graphs); the field-level bottlenecks are updating stale knowledge, resisting interference, temporal reasoning, and abstaining — stronger retrieval actively <em>hurts</em> abstention.</li>
+<li><strong>KEME's anchor-grounded synthesis</strong> — recursive temporal event graphs, immutable real-session anchors, versioned evidence-linked personas, bottom-up revision — is a general recipe for turning fragmented real data into coherent long-horizon eval trajectories, and doubles as a distractor generator that beats length as a difficulty knob.</li>
+<li><strong>On-device is the forcing function</strong>: 1.72M tokens per user with construction pipelines costing up to 11M tokens makes cloud-style memory middleware a non-starter on phones; the benchmark's real message is that the next memory system must be cheap, updatable, and calibrated, not just bigger.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-17 13:49 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
