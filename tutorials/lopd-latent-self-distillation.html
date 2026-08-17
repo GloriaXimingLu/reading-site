@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>LOPD: Latent On-Policy Self-Distillation with an End-to-End Learnable Privileged Context</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.13040">arXiv:2608.13040</a> · <a href="https://arxiv.org/abs/2608.13040">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2088697506976960975">X post</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>LOPD: Latent On-Policy Self-Distillation with an End-to-End Learnable Privileged Context</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.13040">arXiv:2608.13040</a> · <a href="https://arxiv.org/abs/2608.13040">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2088697506976960975">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.13040v1">alphaxiv.org</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
 <ul>
 <li>LOPD (arXiv 2608.13040; Guibin Zhang, Jiayang Lyu, Ran Sun, Xinlei Yu, Haoyu Zhao, Qibing Ren, Shuicheng Yan) attacks the weak point of on-policy self-distillation (OPSD): every existing variant hand-designs what privileged context the self-teacher sees (answers, feedback, skills, trajectories). LOPD makes the privileged context itself <strong>learnable end-to-end</strong> — retrieved past experiences are compressed into continuous latent tokens that condition the teacher.</li>
 <li>A <strong>privileged-margin objective</strong> is the load-bearing trick: without it, the distillation gradient degrades the latent context (EnvScaler reward drops from 0.573 to 0.551); with margin m=0.05 it climbs to 0.637.</li>
@@ -77,6 +77,6 @@ deploy: student only (retriever/composer/latents discarded)
 <li>The privileged-margin Lagrangian is what makes joint training work: unconstrained, the latents degrade (0.573→0.551); with m=0.05 they improve to 0.637 — expect this constraint pattern to recur wherever teacher context is optimized.</li>
 <li>It beats RLVR/GRPO and all OPSD variants across tool use and code on three backbones at &lt;30% of the rollout budget, and the student retains the behavioral changes with no extra inference cost — the deployable artifact is just the student.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-16 16:01 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-17 13:41 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
