@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontis-MA1: Training an AI4AI Model toward Recursive Self-Improvement in ML Engineering (Horizon Research/Tsinghua)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Frontis-MA1: Training an AI4AI Model toward Recursive Self-Improvement in ML Engineering (Horizon Research/Tsinghua)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.28568">arXiv:2607.28568</a> · <a href="https://arxiv.org/abs/2607.28568">arXiv</a> · <a href="https://github.com/FrontisAI/OpenRSI">GitHub</a> · <a href="https://x.com/askalphaxiv/status/2083818077204992405">X post</a> · <a href="https://www.alphaxiv.org/abs/2607.28568">alphaxiv.org</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Frontis-MA1: Training an AI4AI Model towards Recursive Self-Improvement in Machine Learning Engineering" (arXiv 2607.28568; Junlin Yang, Che Jiang, …, Kaiyan Zhang — Horizon Research/Frontis.AI + Tsinghua, 24 authors) releases <strong>OpenMLE</strong>, an open full stack for RSI research: 5,758 executable MLE task environments (Gym), execution-grounded SFT+RL over four atomic program-evolution operators (ERL), and an experience-driven evolutionary search harness (Evo).</li>
+<li>The design move: the same four operators — <strong>Draft, Improve, Debug, Crossover</strong> — are both the post-training targets and the inference-time actions, so the trained 35B model becomes the <em>variation engine</em> of the evolutionary harness. That's "meta-evolution": evolutionary trajectories become training data for the model that proposes future mutations.</li>
+<li>On MLE-Bench Lite under 12 h/task on a single 12 GB RTX 4090, Frontis-MA1-35B lifts Medal Average from 39.39% (base Qwen3.6-35B-A3B) to 60.61% with OpenMLE-Evo and 71.21% with Evo-Max — above GPT-5.5 + Codex (68.18%) and near Kimi K3 (2.8T) and GPT-5.6 Sol (both 72.73%). On held-out NatureBench Lite, swapping in the trained model raises Match-SOTA 50%→70% and swapping in the harness raises it 20%→50% — both halves of the loop transfer.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Most autoresearch systems in this tracker — AIDE, AIRA, MLE-STAR, the AlphaEvolve lineage — treat the LLM as a frozen proposal engine and put all the cleverness in the search scaffold. The other camp trains models on agentic traces but leaves the harness fixed. OpenMLE is one of the first open, full-stack attempts at closing the loop between the two: run evolutionary search, harvest the trajectories that actually improved executable ML solutions, train the operator model on them, and drop the better model back into the search as its mutation operator. The paper is careful with the R-word — it calls this <strong>meta-evolution</strong>, a concrete testbed toward RSI, "rather than a claim that OpenMLE realizes general, autonomous recursive self-improvement" — but the succession experiment (an upgraded model improving the very process that produces successors) is the real thing at small scale.</p>
+<p>Two more reasons it lands squarely in this tracker's interests. First, the transfer decomposition is the cleanest I've seen of the harness-vs-model attribution question: on a held-out benchmark they swap one component at a time and show each contributes independently. Second, the whole stack is released — gym, filtered SFT corpus (26,259 examples), RL recipe, harness, weights — where prior work (ML-Agent, MLE-RL, AceGRPO) released fragments.</p>
+<h2>The core idea</h2>
+<p>Formally, an operator-conditioned generation policy proposes programs and a sandbox scores them:</p>
+<div class="arithmatex">\[p_{t}\sim g_{\theta}(\cdot\mid\tau,a_{t},c_{t}),\qquad s_{t}=R_{\tau}(\mathcal{E}(p_{t},\tau)),\]</div>
+<p>where <span class="arithmatex">\(\tau\)</span> is the task, <span class="arithmatex">\(a_t\)</span> one of the four operators, <span class="arithmatex">\(c_t\)</span> the context assembled from parent programs and execution feedback, <span class="arithmatex">\(\mathcal{E}\)</span> the Docker sandbox, and <span class="arithmatex">\(R_\tau\)</span> the task evaluator. Search keeps a task-local program database and returns the best-scoring program. Both training stages then optimize one unified objective — weighted likelihood of programs that execution proved good:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{evo}}(\theta)=-\mathbb{E}_{(\tau_{i},a_{i},c_{i},p_{i})}\left[w(s_{i})\log g_{\theta}\left(p_{i}\mid\tau_{i},a_{i},c_{i}\right)\right],\]</div>
+<p>where <span class="arithmatex">\(w(s_i)\)</span> is a quality filter for SFT and a processed-reward/advantage weight for RL. The operators are deliberately atomic: <strong>Draft</strong> proposes a fresh solution from the spec; <strong>Improve</strong> revises one parent given its (score-redacted) feedback; <strong>Debug</strong> repairs a failed or non-positive parent while preserving its core idea; <strong>Crossover</strong> synthesizes two parents ("identify the hidden synergies… a third-generation solution that transcends its predecessors").</p>
+<p><img alt="OpenMLE workflow: four trainable atomic operators feed evolutionary inference, warm-started by executable SFT rollouts and optimized with online RL from execution feedback" src="assets/frontis-ma1-rsi-mle/fig1.png" /></p>
+<p><em>Figure 5 from the paper: the four trainable operators (Draft/Improve/Debug/Crossover) are shared between evolutionary inference (left), SFT on executable rollouts (middle), and RL from execution feedback (right).</em></p>
+<h2>How it works</h2>
+<p><strong>Gym.</strong> 5,758 quality-gated tasks (156 curated anchors, 3,362 Kaggle-dataset tasks via an extended MLE-Smith pipeline, 2,240 Kaggle-competition tasks; MLE-Bench-overlapping competitions excluded), each an isolated Docker sandbox with a task evaluator and six structured feedback modes (success, runtime error, missing code, missing submission, scoring failure, timeout).</p>
+<p><strong>SFT warm start.</strong> Teachers (GLM-4.7, plus Qwen3-30B for diversity) generate Draft rollouts and drive AIRA-Evo searches; only execution-validated material survives — Improve segments must beat their parent, Crossover must beat the better parent, endpoints must medal — and DeepSeek-V4-Pro filters multi-step segments for "causal inheritance" (hard-rejecting blind retries and pure scale-reduction fixes). Final corpus: 26,259 examples, heavily Draft-skewed (74%), median 8.4K–14K tokens.</p>
+<p><strong>RL.</strong> GSPO with TTT-Discover-style reward post-processing on the SFT checkpoint. Raw scores become base rewards via clipped min-max against task bounds,</p>
+<div class="arithmatex">\[r_{\mathrm{base}}(\tilde{s};b_{\mathrm{best}},b_{\mathrm{worst}})=\mathrm{clip}\!\left(\frac{\tilde{s}-b_{\mathrm{worst}}}{b_{\mathrm{best}}-b_{\mathrm{worst}}},\,0,\,1\right)^{\alpha},\]</div>
+<p>with the bounds tightened adaptively from the task's on-policy score frontier. Group normalization is replaced by an <strong>entropic advantage</strong>,</p>
+<div class="arithmatex">\[A_{i}^{\mathrm{ent}}\approx\frac{\exp(\beta r_{\mathrm{proc},i})}{\frac{1}{G-1}\sum_{j\neq i}\exp(\beta r_{\mathrm{proc},j})}-1,\]</div>
+<p>where <span class="arithmatex">\(\beta\)</span> is set per group by binary search so the induced distribution sits at a fixed KL(≈ log 2) from uniform — concentrating learning on the frontier of each group rather than z-scoring it. Parents for RL rollouts are sampled fitness-proportionally by parent reward + child-reward variance + visit cooling; asynchronous rollout/execution groups give a 1.91× step-time speedup. Reward hacking (e.g. shuffling the sample submission) is screened by an o3-mini judge before execution, at reward −0.5.</p>
+<p><strong>Evo (inference).</strong> An AIRA-Evo-style population loop with three redesigns: deterministic per-node <em>experience cards</em> plus a recomputed task-global <em>experience board</em> (incumbent, method-family stats, repeated errors, trends); experience-guided parent selection</p>
+<div class="arithmatex">\[U_{i}=\lambda_{s}\tilde{s}_{i}+\lambda_{\Delta}\widetilde{\Delta}_{i}+\lambda_{n}\nu_{i},\qquad \nu_{i}=1/\sqrt{1+N_{f_{i}}},\]</div>
+<p>softmax-sampled over normalized score, gain over parent, and method-family novelty; and <strong>operation-triggered memory synthesis</strong> — rich LLM summaries are generated lazily only for nodes the selected operator actually retrieves, then cached, instead of eagerly summarizing every node. Evo-Max adds benchmark-independent experience priors distilled from public competition artifacts (MLE-Bench sources excluded) and asynchronous multi-GPU search at unchanged sandbox budget.</p>
+<pre><code class="language-text"># OpenMLE-Evo loop (per task, fixed sandbox budget)
+DB ← ∅  # task-local program database (islands of scored nodes)
+while budget remains:
+  a ← pick operator (Draft | Improve | Debug | Crossover)
+  if a == Draft:      parents ← ∅
+  elif a == Debug:    parents ← failed/non-positive node (by error signature)
+  else:               # Improve: 1 parent; Crossover: 2, drawn sequentially
+    U_i ← λ_s·s̃_i + λ_Δ·Δ̃_i + λ_n/√(1+N_family(i))   # score, gain, novelty
+    parents ← softmax-sample(U/τ) within a sampled island
+  ctx ← bounded retrieval (ancestors, top siblings, experience board)
+  lazily synthesize+cache rich memory for retrieved nodes only
+  p ← g_θ(· | task, a, ctx)            # trained operator model generates
+  s ← sandbox_execute(p)               # 6 feedback modes; score or traceback
+  DB += experience_card(p, s, lineage, method_family, Δ_vs_parent, novelty)
+  recompute experience board (incumbent, family stats, repeated errors)
+return best executable candidate with valid validation outcome  # deterministic
+</code></pre>
+<h2>Results</h2>
+<ul>
+<li><strong>MLE-Bench Lite</strong> (22 tasks, 3 runs, 12 h/task on one RTX 4090 @ 12 GB — less sandbox compute than most reported runs): base Qwen3.6-35B + Evo 39.39% ± 5.67 Medal Average → <strong>Frontis-MA1-35B + Evo 60.61% ± 7.73</strong> → <strong>+ Evo-Max 71.21% ± 8.57</strong> (valid rate 22/22, human-rank 0.81). Replicated on a second base: Qwen3-30B-Thinking 34.85% → 53.03% → 66.67%.</li>
+<li><strong>Against frontier systems</strong> (single evals): above GPT-5.5 + Codex (68.18%), Claude Opus 4.8 + Claude Code (63.64%); just below Kimi K3 + Claude Code and GPT-5.6 Sol + Codex (72.73%) — at 35B parameters, sitting far left on the paper's size-vs-score Pareto frontier.</li>
+<li><strong>Harness works for other models too</strong>: GLM-5.2 goes 59.09 (Claude Code) → 62.12 (Evo) → 66.67 (Evo-Max); MiniMax M3 54.55 → 59.09 → 65.15. Vs original AIRA-Evo with the same checkpoint: 53.03% → 60.61%, with −41.7% total tokens, Improve success rate 4.73% → 9.36%, and new-best-per-million-tokens up 84.3% — the experience redesign pays for itself.</li>
+<li><strong>NatureBench Lite transfer</strong> (10 held-out scientific tasks, 4 h/task): with the metric <span class="arithmatex">\(g=\mathrm{dir}\,(m-m_{\mathrm{SOTA}})/|m_{\mathrm{SOTA}}|\)</span>, model swap raises Match-SOTA 50%→70% (framework fixed); harness swap raises it 20%→50% (model fixed). Both components independently transfer out of distribution — though Claude Opus 4.7 + Claude Code still leads at 100% Match-SOTA.</li>
+<li>Mechanism studies: on leaf-classification and mlsp-2013-birds, 85–92% of validation gains come through Improve+Crossover rather than fresh Drafts — the evolutionary operators, not lucky sampling, carry the improvement.</li>
+</ul>
+<p><img alt="MLE-Bench Lite results: bar chart of ~23 model-harness systems with Frontis-MA1-35B at 71.2%, and a Pareto panel showing it matching ~1T-scale frontier systems at 35B" src="assets/frontis-ma1-rsi-mle/fig2.png" /></p>
+<p><em>Figure 1 from the paper: Frontis-MA1-35B + Evo-Max (orange, hatched) reaches 71.2% Medal Average, exceeding GPT-5.5 + Codex and defining the small-model end of the Pareto frontier (right panel).</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>OpenRSI: Open Research Series toward RSI</strong> — this paper <em>is</em> the first OpenRSI project; the GitHub release lives in that repo. The tracker entry from early August was the announcement thread; this is the substance.</li>
+<li><strong>EvoHarness-RL</strong> and <strong>Training Agents Inside Their Harnesses (Microsoft)</strong> — same thesis (train the model for the harness it will run in), here taken further: the operator vocabulary is literally shared between the RL objective and the search loop.</li>
+<li><strong>DarwinX</strong> and <strong>Mendel Gödel Machine</strong> — frozen-weights harness evolution; OpenMLE is the complementary axis, evolving the <em>variation engine</em> while keeping the harness architecture fixed. The paper's own limitation #4 concedes the harness itself is not yet an object of evolution.</li>
+<li><strong>RSIBench-Data: Kimi K3 + Kimi Code Tops Model-Harness Combinations</strong> — the matched model×harness grid here (GLM-5.2, MiniMax, Kimi K2.6 under Codex/Claude Code/Evo/Evo-Max) is exactly the attribution methodology that benchmark called for.</li>
+<li><strong>Survey: Long-Horizon Agents as Harness × Optimization Co-Evolution</strong> — Frontis-MA1 is the clearest published instance of the co-evolution cell: harness trajectories → model training → better harness behavior.</li>
+<li><strong>The Verifier Bottleneck</strong> — MLE is the domain where verification is nearly free (run the code, read the leaderboard metric); worth remembering when extrapolating these curves to domains without executable ground truth.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline comparison flatters the method a little: Frontis-MA1's numbers are means of three runs inside its own harness, while the frontier references are single evaluations inside general coding harnesses — and ±8.6 std on the Evo-Max number means the gap to GPT-5.5 + Codex (3 points) is within one standard deviation. The "exceeds GPT-5.5" claim is better read as "a 35B model plus a specialized, experience-tuned harness matches generalist frontier systems on this 22-task suite." Second, the RSI framing is honest but the loop has run exactly once: base → MA1. The interesting curve — does generation 2, trained on MA1's own search trajectories, keep climbing or collapse into its teacher's biases (74% of SFT data is Draft, from GLM-4.7) — is future work, and the paper's limitations say so plainly (the system can't yet judge which hypotheses deserve pursuit, can't modify itself, and its selection heuristic uses three hand-picked factors). Third, benchmark leakage is handled seriously (dedup against all eval benchmarks, MLE-Bench competitions excluded from the gym, Evo-Max priors filtered), but Kaggle-derived training tasks and Kaggle-derived eval tasks inevitably share technique priors — the NatureBench transfer is the more meaningful number, and there the system matches mid-frontier models rather than beating them. None of this diminishes the release: an open, reproducible, full-stack meta-evolution loop with honest attribution experiments is exactly the artifact RSI research has been missing.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Meta-evolution = one shared operator vocabulary (Draft/Improve/Debug/Crossover) serving as both the post-training target and the inference-time action space, optimizing <span class="arithmatex">\(\mathcal{L}_{\mathrm{evo}}\)</span> — weighted likelihood of programs execution proved good — so the trained model becomes the harness's variation engine.</li>
+<li>Both halves transfer independently on held-out NatureBench Lite: model swap 50%→70% Match-SOTA, harness swap 20%→50% — the cleanest harness-vs-model attribution table in the autoresearch literature so far.</li>
+<li>The experience redesign (deterministic cards + lazy operation-triggered memory synthesis) cut tokens 41.7% while <em>doubling</em> Improve success rate vs AIRA-Evo — most of an evolutionary harness's LLM-summarization spend is wasted on nodes nothing ever retrieves.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-17 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
