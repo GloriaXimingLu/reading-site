@@ -11,7 +11,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>AutoDesign: Meta-Harness Optimization for Long-Horizon Agentic Design</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.13560">arXiv:2608.13560</a> · <a href="https://arxiv.org/abs/2608.13560">arXiv</a> · <a href="https://x.com/dair_ai/status/2088298364458930462">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AutoDesign: Meta-Harness Optimization for Long-Horizon Agentic Design</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.13560">arXiv:2608.13560</a> · <a href="https://arxiv.org/abs/2608.13560">arXiv</a> · <a href="https://x.com/dair_ai/status/2088298364458930462">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.13560v1">alphaxiv.org</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
 <ul>
 <li><strong>AutoDesign</strong> (arXiv 2608.13560; Luo, Jiang, Zou, et al.) puts the harness itself inside the optimization loop: an outer "meta-harness" reads rollout trajectories and evaluator scores across tasks, identifies recurrent failures, and directs a coding agent to propose a bounded rewrite of the design harness — accepted only if it improves the training score without degrading the dev score.</li>
 <li>Instantiated on paper-to-poster generation with the new <strong>PosterBench</strong> (100 papers, five disciplines), AutoDesign scores 78.32, beating the closed-source Claude Design by 7.45 points; one autonomous run is 253 tool calls and 11 editing turns in 40 minutes for under $3.</li>
@@ -99,6 +99,6 @@ R_{\mathrm{rubric}}(p_{i},A_{i})=\sum_{j=1}^{7}\alpha_{j}\,q_{i,j}/10,
 <li>The transfer test is the honest metric for harness evolution: DesignHarness lifts seven other agent–model stacks from 54.99 to 67.39 average — scaffold knowledge, not benchmark memorization.</li>
 <li>Keep an optimization record with rollback (<span class="arithmatex">\(\mathcal{L}\)</span>) and gate on held-out tasks <em>during</em> evolution — the two cheapest defenses against the overfitting failure mode that has dogged self-evolving harnesses in this tracker.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-17 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-18 16:11 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

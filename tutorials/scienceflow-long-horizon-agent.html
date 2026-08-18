@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScienceFlow: Recoverable Executable States for Long-Horizon Autoresearch</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>ScienceFlow: Recoverable Executable States for Long-Horizon Autoresearch</h1><p class="meta">7 min read · <a href="https://arxiv.org/abs/2608.14354">arXiv:2608.14354</a> · <a href="https://arxiv.org/abs/2608.14354">arXiv</a> · <a href="https://x.com/Skoorbkaz/status/2089373098667622881">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>ScienceFlow (arXiv 2608.14354; Mingming Zhao, Jiqian Dong, Kangping Xu, et al. — Huawei Noah's Ark, per the project page) organizes long-horizon autoresearch into <strong>research segments grounded in executable workspaces</strong>: progress is checkpointed as recoverable executable states <span class="arithmatex">\(s_v=(W_v, m_v, e_v, \ell_v)\)</span> — workspace, memory, evidence, resource ledger — in an archive the agent can re-anchor to.</li>
+<li>Two governing mechanisms: <strong>ESTRA</strong> (Executable-State Transition through Re-Anchoring) decides at each segment boundary whether to continue from the live state or rewind to an archived one, and whether to extend or redirect the trajectory; an <strong>evidence-aware execution controller</strong> gates every expensive job through an admission LLM ({RUN_NOW, OBSERVE_THEN_RUN, PENDING, REPLAN}) and reviews running jobs ({CONTINUE, TIMEBOX, STOP_AND_REPLAN}).</li>
+<li>Results: SOTA <strong>70.22 ± 1.18% Any-Medal on the full 75-task MLE-bench</strong> in a 24-hour budget with a DeepSeek-V4-Flash-Preview backbone — +4.92pp over the best prior report — plus matching the strongest published circle-packing and ratio-minimization results, improving the best Hermite-based uncertainty bound by 2.5%, 3rd place on KTTSP-hard, and the best group-balanced score (54.41) on SciModelingBench.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The failure mode of current autoresearch agents isn't ideation — it's <em>irreversibility</em>. A run commits to a direction, the context fills with the residue of that commitment, and when the direction turns out to be a dead end there is nothing to go back to: the promising intermediate state three hours ago exists only as prose in a compacted history. Add greedy compute usage (every idea runs at full budget) and you get the pattern anyone who has watched a 24-hour MLE-bench run knows: early promise, mid-run thrash, late-run salvage.</p>
+<p>ScienceFlow's move is to treat the research <em>process</em> as the object under management. Recoverable executable states are effectively version control for research (workspace + memory + evidence + ledger, restorable exactly, not summarized); ESTRA is the branch policy; the admission/review controller is the scheduler. As the thread put it, the frontier shifts from smarter answers to <strong>persistent research processes</strong> — and the MLE-bench jump suggests a lot of the remaining headroom on these benchmarks is process management, not model intelligence: the backbone here is a cheap fast model, not a frontier reasoner.</p>
+<p>For this tracker's harness-optimization thread, this is the strongest recent evidence that state management is a first-class harness axis, alongside verification and skill curation.</p>
+<h2>The core idea</h2>
+<p>The system optimizes which archived state to end on, subject to a resource budget. With archive <span class="arithmatex">\(\mathcal{A}_T\)</span>, goal-conditioned value <span class="arithmatex">\(V_{\mathcal{G}}\)</span>, per-segment resource spend <span class="arithmatex">\(\rho_t\)</span> and budget <span class="arithmatex">\(B\)</span>:</p>
+<div class="arithmatex">\[\hat{s}_{T}=\arg\max_{s_{v}\in\mathcal{A}_{T}} V_{\mathcal{G}}\left(s_{v}\right)\quad\text{s.t.}\quad C_{T}=\sum_{t=1}^{T}\rho_{t}\preceq B,\qquad s_{v}=\left(W_{v},m_{v},e_{v},\ell_{v}\right),\]</div>
+<p>where a state bundles the workspace <span class="arithmatex">\(W_v\)</span>, accumulated memory <span class="arithmatex">\(m_v\)</span>, evidence <span class="arithmatex">\(e_v=V_{\mathcal{G}}(s_v)\)</span> (validated results attached to that state), and resource records <span class="arithmatex">\(\ell_v\)</span> from the ledger at checkpoint time.</p>
+<p>Within a segment <span class="arithmatex">\(n\)</span>, a worker runs an ordinary reason–act loop — <span class="arithmatex">\((r_{n,j},\alpha_{n,j})\sim\pi_{\mathrm{LLM}}(\cdot\mid P_n,h_{n,j})\)</span>, <span class="arithmatex">\((o_{n,j},W_{n,j+1})=\operatorname{Exec}(\alpha_{n,j};W_{n,j})\)</span> — checkpointing states as it goes. At the boundary, ESTRA chooses an anchor and a direction:</p>
+<div class="arithmatex">\[a_{n}\in\{s_{n}^{\mathrm{cur}}\}\cup\mathcal{A}_{n},\qquad d_{n}\in\{\textsc{extend},\textsc{redirect}\},\qquad \left(P_{n+1},W_{n+1,0}\right)=\operatorname{ESTRA}\left(a_{n},d_{n};\mathcal{A}_{n}\right).\]</div>
+<p>The next segment's context is <em>assembled, not inherited</em>: a stable prefix (worker/runtime/tools/task prompts, enabling prefix caching) plus an anchor-specific block built from folded memory, unfolded detail, evidence, and a workspace view:</p>
+<div class="arithmatex">\[P_{n+1}=\underbrace{P_{\text{worker}}\oplus P_{\text{runtime}}\oplus P_{\text{tools}}\oplus P_{\text{task}}}_{P_{\text{stable}}}\oplus P_{\text{anchor}}\left(a_{n}\right)\oplus P_{\text{dir}}\left(d_{n}\right),\]</div>
+<p>where memory supports <span class="arithmatex">\(\operatorname{Add}\)</span> (accumulate), <span class="arithmatex">\(\operatorname{Fold}(m_v;B_{\mathrm{mem}})\)</span> (compress to a budget, keeping an index <span class="arithmatex">\(\iota_v\)</span>), and <span class="arithmatex">\(\operatorname{Unfold}(m_v,\iota_v,z_v)\)</span> (retrieve full history on demand for anchor selection). Rewinding is <strong>exact restoration</strong> of the archived workspace, not a textual reconstruction.</p>
+<h2>How it works</h2>
+<p><img alt="ScienceFlow architecture: research workers over recoverable executable states, ESTRA-governed segment transitions, and evidence-aware execution control" src="assets/scienceflow-long-horizon-agent/fig2.png" /></p>
+<p><em>Figure 2 from the paper: workers operate over recoverable executable states; ESTRA governs transitions between research segments; the evidence-aware controller allocates physical jobs against the resource ledger.</em></p>
+<pre><code class="language-text"># ScienceFlow control loop (one research run, budget B)
+archive A &lt;- {}; P &lt;- stable prefix + task; W &lt;- fresh workspace
+for segment n = 1, 2, ...:
+  # forward research within the segment
+  repeat:
+    (reasoning r, action a) ~ LLM(P, history h)
+    (obs o, W) &lt;- Exec(a; W)             # code edits, runs, analysis
+    h &lt;- h ++ (r, a, o)
+    if milestone: checkpoint s=(W, m, e, ledger) into A   # recoverable state
+    if action needs heavy compute (training job, big search):
+      d &lt;- AdmitLLM(job, resources R_t, budget B_t)       # preflight + review
+        RUN_NOW | OBSERVE_THEN_RUN | PENDING | REPLAN
+      while job runs: Review(y_0:t, g_t; B_t) in
+        {CONTINUE, TIMEBOX, STOP_AND_REPLAN}
+  until segment boundary (stage gate / stall / budget event)
+  # ESTRA: pick where and how to continue
+  Unfold memories of candidate anchors in A
+  (anchor a_n, dir d_n) &lt;- ESTRA(live state vs archive; evidence, ledger)
+  W &lt;- ExactRestore(a_n.workspace);  P &lt;- P_stable ++ Fold(a_n.memory) ++ dir
+return argmax_{s in A} V_G(s) subject to spend &lt;= B
+</code></pre>
+<p><strong>Evidence-aware execution.</strong> Before any expensive job launches, a preflight result plus the resource request and research-value information go to an isolated admission LLM. RUN_NOW acquires a device lease atomically; OBSERVE_THEN_RUN launches with a short early-review window; PENDING queues; REPLAN bounces the job back to the worker. Running jobs are reviewed online against validated progress, so a training run that has stopped improving gets TIMEBOXed rather than burning the remaining budget. A four-hour archival cutoff governs late-run anchoring on MLE-bench.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>MLE-bench (full 75 tasks, 24h, ≤2 GPUs):</strong> ScienceFlow 70.22 ± 1.18% Any-Medal vs MLEvolve (Gemini-3.1-Pro-Preview) 65.30 ± 0.80, Iris (Claude-Opus-4.6) 64.90 ± 0.40, Famou-Agent 2.0 (Gemini-3-Pro-Preview) 64.44 ± 1.18, AIBuildAI (Claude-Opus-4.6) 63.11 ± 0.44; open-source ML-Master 2.0 (DeepSeek-V3.2-Speciale) 56.44 ± 2.47; earlier generation AIRA-dojo (o3) 31.60, R&amp;D-Agent (o3+GPT-4.1) 30.22. Notably ScienceFlow's backbone (DeepSeek-V4-Flash-Preview) is the cheapest model in the top group.</li>
+<li><strong>Backbone sensitivity:</strong> the harness holds up across GLM-5.1, openPangu-2.0-Pro, DeepSeek-V4-Flash-Preview, and DeepSeek-V4-Pro-Preview under the same two-worker/24h protocol, with distinct quality-throughput-cost trade-offs.</li>
+<li><strong>Mathematical/engineering optimization:</strong> matches the strongest published circle-packing results (the AlphaEvolve → ShinkaEvolve → ThetaEvolve lineage, ~2.63598 for <span class="arithmatex">\(\sum_i r_i\)</span>, n=26) and ratio minimization; improves the best published Hermite-based uncertainty bound by 2.5%; ranks 3rd on SpOC4 KTTSP-hard, where the case study shows ESTRA rewinding an abandoned tail and cutting the route objective from 1321.9 to 393.2 days.</li>
+<li><strong>Scientific modeling:</strong> best group-balanced score (54.41) on SciModelingBench across evaluated agents.</li>
+<li><strong>Ablations/telemetry:</strong> state-matched re-anchoring and mechanism ablations attribute the gains to the archive/ESTRA machinery rather than the backbone (per Section 3.1.3; details worth reading in full).</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>AutoDesign: Meta-Harness Optimization (this list)</strong> — complementary layers: AutoDesign learns a better harness <em>across</em> runs from rollout failures; ScienceFlow manages state <em>within</em> a run. A meta-harness loop wrapped around ScienceFlow's archive telemetry is an obvious composition.</li>
+<li><strong>AI Research Preference Models (this list)</strong> — Meta FAIR's RPM decides <em>which candidate experiment deserves compute before running it</em>; ScienceFlow's admission LLM plus online review is the same value-of-compute judgment implemented as a runtime contract. RPM's pilot-experiment budget maps to OBSERVE_THEN_RUN.</li>
+<li><strong>Session Constraints / Lost in Compaction (this list)</strong> — that paper showed compaction silently drops standing rules; ScienceFlow's Fold/Unfold with exact workspace restoration is the structural fix generalized: never let lossy summaries be the only carrier of recoverable state.</li>
+<li><strong>AlphaEvolve's matrix-multiplication record (this list, added today)</strong> — the discovery-side counterpart: AlphaEvolve shows what evolutionary autoresearch finds; ScienceFlow is about keeping any such search <em>recoverable and budget-aligned</em> over 24-hour horizons. Its circle-packing parity with the *Evolve lineage suggests the state-management framing subsumes a chunk of what population methods buy.</li>
+<li><strong>SBCO (this list)</strong> — same skepticism of "smarter meta-agent" solutions: SBCO fixes the improver and learns verifiers; ScienceFlow fixes the worker and engineers the state/scheduling substrate.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline +4.92pp needs its footnotes: the comparison table mixes backbones, and some baselines ran 12h or 36h per-task budgets rather than the standard 24h (the paper flags this itself). Cross-agent MLE-bench numbers are closer to "best reported configuration" than controlled comparison — though the backbone-sensitivity study partially answers this, and beating Claude-Opus-4.6- and Gemini-3.1-powered agents with a flash-tier model is the right direction of surprise. Second, <span class="arithmatex">\(V_{\mathcal{G}}\)</span> — the value that decides both re-anchoring and job admission — is LLM-judged "validated progress"; on tasks with weaker ground truth than Kaggle leaderboards, evidence-aware control inherits every known LLM-judge pathology, and the paper's strongest domains are exactly the ones with hard external verifiers. Third, exact restoration is scoped to the workspace: consumed API quotas, wall-clock, and external-world side effects don't rewind, so ESTRA's "reversibility" is partial by construction. The abstraction still looks durably right — archive + re-anchoring + admission control is the harness pattern I'd expect to see copied first.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Represent research progress as <strong>recoverable executable states</strong> — workspace, memory, evidence, resource ledger — and make rewinding an exact restore, not a summary. Dead ends stop being fatal.</li>
+<li>Separate the loop that does research from the loop that decides <strong>where to continue from</strong> (ESTRA: live vs archived anchor, extend vs redirect) and the one that decides <strong>what deserves compute</strong> (admission + online review).</li>
+<li>Process management, not model strength, was the binding constraint: a flash-tier backbone under this harness set SOTA on full MLE-bench (70.22% Any-Medal, 24h) over frontier-model agents.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-18 16:11 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
