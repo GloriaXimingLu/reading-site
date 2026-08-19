@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Lightning v1.0: Towards Harnessed Agentic RL (Microsoft)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Agent Lightning v1.0: Towards Harnessed Agentic RL (Microsoft)</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.17528">arXiv:2608.17528</a> · <a href="https://arxiv.org/abs/2608.17528">arXiv</a> · <a href="https://x.com/omarsar0/status/2090078336697733531">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>Agent Lightning v1.0</strong> (He, Zhang, Zhou, Yang, Kang, Zhang, Qiu, Tsui, Xu, Luo — Microsoft, arXiv 2608.17528) trains models with RL while an <strong>unmodified agent harness owns the environment loop</strong>: an endpoint proxy at the model-call boundary turns any harness (mini-SWE-agent, OpenHands, Claude Code-class scaffolds) into a training data source, in ~3,500 lines of code.</li>
+<li>Its real contribution is naming and solving what breaks when the trainer only sees request/response pairs: <strong>retokenization</strong> (identical text, different token boundaries → broken prefix merging), <strong>dynamic sample counts</strong> (one rollout explodes into a variable number of training samples via subagents and context summarization), <strong>advantage calculation</strong> (rollout-level vs. sample-level groups), <strong>loss normalization</strong>, and <strong>backend scheduling</strong> (their answer: collocated async RL).</li>
+<li>Headline: with ~6K filtered SWE-smith tasks and modest compute, <strong>Qwen3.5-9B goes from 41.8% to 56.4% on SWE-bench Verified (+14.6 points)</strong>; a Llama-3.2-3B search agent gains +16.6 (25.1→41.7) and a Qwen3-4B sandbox agent +18.3 (51.9→70.2).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Agentic RL has a control-inversion problem this reading list keeps circling. Classic RL frameworks (verl, AReaL, slime) assume the trainer owns the rollout loop — ReAct-style, one linear token history. Real deployed agents live inside harnesses that own tools, context construction, subagent spawning, and compaction, and the harness talks to the model through a stateless chat API. If you want to train the model that actually ships, you either reimplement the harness inside the trainer (and train against a toy), or you treat the harness as an opaque box and train at the API boundary. This paper is the most complete public engineering account of the second path — and unlike its predecessor (the original Agent Lightning, which introduced the disaggregated architecture), v1.0 is a systematic tour of the <em>failure modes</em> of that boundary, each with a measured fix.</p>
+<p>The deeper point for this tracker: once harnesses are opaque boxes, the messy details this paper catalogs — token-prefix breakage, reward inheritance across split samples, group statistics over variable sample counts — become the <em>actual algorithm design surface</em> of agentic RL. GRPO's math is trivial; deciding what counts as "a sample" when Claude Code spawns three subagents and compacts its context twice is not.</p>
+<h2>The core idea</h2>
+<p>Formally, both classic and harnessed agentic RL are POMDPs, but the harness changes what the policy sees and who holds state. A rollout <span class="arithmatex">\(\rho\)</span> is a sequence of model calls captured at the endpoint:</p>
+<div class="arithmatex">\[\mathcal{C}(\rho)=\bigl((p_{1},a_{1}),(p_{2},a_{2}),\ldots,(p_{T_{\rho}},a_{T_{\rho}})\bigr)\]</div>
+<p>where <span class="arithmatex">\(p_i\)</span> is a harness-constructed prompt and <span class="arithmatex">\(a_i\)</span> the model's response. The latent state now factors as</p>
+<div class="arithmatex">\[s_{t}=\bigl(s_{t}^{\mathrm{harness}},s_{t}^{\mathrm{env}}\bigr)\]</div>
+<p>— harness state (message history, todo lists, compaction summaries) joins environment state, and the number of training samples per task becomes dynamic (Figure 2 of the paper).</p>
+<p><img alt="Agent Lightning v1.0 overall framework: agents connect through an API gateway; trainer, rollout controller and gateway coordinate" src="assets/agent-lightning-v1/fig1.png" /></p>
+<p><em>Figure 1 from the paper: the overall framework — the harness runs as-is against an OpenAI-compatible API Gateway; the gateway records every model call and reward event; the trainer consumes them as RL data.</em></p>
+<p>Three components: an <strong>API Gateway</strong> (a single stateful service storing rollouts, models, and events — by default a <code>model_request</code> event with prompt token IDs, response token IDs, and logprobs per call, plus a terminal <code>reward</code> event), a <strong>Rollout Controller</strong>, and a <strong>Customized Trainer</strong>. The harness needs zero modification; GRPO-style grouping is expressed as multiple rollout IDs per training example.</p>
+<p><img alt="Rollout Controller reconciling gateway rollout status with Kubernetes jobs" src="assets/agent-lightning-v1/fig2.png" /></p>
+<p><em>Figure 12 from the paper: the Rollout Controller reconciles rollout status in the API Gateway with agent executions running as Kubernetes Jobs or local processes.</em></p>
+<h2>How it works</h2>
+<p><strong>Retokenization and sample merging.</strong> A multi-turn agent ideally yields one training sample per rollout by prefix-concatenation: text-wise, <span class="arithmatex">\((p_{i}^{\mathrm{text}},a_{i}^{\mathrm{text}})\preceq p_{i+1}^{\mathrm{text}}\)</span>. But training needs the <em>token-level</em> prefix condition, and it silently breaks: chat templates don't compose (<span class="arithmatex">\(\operatorname{Template}(A\,\|\,B)\neq\operatorname{Template}(A)\,\|\,\operatorname{Template}(B)\)</span>) and retokenizing the accumulated text shifts token boundaries even when the text is identical:</p>
+<div class="arithmatex">\[\operatorname{Tok}\bigl(\operatorname{Decode}(a_{i}^{\mathrm{tok}})\bigr)\neq a_{i}^{\mathrm{tok}}\]</div>
+<p>(the paper's Figure 3 example: "having" sampled as <code>h</code>+<code>aving</code> retokenizes to <code>hav</code>+<code>ing</code>). When the prefix condition fails — or when the harness spawns subagents or summarizes context, replacing the prefix wholesale — the rollout must be <em>split</em> into multiple training samples that all inherit the rollout's outcome reward. This is not an edge case: in their coding runs <strong>only 36% of rollouts survive as a single training sample; the average rollout yields 2.41 samples</strong>.</p>
+<p><strong>Advantage calculation.</strong> Given dynamic sample counts, should GRPO group statistics be computed over rollouts or over samples? Existing frameworks disagree (verl Uni-Agent and Polar: rollout-level; slime and AReaL: sample-level). Sample-level statistics let rollouts that split into many samples dominate the group mean; the paper argues for <strong>rollout-level advantage</strong> — every sample inherits its rollout's advantage — and backs it with the coding-agent ablation below.</p>
+<p><strong>Loss normalization.</strong> Same issue, one level down. Token-mean loss over the whole batch,</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{token\text{-}mean}}=\frac{\sum_{\rho=1}^{R}\sum_{j=1}^{N_{\rho}}\sum_{t=1}^{L_{\rho,j}}\ell_{\rho,j,t}}{\sum_{\rho=1}^{R}\sum_{j=1}^{N_{\rho}}L_{\rho,j}}\]</div>
+<p>vs. seq-mean-token-mean: with variable <span class="arithmatex">\(N_\rho\)</span>, both silently reweight rollouts; they add rollout-level normalization so each <em>task attempt</em> contributes equally.</p>
+<p><strong>Collocated async RL.</strong> Sync RL waits for the slowest rollout; AReaL-style async needs two GPU pools plus two queues. Their middle path shares one GPU pool: the gateway stops admitting new requests when enough data is collected, drains in-flight calls, runs the update, then reopens — no straggler blocking, no second cluster.</p>
+<pre><code class="language-text">Agent Lightning v1.0 loop (condensed from the paper):
+register policy endpoint(s) with API Gateway
+repeat:
+    # rollout phase (collocated GPUs serve inference)
+    controller launches K agent jobs per example (harness unmodified)
+    each harness call -&gt; gateway: routes to policy server,
+        logs model_request(prompt_ids, response_ids, logprobs)
+    on task end: harness/env reports terminal reward event
+    when batch quota reached: gateway pauses new requests, drains in-flight
+    # sample construction
+    for each rollout:
+        merge calls where token-prefix condition holds
+        split at retokenization breaks / subagent branches / compactions
+        all samples inherit the rollout's outcome reward
+    # update phase (same GPUs)
+    advantages &lt;- group stats at ROLLOUT level (GRPO/RLOO)
+    loss &lt;- token loss with rollout-level normalization
+    update policy; push new weights to inference servers; resume rollouts
+</code></pre>
+<p>For the coding agent they also describe serious data hygiene on SWE-smith: drop tasks with empty problem statements (18,033 of 59,136!), missing Docker branches, or &gt;200 tests; then a model-based difficulty filter (run Qwen3.5-9B 4×, discard tasks solved in all four rollouts), leaving ~6K informative examples, plus reward-hacking safeguards.</p>
+<h2>Results</h2>
+<p>Three harnesses, three algorithms, three model families — the point being generality of the plumbing, not one benchmark:</p>
+<ul>
+<li><strong>Search agent</strong> (Search-R1 setting, Llama-3.2-3B-Instruct, GRPO, HotpotQA train): validation reward <strong>25.1% → 41.7%</strong> (+16.6) across six QA benchmarks' samples.</li>
+<li><strong>General instruction-following agent</strong> (LLM-in-Sandbox harness, Qwen3-4B-Instruct-2507, RLOO): <strong>51.9% → 70.2%</strong> (+18.3).</li>
+<li><strong>Coding agent</strong> (mini-SWE-agent harness, Qwen3.5-9B, filtered SWE-smith): <strong>SWE-bench Verified 41.8% → 56.4%</strong> (+14.6) at step 208, using rollout-level advantage + rollout-level normalization. The ablation (Figure 9) shows sample-level advantage is worse on validation reward and entropy dynamics — the clearest empirical evidence yet that the "what is a sample" bookkeeping decisions are performance-relevant, not just plumbing.</li>
+</ul>
+<h2>How it connects</h2>
+<p>Direct sibling of <strong>OpenForgeRL (training-agents-in-harnesses)</strong> — same serve-and-record proxy inversion, but where OpenForgeRL emphasized orchestration scale (Kubernetes, any harness), Agent Lightning v1.0 contributes the <em>taxonomy of boundary pathologies</em> (retokenization, sample merging, advantage level, loss normalization) with ablations. <strong>ClawGym II</strong> (added to this tracker the same day) is the third leg: it recovers multi-turn structure via prefix trees over captured calls and shows mix-harness training — worth reading together, since prefix-tree recovery is essentially their answer to the same retokenization/merging problem. <strong>GLM-5.3's SAO</strong> attacks the same straggler problem with single-rollout async at industrial scale; collocated async is the small-lab version. The harness-as-training-variable finding from OpenForgeRL becomes an explicit design axis here. It also connects to <strong>Molt</strong>'s hackable-trainer philosophy and, upstream, to this tracker's recursive-harness-improvement cluster (<strong>DarwinX</strong>, <strong>EvoHarness-RL</strong>, <strong>Harness-R1</strong>): those evolve the harness around a frozen model; this trains the model inside a frozen harness. The obvious synthesis — co-evolving both — still has no public implementation.</p>
+<h2>Critical take</h2>
+<p>The engineering candor is the paper's best feature, but the evaluation is narrow where it matters most: only mini-SWE-agent — among the <em>simplest</em> harnesses — gets the full coding treatment, while the introduction's motivating examples (Claude Code, OpenHands, OpenClaw, Codex — all cited) are not trained against. Subagent spawning and context compaction, the most violent sample-splitters, are handled in the formalism but barely stress-tested in the experiments (mini-SWE-agent does little of either). The rollout-level-vs-sample-level ablation is single-task, single-model; given how much the field disagrees (verl vs. slime defaults), one coding run is thin evidence for a design rule. Baselines are also self-relative: no head-to-head against OpenForgeRL or a trainer-owned-loop implementation of the same task, so we can't tell if opaque-box training costs anything versus white-box. And 41.8→56.4 with 6K examples is impressive but the difficulty filter was run with the <em>same model being trained</em> — the curriculum is implicitly tuned to Qwen3.5-9B's frontier, so cross-model reproducibility is untested (inferred from the setup — verify in the paper). Still: anyone building agentic RL infrastructure should read Sections 2–3 as a pre-mortem checklist.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The chat-API boundary is lossy for RL:</strong> identical text does not mean identical tokens — <span class="arithmatex">\(\operatorname{Tok}(\operatorname{Decode}(a^{\mathrm{tok}}))\neq a^{\mathrm{tok}}\)</span> — so harness rollouts must be split into multiple reward-inheriting samples; in practice only ~36% of coding rollouts stay whole (2.41 samples/rollout).</li>
+<li><strong>Compute group statistics at the rollout level, not the sample level</strong> — otherwise rollouts that fragment more get more votes in the GRPO baseline, and their coding ablation says this actually hurts.</li>
+<li><strong>6K well-filtered tasks moved SWE-bench Verified by 14.6 points on a 9B model</strong> — data hygiene plus correct boundary bookkeeping, not scale, did the work; and collocated async RL gets you past stragglers without a second GPU pool.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-19 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

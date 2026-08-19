@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rethinking Self-Evolving Agents: Do We Still Need Prescribed Optimization Pipelines? (OEO)</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Rethinking Self-Evolving Agents: Do We Still Need Prescribed Optimization Pipelines? (OEO)</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.09629">arXiv:2608.09629</a> · <a href="https://arxiv.org/abs/2608.09629">arXiv</a> · <a href="https://x.com/Xudong07452910/status/2089919030287024574">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>OEO — Open-Ended Optimization</strong> (Xue &amp; Yang, Microsoft, arXiv 2608.09629) asks a question most self-evolving-agent papers assume away: if the optimizer is a frontier model, do we still need to <em>prescribe</em> the improvement pipeline (analyze failures → propose edit → validate → iterate), or can we hand the model a fixed <strong>contract</strong> — objective, budget, data boundaries, sealed eval — and let it compose its own improvement process online?</li>
+<li>With GPT-5.5 as optimizer, contract-only OEO beats the prescribed pipelines: <strong>7 wins / 1 tie vs. SkillOpt across 8 benchmark–target settings and 5 wins in 6 confirmatory GEPA comparisons</strong> (GEPA's only lead: 0.21 points), while using a <strong>median 34.3% of SkillOpt's target-interaction token budget</strong>.</li>
+<li>The finding is explicitly capability-dependent: with a medium optimizer (Qwen3.5-27B) the prescribed SkillOpt pipeline wins back the lead (+9.68 on LiveMath, +3.50 on SearchQA), and a weak optimizer (Qwen3.5-4B) can't produce valid actions at all under OEO's interface — prescribed pipelines are "capability-dependent scaffolding," not universal best practice.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every skill-evolution system in this tracker — SkillOpt-style loops, GEPA, curriculum-skill methods — hard-codes a <em>meta-policy</em>: the sequence of "inspect failures, rewrite, validate, revert" steps a human designed. That prescription was load-bearing when optimizer models were weak. But it is also a ceiling: a fixed pipeline can't decide that this particular benchmark needs more exploration before editing, or that the current skill should be rolled back two checkpoints, or that it's time to stop spending budget. The self-improvement literature has been quietly asking "how do we design better improvement loops?" — this paper asks <strong>"who should design the loop?"</strong> and answers: it depends on who's running it, measured cleanly.</p>
+<p>The clean part is what earns the tutorial slot. Instead of yet another framework claiming wins, OEO holds the <em>external contract</em> fixed across all methods — same initial skill, same interaction budget, same data boundaries, same sealed final split — and varies only where procedural control lives. That isolates "delegation of the optimization process" as the experimental variable, which almost no prior self-evolving-agent work does. For a reading list centered on recursive self-improvement, this is the governance question in miniature: how much process do you fix, and how much do you let the model decide, as a function of its capability?</p>
+<h2>The core idea</h2>
+<p>Skill optimization is framed as an agent loop over <em>optimization states</em> rather than task states. At each turn the optimizer model <span class="arithmatex">\(M_{\mathrm{opt}}\)</span> observes the current skill, accumulated evidence, committed checkpoints, and remaining resources <span class="arithmatex">\(z_t\)</span>, then emits one permitted operation:</p>
+<div class="arithmatex">\[a_{t}=\mu^{(q)}(z_{t};M_{\mathrm{opt}},\mathcal{C},\mathcal{I}_{q}),\qquad a_{t}\in\mathcal{A}_{q}(\mathcal{O})\]</div>
+<p>where <span class="arithmatex">\(\mathcal{C}\)</span> is the contract and <span class="arithmatex">\(\mathcal{I}_q\)</span> the interface for task <span class="arithmatex">\(q\)</span>. The permitted operations are few and generic: <strong>Inspect</strong> (look at data/results), <strong>RunTarget</strong> (spend budget rolling out the target model with the current skill), <strong>Revise</strong> (commit a new skill version), <strong>Select</strong> (choose a checkpoint as final output), <strong>Stop</strong>. A runner validates every action, enforces budgets and data boundaries, and keeps the final evaluation split sealed. That's the whole system: no prescribed ordering, no fixed number of iterations, no mandated failure analysis.</p>
+<p><img alt="Figure 1: prescribed pipeline vs OEO under a shared optimization contract" src="assets/oeo-self-evolving-skills/fig1.png" /></p>
+<p><em>Figure 1 from the paper: both designs share the same external optimization contract (objective, budget, permissions, sealed evaluation). A prescribed pipeline fixes the task-specific improvement process in advance; OEO lets a frontier optimizer compose that process online.</em></p>
+<p>The contrast systems are two representative prescriptions: <strong>SkillOpt</strong> (a fixed skill-improvement pipeline) and <strong>GEPA</strong> (reflective prompt/skill evolution with its own genetic-style loop). Everything task-specific those systems encode as procedure, OEO leaves to the optimizer's judgment.</p>
+<h2>How it works</h2>
+<p>The full protocol is Algorithm 1 ("Contract-enforced Open-Ended Optimization"):</p>
+<pre><code class="language-text">Algorithm 1 (from the paper, lightly compressed):
+Input: contract C with initial skill s0, budget B, sealed split D_final;
+       optimizer M_opt
+s &lt;- s0; history H &lt;- {}; checkpoints K &lt;- [s0]; selected s_hat &lt;- none
+while budget admits another optimizer step:
+    a_t &lt;- M_opt(s, H, K, remaining(B); C)
+    validate a_t against permitted interface + remaining resources
+    if a_t = Revise(s'):   s &lt;- s'; append s to K; record commit in H
+    elif a_t = Select(j):  s_hat &lt;- K[j]; record selection in H
+    elif a_t = Stop:       break
+    else:                  execute Inspect or RunTarget; append observation to H
+    update optimizer- and target-model resource counters
+return s_hat if selected else s; evaluate ONCE on sealed D_final
+</code></pre>
+<p>Design details that make the comparison trustworthy:</p>
+<ol>
+<li><strong>Sealed final split.</strong> The optimizer can never touch <span class="arithmatex">\(D_{\mathrm{final}}\)</span>; all methods are scored by one evaluation of their selected skill on it. No validation-set overfitting leaks into the headline numbers.</li>
+<li><strong>Resource accounting.</strong> Optimizer-side tokens and target-interaction tokens are metered separately; the 34.3% figure is <em>realized target-interaction spend as a fraction of SkillOpt's configured reference budget</em> — OEO wasn't given less budget, it chose to stop early.</li>
+<li><strong>Controls.</strong> A <em>static-input-matched one-shot control</em> (Table 3: one GPT-5.5 rewrite of the skill, zero optimization rollouts) tests whether OEO's wins are just "GPT-5.5 writes better skills from priors" — it isn't; the one-shot rewrite does not explain the gains. A <em>frozen-protocol capability ladder</em> (Table 4) swaps only the optimizer model across weak/medium/frontier while freezing both protocols.</li>
+<li><strong>Trajectory instrumentation.</strong> For an OEO–SkillOpt pair they log every committed skill state and measure path metrics, e.g. edit churn</li>
+</ol>
+<div class="arithmatex">\[\mathrm{Churn}=1-\frac{\operatorname{Lev}(s_{0},s_{T})}{\max\!\left(\sum_{t=1}^{T}\operatorname{Lev}(s_{t-1},s_{t}),1\right)}\]</div>
+<p>(where <span class="arithmatex">\(\operatorname{Lev}\)</span> is token-level Levenshtein distance between successive committed skills) — how much editing was exploratory rather than net displacement.</p>
+<p>Benchmarks: SearchQA, OfficeQA, SpreadsheetBench, LiveMathematicianBench (LiveMath); target models Qwen3.5-4B and GPT-5.5; GPT-5.5 supplies all optimizer-side calls in the frontier comparison.</p>
+<h2>Results</h2>
+<p><strong>Frontier optimizer (Table 2, sealed-split scores).</strong> OEO: 7 wins, 1 tie vs. SkillOpt across 8 settings; 5 wins vs. GEPA in 6 confirmatory settings, the single GEPA lead being 0.21 points. Sample row — SearchQA with Qwen3.5-4B as target: initial skill 0.6693 → SkillOpt 0.7221, GEPA 0.7507, <strong>OEO 0.7514</strong>. All this at a median 34.3% of SkillOpt's target-interaction token budget — the frontier optimizer not only routes improvement better, it <em>decides to stop</em> sooner.</p>
+<p><strong>Capability ladder (Table 4, frozen protocols, target Qwen3.5-4B).</strong> The crossover the tweet led with, and the paper's most important table:</p>
+<table>
+<thead>
+<tr>
+<th>Optimizer</th>
+<th>LiveMath OEO</th>
+<th>LiveMath SkillOpt</th>
+<th>SearchQA OEO</th>
+<th>SearchQA SkillOpt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Weak (Qwen3.5-4B)</td>
+<td>blocked</td>
+<td>0.5565</td>
+<td>blocked</td>
+<td>0.6579</td>
+</tr>
+<tr>
+<td>Medium (Qwen3.5-27B)</td>
+<td>0.4919</td>
+<td><strong>0.5887</strong></td>
+<td>0.6807</td>
+<td><strong>0.7157</strong></td>
+</tr>
+<tr>
+<td>Frontier (GPT-5.5)</td>
+<td><strong>0.6532</strong></td>
+<td>0.6129</td>
+<td><strong>0.7514</strong></td>
+<td>0.7221</td>
+</tr>
+</tbody>
+</table>
+<p>"Blocked" = the weak optimizer never emitted a valid executable action, so no target rollout occurred — and note weak-optimizer SkillOpt on SearchQA (0.6579) lands <em>below</em> the initial skill (0.6693): executability alone doesn't guarantee improvement. Moving medium→frontier lifts OEO by 16.13 points (LiveMath) and 7.07 (SearchQA) versus only 2.42 and 0.64 for SkillOpt — delegated meta-policy composition is far more capability-sensitive than pipeline execution.</p>
+<p><strong>Path analysis (Figure 3, Table 5).</strong> Prescription changes the optimization <em>path</em> (committed-edit metrics all diverge) much more consistently than it changes the selected skill's <em>evaluated behavior</em> — final pass/fail agreement and correct-set Jaccard between OEO- and SkillOpt-produced skills stay high. Different roads, largely the same destination — when both drivers are competent.</p>
+<p><img alt="Figure 3: path divergence does not imply divergent evaluated behavior" src="assets/oeo-self-evolving-skills/fig2.png" /></p>
+<p><em>Figure 3 from the paper: OEO-minus-SkillOpt committed-path metrics are all positive (OEO explores/edits differently), yet pass/fail agreement and correct-set Jaccard <span class="arithmatex">\(J_C\)</span> between the final selected skills remain high.</em></p>
+<h2>Results caveat</h2>
+<p>Absolute gains are modest in places (SpreadsheetBench improves from 0.2107 to only 0.2464 under OEO with the 4B target), and 2 of the 14 headline cells carry asterisks (post-hoc OEO-matched checkpoints, excluded from confirmatory counts) — the paper is careful about this; skim Table 2's footnotes before quoting it.</p>
+<h2>How it connects</h2>
+<p>This is the meta-level companion to the skill-evolution cluster in this tracker: <strong>SkillHone (decision-history skills)</strong>, <strong>SkillRise (curriculum skills)</strong>, <strong>HiSME (meta-evolving skill hierarchies)</strong>, and <strong>MSCE (memory-to-skills)</strong> all <em>are</em> prescribed pipelines in OEO's taxonomy — each would be a "SkillOpt cell" in this paper's grid. The capability-crossover finding gives the whole cluster a reading key: those pipelines are worth their complexity exactly when the optimizer is mid-tier, which is also the regime where most open-weight self-improvement actually runs. It rhymes with <strong>AI4AI's strong-to-weak scaffolding</strong> (scaffolding as a function of capability gap) and with <strong>Mendel/Gödel-machine-style</strong> RSI entries, where the safety argument <em>depends</em> on contract enforcement of the kind OEO's runner implements — sealed evals, budget meters, permitted-action validation. The 34.3%-budget result echoes <strong>AutoDesign (meta-harness)</strong>'s finding that a strong optimizer's main advantage is knowing where <em>not</em> to spend rollouts. And the "who designs the loop" question is the skill-level version of what <strong>DarwinX</strong> and <strong>HarnessCompass</strong> ask at the harness level — expect a follow-up that delegates harness evolution under the same contract framing.</p>
+<h2>Critical take</h2>
+<p>Two authors, two benchmarks in the capability ladder, and "GPT-5.5 supplies all optimizer-side calls via the GitHub Copilot Responses API" — this is a careful small study, not a sweeping result. Three specific worries. First, <strong>prescription strength is confounded with prompt engineering</strong>: OEO's interface prompt (<span class="arithmatex">\(\mathcal{I}_q\)</span>) still encodes choices about how state, history, and budget are presented, and a differently-worded interface could shift the weak-optimizer "blocked" result substantially; the paper tests one interface. Second, the <strong>prescribed baselines are two specific systems</strong> — SkillOpt and GEPA. "Prescribed pipelines lose to delegation at the frontier" really means "these two pipelines lose"; a pipeline co-designed for GPT-5.5 might not. Third, the sealed-split protocol is excellent, but <strong>n is small</strong> for several cells (280 items on SpreadsheetBench) and scores are reported to four decimals — treat sub-point margins as noise, which the authors' own "confirmatory" bookkeeping partly acknowledges. The deeper open question the paper raises but can't answer: OEO's advantage partly comes from <em>stopping early</em> — is that judgment, or is GPT-5.5's prior just well-matched to these benchmarks' improvement ceilings? A benchmark where persistence pays would disambiguate. (Inference from the reported design — verify against the appendix protocols.)</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Fix the contract, delegate the process:</strong> objective, budget, permissions, and a sealed eval split stay external and enforced; <em>how</em> to improve — inspect, roll out, revise, roll back, stop — can be left to a frontier optimizer, which then wins 12 of 14 cells while spending a third of the interaction budget.</li>
+<li><strong>Prescribed pipelines are capability-dependent scaffolding:</strong> medium optimizers do better <em>with</em> the pipeline (+9.68 LiveMath), weak ones can't operate the open interface at all, and frontier ones are throttled by it. Match loop rigidity to optimizer strength.</li>
+<li><strong>Paths diverge, behavior converges:</strong> prescription reliably changes <em>how</em> the skill evolves (edit churn, exploration pattern) but far less <em>what the final skill does</em> — so the pipeline you're hand-tuning may be shaping the journey, not the destination.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-19 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
