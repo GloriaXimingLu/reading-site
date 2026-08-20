@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A: Rethinking Self-Evolving Agents (OEO)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a> · <a class="crumb" href="../tutorials/oeo-self-evolving-skills.html">tutorial</a><h1>Q&amp;A: Rethinking Self-Evolving Agents (OEO)</h1><h2>Session 2026-08-20</h2>
+<p><strong>Q: Does OEO do harness optimization (editing the agent's entire code) or just skill optimization (the skill file only)?</strong></p>
+<p><strong>A:</strong> Skill optimization only — the harness is completely frozen. The mutable artifact is a <strong>persistent natural-language skill: a Markdown text document</strong> injected into the target model's context. The optimizer's action space over the artifact is limited to <code>Revise(s′)</code> (commit a new version of the skill text), <code>Select(j)</code> (choose a checkpoint), <code>Inspect</code>, <code>RunTarget</code>, and <code>Stop</code>; the contract fixes the objective, target model, permitted operations, budget, frozen evaluator, and sealed eval split, and does not permit modifications to the agent's control loop, tools, or memory system. The paper doesn't position itself against harness-optimization work at all.</p>
+<p>The naming is a bit of a trap: OEO's "open-endedness" refers to the <em>optimization process</em> — the frontier optimizer composes its own improvement procedure instead of following a prescribed analyze→edit→validate pipeline — not to the <em>scope of what can be edited</em>.</p>
+<p>Placement in the harness-optimization walkthrough taxonomy: OEO belongs to the <strong>skills line of Thread A</strong> (alongside MSCE, Skill Self-Play, and Evo-Harness's skill compilation), not with RHI / DarwinX / Living-Harness, which mutate harness content or structure. Open transfer question: OEO shows frontier optimizers do better <em>without</em> prescribed pipelines at a median 34.3% of the reference interaction budget — whether that survives when the mutable object is the harness itself (where DarwinX and RHI still impose prescribed evolutionary/pairwise pipelines) is untested.</p></article>
+<footer>Generated 2026-08-20 19:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
