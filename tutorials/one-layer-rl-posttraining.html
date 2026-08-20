@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Is One Layer Enough? Single-Layer Training Can Match Full-Parameter RL</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Is One Layer Enough? Single-Layer Training Can Match Full-Parameter RL</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.01232">arXiv:2607.01232</a> · <a href="https://arxiv.org/abs/2607.01232">arXiv</a> · <a href="https://x.com/fnruji316625/status/2085934378362823075">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -73,6 +75,6 @@ for k in 0..L-1:
 <li>The contribution profile is an <strong>intrinsic property of the pretrained model</strong> — stable across datasets and even tasks (ρ=0.76 math↔math, 0.59 math↔code) — and is <em>not</em> explained by how much layers move during training.</li>
 <li>You can cash this in without profiling: <strong>train only the middle ~5 layers</strong> and beat tuned full-parameter RLVR at every scale tested (+1.8/+1.8 points at 4B/8B); with profiling, freezing low-contribution layers recovers ~30% extra of the total RL gain.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

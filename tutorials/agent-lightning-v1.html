@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Lightning v1.0: Towards Harnessed Agentic RL (Microsoft)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Agent Lightning v1.0: Towards Harnessed Agentic RL (Microsoft)</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.17528">arXiv:2608.17528</a> · <a href="https://arxiv.org/abs/2608.17528">arXiv</a> · <a href="https://x.com/omarsar0/status/2090078336697733531">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -77,6 +79,6 @@ repeat:
 <li><strong>Compute group statistics at the rollout level, not the sample level</strong> — otherwise rollouts that fragment more get more votes in the GRPO baseline, and their coding ablation says this actually hurts.</li>
 <li><strong>6K well-filtered tasks moved SWE-bench Verified by 14.6 points on a 9B model</strong> — data hygiene plus correct boundary bookkeeping, not scale, did the work; and collocated async RL gets you past stragglers without a second GPU pool.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agentic Context Management</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Agentic Context Management</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.21503">arXiv:2607.21503</a> · <a href="https://arxiv.org/abs/2607.21503">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2080933321198993635">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><p>Paper: "Agentic Context Management: Solving Agent Memory and Cost by Treating Them as Lifecycle and Architecture Problems" (arXiv 2607.21503 per the tweet; the tracker entry has no arXiv id — the abstract page confirms it). Single author: Gaurav Dadhich. 23 pages; evaluation harness and study data at github.com/maximem-ai. Note upfront: this is effectively a vendor systems paper — the reference implementation, Maximem Synap, is a commercial memory product.</p>
@@ -100,6 +102,6 @@ C_{\mathrm{compacted}} = N \cdot W \cdot \left(1 + \frac{c}{p}\right)
 <li>The <strong>five-primitive lifecycle</strong> (architect, ingest, scope, anticipate, compact+consolidate) is a solid checklist for agent-harness design even if you ignore the vendor implementation — especially "retrieval quality is bounded by ingestion quality" and scoped, narrowest-first access.</li>
 <li>Reported results (92.0% LongMemEval, 93.2% LoCoMo cats 1-4) are self-evaluated with no same-harness baselines, and <strong>multi-session reasoning (75.2%) remains the unsolved category</strong> — consistent with this reading list's broader evidence (CL-Bench, PRO-LONG) that cross-session synthesis, not storage, is where memory systems actually fail.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>On-Policy Distillation Isn&#x27;t a Free Lunch (MOPD)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>On-Policy Distillation Isn&#x27;t a Free Lunch (MOPD)</h1><p class="meta">11 min read · <a href="https://x.com/BhavinJawade/status/2079604860287431061">X post</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Tracker note: this item is not a single paper — it is a synthesis thread by @BhavinJawade cataloguing four failure modes of on-policy distillation (OPD) and on-policy self-distillation (OPSD), each anchored to a recent paper. I verified the four underlying papers exist: Trajectory-Refined Distillation / TRD (arXiv 2606.08432), "Rethinking On-Policy Distillation of Large Language Models: Phenomenology, Mechanism, and Recipe" (arXiv 2604.13016), "The Many Faces of On-Policy Distillation: Pitfalls, Mechanisms, and Fixes" (arXiv 2605.11182; Zhu, Ye, Lu, Shi, Liu), and "Diagnosing and Mitigating Thinking Collapse in On-Policy Self-Distillation" (arXiv 2607.10805). The per-paper claims below follow the thread's summary of them; verify against each paper before load-bearing use.</em></p>
@@ -79,6 +81,6 @@ for each training step:
 <li>The two rules of thumb with teeth: after an early wrong turn, per-token KL on the frozen rollout points the wrong way everywhere past the divergence point (refine the trajectory instead); and pick teachers by <strong>top-k distributional overlap with the student</strong>, not benchmark rank — 97–99% shared-mass overlap marks runs that work.</li>
 <li>OPSD with privileged information transfers only <strong>shared rules</strong>, never per-instance answers — instance-specific PI produces average-policy collapse, and answer-conditioned teachers additionally erode the student's deliberation tokens at high-entropy forks.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory Decoder at Scale: Pretrained, Swappable Parametric Memory</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Memory Decoder at Scale: Pretrained, Swappable Parametric Memory</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.27919">arXiv:2607.27919</a> · <a href="https://arxiv.org/abs/2607.27919">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306969821634798">X post</a> · <a href="https://www.alphaxiv.org/abs/2607.27919">alphaxiv.org</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
@@ -87,6 +89,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>Parameters spent on memory beat parameters spent on backbone</strong> (on Pythia): 410M base + 6.9B memory ≥ 12B base at 39% fewer parameters, and the whole Base+Memory curve dominates backbone scaling — evidence that memory/reasoning disentanglement is a real architectural axis, not just an engineering convenience.</li>
 <li>The enabling systems work is <strong>kNN supervision at 207B-key scale</strong>: OPQ compression (4096→256 dims), HNSW-routed IVFPQ shards with parallel GPU search, and ~250× sparse distribution storage with streaming loads — the recipe that turns kNN-LM distillation from a WikiText trick into a pretraining-scale method.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

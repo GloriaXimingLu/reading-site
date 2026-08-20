@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NOOA: Native Python Object-Oriented Agents (NVIDIA)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>NOOA: Native Python Object-Oriented Agents (NVIDIA)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.20709">arXiv:2607.20709</a> · <a href="https://arxiv.org/abs/2607.20709">arXiv</a> · <a href="https://github.com/nvidia-nemo/labs-OO-Agents">GitHub</a> · <a href="https://x.com/akshay_pachaar/status/2084285621011689918">X post</a> · <a href="../index.html#tools">Tools &amp; Infrastructure</a></p><h2>TL;DR</h2>
@@ -88,6 +90,6 @@ class SupportAgent(Agent):
 <li><strong>Pass-by-reference breaks the context-window ceiling</strong>: the model sees a bounded preview while the full typed object stays live in the execution session — so data volume is bounded by the machine, and you get ~2× token/call efficiency for free by never re-serializing tool outputs.</li>
 <li><strong>Harness &gt; model, quantified</strong>: the same GPT-5.6-sol goes from 13.3% raw to 85.1% inside NOOA on ARC-AGI-3, and a 6-agent 6,500-line system compresses to one agent + a 50-line skill — the strongest single data point in this tracker for "the scaffold is where the capability lives."</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

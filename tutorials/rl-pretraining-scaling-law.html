@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scaling Law for Pretrain vs RL Compute Allocation</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Scaling Law for Pretrain vs RL Compute Allocation</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.16097">arXiv:2607.16097</a> · <a href="https://arxiv.org/abs/2607.16097">arXiv</a> · <a href="https://x.com/f14bertolotti/status/2079146964592001234">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p><em>Paper: "Understanding Reasoning from Pretraining to Post-Training" (arXiv 2607.16097), by Jingyan Shen, Ang Li, Salman Rahman, Yifan Sun, Micah Goldblum, Matus Telgarsky, and Pavel Izmailov; submitted July 17, 2026. Grounded in the fetched abstract and full-text (HTML) excerpts.</em></p>
@@ -100,6 +102,6 @@ for N in 10 model scales (5M .. 1B):
 <li>Compute-optimal RL share <strong>rises with total budget but stays minority</strong>: ~20% at 50M params → ~28% at 680M, in this chess testbed.</li>
 <li>RL's mechanism is difficulty-dependent: sharpening (ground-truth amplification) on easy tasks; on hard tasks, genuine tail discovery <strong>and</strong> wrong-mode amplification — which is why pass@k moves so little.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

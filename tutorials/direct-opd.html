@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Direct-OPD: Weak-to-Strong Generalization by Distilling the RL Policy Shift</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Direct-OPD: Weak-to-Strong Generalization by Distilling the RL Policy Shift</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.05394">arXiv:2607.05394</a> · <a href="https://arxiv.org/abs/2607.05394">arXiv</a> · <a href="https://x.com/_lewtun/status/2087530369306288300">X post</a> · <a href="https://youtu.be/S5wE1sjyiQY">youtu.be</a> · <a href="../index.html#distillation">Distillation</a></p><p>Paper: "Weak-to-Strong Generalization via Direct On-Policy Distillation" (arXiv 2607.05394v2, Jul 2026). Authors: Shiyuan Feng, Huan-ang Gao, Haohan Chi, Hanlin Wu, Zhilong Zhang, Zheng Jiang, Bingxiang He, Wei-Ying Ma, Ya-Qin Zhang, Hao Zhou — SIA-Lab of Tsinghua AIR &amp; ByteDance Seed, Tsinghua, Peking University. Surfaced via the Hugging Face journal club (Lewis Tunstall).</p>
@@ -71,6 +73,6 @@ for step = 1..N:                    # ~300 steps in the paper's runs
 <li><strong>A checkpoint pair is a reward function</strong>: by the DPO identity read in reverse, the pair stores dense per-token RL supervision that can be evaluated on any student's own rollouts — no reward model, no verifier, no sparse-reward RL at target scale.</li>
 <li><strong>Weak-to-strong post-training is cheap and composable</strong>: +10.0 AIME on Qwen3-1.7B in 4 hours on 8 A100s from a 1.5B teacher pair, +15.5 after stacking a second independent shift.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RST: Recursive Synthesis for Long-Horizon Terminal Tasks</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>RST: Recursive Synthesis for Long-Horizon Terminal Tasks</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.05466">arXiv:2608.05466</a> · <a href="https://arxiv.org/abs/2608.05466">arXiv</a> · <a href="https://x.com/Yucheng__Shi/status/2085571304539742703">X post</a> · <a href="https://alphaxiv.org/abs/2608.05466">alphaxiv.org</a> · <a href="../index.html#data">Data &amp; Datasets</a></p><h2>TL;DR</h2>
@@ -71,6 +73,6 @@ train: SFT on rejection-sampled successful rollouts;
 <li><strong>Recursion is the difficulty engine</strong>: accepted children reseed the factory, compounding executable complexity (67 → 374 median solution lines) while diversity caps keep the pool from collapsing — 37,484 tasks at ~$0.05 each, frontier pass@4 driven from 90% to 2.5%.</li>
 <li><strong>The data actually trains agents</strong>: +6–10 points SFT on Terminal-Bench 2 and +41% relative via PPO on the out-of-distribution hard split — synthetic task factories are now a viable substitute for hand-built RL environments in the terminal domain.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

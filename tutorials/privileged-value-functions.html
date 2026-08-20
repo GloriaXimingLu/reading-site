@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Le Critique: Privileged Value Functions for LLM RL (PVF + TETHER)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Le Critique: Privileged Value Functions for LLM RL (PVF + TETHER)</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.16739">arXiv:2608.16739</a> · <a href="https://arxiv.org/abs/2608.16739">arXiv</a> · <a href="https://github.com/HyperPotatoNeo/prime-values">GitHub</a> · <a href="https://x.com/siddarthv66/status/2089817103654379592">X post</a> · <a href="https://privileged-value-functions.github.io/">privileged-value-functions.github.io</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -71,6 +73,6 @@ for each policy step k:
 <li><strong>GRPO's LOO baseline is already a privileged value function</strong> — a training-free one conditioned on group rewards. Once you see that, "group vs. critic" stops being a binary choice.</li>
 <li><strong>TETHER = trust calibration by least squares:</strong> <span class="arithmatex">\(b=(1-\rho)b^{\mathrm{LOO}}+\rho V_\phi\)</span> with <span class="arithmatex">\(\rho\)</span> refit each batch against observed returns — group baseline while the critic is cold, critic as it warms up, and never worse than the worst of the two by much.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

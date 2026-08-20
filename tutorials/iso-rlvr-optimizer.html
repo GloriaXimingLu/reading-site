@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ISO: An RLVR-Native Optimization Stack</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>ISO: An RLVR-Native Optimization Stack</h1><p class="meta">11 min read · <a href="https://arxiv.org/abs/2607.19331">arXiv:2607.19331</a> · <a href="https://arxiv.org/abs/2607.19331">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2080418182599180701">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "ISO: An RLVR-Native Optimization Stack" (arXiv 2607.19331, located via search; the tracker entry has no arXiv id). Authors: Hanqing Zhu, Wenyan Cong, Zhizhou Sha, Sagnik Mukherjee, Xinyuan Song, David González-Martínez, Xiaoxia Wu, Yuandong Tian, Shiwei Liu, David Z. Pan, Zhangyang "Atlas" Wang. Project page: iso-rlvr.github.io.</p>
@@ -103,6 +105,6 @@ given U, V (orthonormal frames), Σ0 (frozen base spectrum), states s_U, s_V
 <li>Making the constraint explicit yields <strong>ISO-AdamW/ISO-Muon</strong>: same optimizer, frame coordinates, polar retraction — matched RLVR accuracy in up to 2.7x fewer steps on Qwen3-8B at ~7% step overhead.</li>
 <li>The same geometry gives <strong>data-free merging of shared-base RL specialists</strong> (tangent-space composition plus retraction, no rollouts or distillation) — but all evidence so far is small-scale, Qwen-only, and single-turn; treat agentic transfer as an open question.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

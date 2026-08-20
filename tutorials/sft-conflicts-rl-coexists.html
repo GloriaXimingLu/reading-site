@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SFT Conflicts, RL Coexists: Gradient Interference in Multi-Task LLM Post-Training</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>SFT Conflicts, RL Coexists: Gradient Interference in Multi-Task LLM Post-Training</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.03573">arXiv:2608.03573</a> · <a href="https://arxiv.org/abs/2608.03573">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2086850229567942762">X post</a> · <a href="https://alphaxiv.org/abs/2608.03573">alphaxiv.org</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -69,6 +71,6 @@ for task i in {math, science, logic, code}   # fully parallel, no shared state
 <li><strong>Advantage normalization is the mechanism.</strong> GRPO's zero-sum advantages subtract the dense common-mode gradient, leaving only small on-policy residuals; interference is thus <strong>norm-limited for SFT</strong> (<span class="arithmatex">\(M_iM_j\)</span>) but <strong>variance-limited for RL</strong> (<span class="arithmatex">\(V_iV_j\)</span>), and <span class="arithmatex">\(V_i\)</span> is minuscule and shrinks as training converges.</li>
 <li><strong>Orthogonality buys parallelism.</strong> If task updates don't interfere, you can train each task's RL independently and merge the deltas — Parallel-RL keeps 95–102.8% of single-task performance, and an "Adapted" merge with 5% extra samples beats task-specific models, turning sequential curriculum RL into an embarrassingly-parallel fan-out.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

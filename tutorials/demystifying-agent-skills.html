@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Demystifying Agent Skills: Procedural Anchoring, Retrieval Decay, and Failure Modes</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Demystifying Agent Skills: Procedural Anchoring, Retrieval Decay, and Failure Modes</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.14036">arXiv:2608.14036</a> · <a href="https://arxiv.org/abs/2608.14036">arXiv</a> · <a href="https://x.com/omarsar0/status/2089376463330128151">X post</a> · <a href="../index.html#benchmarks">Benchmarks &amp; Evaluation</a></p><h2>TL;DR</h2>
@@ -75,6 +77,6 @@ aggregate deterministically: success rates, 1,000-iter bootstrap CIs,
 <li>Representation is worth +6.06 points by itself: the same trajectories packaged as SKILL.md beat workflow-memory injection (the only CI excluding zero), while raw workflow memory trends <em>below</em> no-memory and times out 6× more often — and skills built from failure-only evidence drop below baseline entirely.</li>
 <li>Retrieval precision is a misleading health metric: actual-use precision collapses 29.6% → 3.3% as pools grow 5 → 100 while success stays flat, because exact ground-truth skill invocation is neither sufficient nor necessary — measure skill effects contrastively, not skill routing.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

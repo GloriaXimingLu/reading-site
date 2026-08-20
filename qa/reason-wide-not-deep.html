@@ -4,17 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Q&amp;A: Reason Wide, Not Deep: Amortizing the Reasoning Premium into Distilled Skills</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a> · <a class="crumb" href="../tutorials/reason-wide-not-deep.html">tutorial</a><h1>Q&amp;A: Reason Wide, Not Deep: Amortizing the Reasoning Premium into Distilled Skills</h1><h2>Session 2026-08-12</h2>
 <p><strong>Q: The paper distills a bunch of skills. At test time, how does the system decide which skill to use for which question?</strong></p>
 <p><strong>A:</strong> It doesn't — there is no test-time skill selection mechanism, and that's by design. Skills are scoped per <strong>model×domain</strong>, not per question: distillation runs once per domain (from 35–50 training-task rollouts) and produces one consolidated skill document. At test time that whole document is appended verbatim to the system prompt for <em>every</em> question in the domain ("nothing else — harness, decoding, tools — changes"). Any per-question "selection" happens implicitly inside the model's forward pass as it reads the rules in context; the only explicit routing decision is the deployer's choice of which domain's skill file to load. The payoff is systems-level: the skill is a <strong>cacheable prefix</strong> (sits in KV cache once, near-zero marginal cost per episode), which is what "amortizing the reasoning premium" means operationally.</p>
 <p>Limitations to keep in mind: no fallback for uncovered questions, no cross-domain skill composition, and no ablation of concatenation vs. top-k retrieval vs. learned routing — so whether flat concatenation holds up at large skill-library sizes is untested. Retrieval-based skill systems in this tracker (MSCE, Living-Harness's retrieval-only reuse) are the natural contrast points where selection <em>is</em> explicit.</p></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

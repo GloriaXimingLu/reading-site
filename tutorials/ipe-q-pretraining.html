@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IPE: Q-Function Pretraining Doesn&#x27;t Transfer — Bootstrap from Policy Ensembles Instead</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>IPE: Q-Function Pretraining Doesn&#x27;t Transfer — Bootstrap from Policy Ensembles Instead</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2607.27203">arXiv:2607.27203</a> · <a href="https://arxiv.org/abs/2607.27203">arXiv</a> · <a href="https://x.com/chelseabfinn/status/2086449418027270646">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "Do You Really Need to Pretrain Q-Functions for Online RL Fine-Tuning?" (arXiv 2607.27203, v2 Aug 3 2026). Authors: Perry Dong, Ron Polonsky, Dorsa Sadigh, Chelsea Finn.</p>
@@ -77,6 +79,6 @@ repeat (online fine-tuning):
 <li><strong>What transfers is coverage, not accuracy</strong>: IPE seeds the replay buffer with rollouts from N+1 independently trained policies on the same data and gets 1.26× over naive Q-pretraining — without changing the value loss at all.</li>
 <li>When designing pretrain→RL pipelines (robots or LLMs), <strong>budget for behavioral diversity in the bootstrap data</strong> before budgeting for a fancier critic initialization.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

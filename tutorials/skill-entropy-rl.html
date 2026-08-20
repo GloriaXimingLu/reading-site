@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skill Entropy: Benchmarking and Training Skill Switching</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Skill Entropy: Benchmarking and Training Skill Switching</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.05139">arXiv:2608.05139</a> · <a href="https://arxiv.org/abs/2608.05139">arXiv</a> · <a href="https://github.com/Gen-Verse/Skill-Entropy-RL">GitHub</a> · <a href="https://x.com/yinghui_he_/status/2085410575463723464">X post</a> · <a href="https://huggingface.co/papers/2608.05139">huggingface.co</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -74,6 +76,6 @@ update policy with GRPO on r
 <li><strong>Skill entropy = smoothed ratio of single-skill to cross-skill accuracy</strong> under a fixed reference model — directional, cheap, and usable both to bin benchmark difficulty (Skill²-Bench, 558 skills, 9 domains) and as a training signal.</li>
 <li><strong>Rewarding the skill plan works</strong>: GRPO + a 0.3-weighted entropy reward that grades the predicted skill sequence doubles-ish Skill²-Bench scores (34.4→68.4 at 4B, 14.6→40.1 at 1.7B) and transfers to open-ended domains and external benchmarks the RL never saw.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

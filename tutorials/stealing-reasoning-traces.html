@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stealing Reasoning Traces from Proprietary LLM APIs via Encrypted-Block Injection</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Stealing Reasoning Traces from Proprietary LLM APIs via Encrypted-Block Injection</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.09867">arXiv:2608.09867</a> · <a href="https://arxiv.org/abs/2608.09867">arXiv</a> · <a href="https://x.com/maksym_andr/status/2087159312242164035">X post</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
@@ -68,6 +70,6 @@ faithfulness = extracted_token_count / API_reported_thinking_tokens   # ≈ 1.0 
 <li><strong>The weak sibling is the oracle.</strong> Frontier models get anti-distillation refusal training; their cheap siblings (Haiku, GPT-5.6 Luna) don't. Inject the flagship's trace into the sibling, ask it to transcribe, and you get verbatim proprietary reasoning without ever jailbreaking the flagship — for ≈$720 per 10k traces, or free from scraped public logs.</li>
 <li><strong>The blast radius is not just IP.</strong> The same flaw leaks real secrets (367 PII + 182 credentials from 315k public blocks), exposes harmful content that safety-filtered final answers hide, and lets attackers smuggle invisible prompt injections inside encrypted blocks — so CoT-monitoring and log-sharing practices both need rethinking.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

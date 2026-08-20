@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SBCO: Self-Supervised Verifier-Grounded Harness Optimization for Planning Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>SBCO: Self-Supervised Verifier-Grounded Harness Optimization for Planning Agents</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.10157">arXiv:2608.10157</a> · <a href="https://arxiv.org/abs/2608.10157">arXiv</a> · <a href="https://x.com/vintcessun/status/2089312542292430936">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
@@ -83,6 +85,6 @@ BlockOptimize(block):                              # tactical + strategic
 <li>Reliability-gate everything: verifiers enter the bank only at precision ≥ 0.80 / recall ≥ 0.55 scored against self-labeled examples from a baseline run, and the learned policy itself learned to act only on ≥ 0.98-precision checks. 86% of gains came from F1 ≥ 0.80 verifiers.</li>
 <li>The learned harness is portable capital: GPT-learned verifiers+policy lifted a Mistral agent +32 points on Shopping with zero re-optimization — but couldn't lift Mistral to GPT's ceiling, because verify-and-repair recovers fixable violations rather than adding planning capability.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

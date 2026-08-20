@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Macaron-V1: Continual Learning after Deployment via Mixture-of-LoRA and Model-Harness Co-Design</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Macaron-V1: Continual Learning after Deployment via Mixture-of-LoRA and Model-Harness Co-Design</h1><p class="meta">12 min read · <a href="https://arxiv.org/abs/2608.09819">arXiv:2608.09819</a> · <a href="https://arxiv.org/abs/2608.09819">arXiv</a> · <a href="https://x.com/di_zhang_fdu/status/2087908809444639083">X post</a> · <a href="https://huggingface.co/papers/2608.09819">huggingface.co</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
@@ -87,6 +89,6 @@ repeat per generation t:
 <li><strong>Fix the configuration before the weights</strong>: with the model frozen, adaptive harness-configuration search recovered <strong>122/122</strong> tasks the base "failed," versus <strong>11/122</strong> for the best single configuration — much of what looks like model failure is harness failure, and the fast harness release clock exploits exactly that.</li>
 <li><strong>Discount self-graded wins</strong>: Venti's clearest leads (ChatBench 58.3, LivingBench 64.0, UI4A-Bench 87.8) are on in-house, LLM-judged suites drawn from the distribution the RSI loop optimizes; the externally checkable story is solid-but-mixed, and cross-generation compounding is explicitly unmeasured.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

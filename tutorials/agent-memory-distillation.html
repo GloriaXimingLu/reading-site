@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Agent Memory Distillation: Hierarchical Teacher Memory for Small LLM Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory Distillation: Hierarchical Teacher Memory for Small LLM Agents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07169">arXiv:2608.07169</a> · <a href="https://arxiv.org/abs/2608.07169">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2087271952222454066">X post</a> · <a href="../index.html#distillation">Distillation</a></p><p>Paper: "Agent Memory Distillation: Empowering Small LLM Agents with Hierarchical Teacher Memory" (arXiv 2608.07169). Authors: Taeil Kim, Kangsan Kim, Sung Ju Hwang (KAIST, DeepAuto.ai). Project page: agent-memory-distillation.github.io.</p>
@@ -76,6 +78,6 @@ On task s:
 <li><strong>Match granularity to injection policy</strong>: task-level strategies and mid-level examples go in proactively at task start; per-function pitfalls arrive reactively on tool errors. Mid-granularity Subtask memory — concrete examples, not abstractions — is where the gains live (+25%p).</li>
 <li><strong>Compatibility beats capability</strong>: at 4B–8B scale the best teacher is the one whose memory the student can follow, and a well-distilled memory can push a student past its own teacher (Qwen3-8B 51.79% vs GPT-5-mini 50.00% on AppWorld).</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

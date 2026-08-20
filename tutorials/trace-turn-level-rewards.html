@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TRACE: Turn-Level Rewards for Long-Horizon Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>TRACE: Turn-Level Rewards for Long-Horizon Agents</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.13988">arXiv:2607.13988</a> · <a href="https://arxiv.org/abs/2607.13988">arXiv</a> · <a href="https://x.com/SharonYixuanLi/status/2078854876084502825">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "TRACE: Turn-level Reward Assignment via Credit Estimation for Long-Horizon Agents" (arXiv 2607.13988, 26 pages). Authors: Leitian Tao, Baolin Peng, Wenlin Yao, Tao Ge, Hao Cheng, Mike Hang Wang, Jianfeng Gao, Sharon Li (UW-Madison + Microsoft Research).</p>
@@ -97,6 +99,6 @@ update π_θ with clipped GRPO on Â_t
 <li><strong>TD differences of that value telescope</strong>, so repeated or redundant tool calls cannot farm credit, and a K-step backup (K≈3) plus terminal outcome anchoring handles delayed payoffs while keeping the verifiable reward in charge.</li>
 <li>Under matched everything, it adds <strong>+5-6 points over GRPO/GSPO/GiGPO on long-horizon search</strong> (Qwen3-4B: 7.2→35.6; 30B-A3B: 8.4→42.6 on BrowseComp-Plus) — but only for tasks with short verifiable answers; extending the value proxy beyond that regime is the open problem.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

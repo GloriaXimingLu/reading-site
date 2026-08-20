@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DAPD: Dual-Anchored Policy Distillation — Fixing the Privilege Illusion in On-Policy Self-Distillation</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>DAPD: Dual-Anchored Policy Distillation — Fixing the Privilege Illusion in On-Policy Self-Distillation</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.01735">arXiv:2608.01735</a> · <a href="https://arxiv.org/abs/2608.01735">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2085017922192249255">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.01735">alphaxiv.org</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
@@ -85,6 +87,6 @@ for each minibatch:
 <li><strong>The fix is matched information, not weaker teachers</strong>: a self-conditioned bridge distribution <span class="arithmatex">\(p_\theta(\cdot\mid x,s_{&lt;t},s)\)</span> lets DAPD align privileged-to-privileged and unprivileged-to-unprivileged views only, in both reference- and rollout-guided directions.</li>
 <li><strong>The gap widens with scale</strong>: OPSD's gains fade by 32B while DAPD holds +2.78 — conditioning asymmetry, not model capacity, is the binding constraint on self-distillation quality.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SkillGate: Training In-Policy Skill Selection in Long-Horizon Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>SkillGate: Training In-Policy Skill Selection in Long-Horizon Agents</h1><p class="meta">12 min read · <a href="https://arxiv.org/abs/2608.18852">arXiv:2608.18852</a> · <a href="https://arxiv.org/abs/2608.18852">arXiv</a> · <a href="https://x.com/sheriyuo/status/2090317422469480674">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p><em>Paper: arXiv 2608.18852 (v1, Aug 19 2026), by Qingyao Li, Wenxiang Jiao, Shuai Shao, Kangning Zhang, Yuan Lu, Yi Guo, Weiwen Liu, Weinan Zhang, Yong Yu — Shanghai Jiao Tong University &amp; Xiaohongshu (RedNote). Code: github.com/DeepExperience/SkillGate; model: huggingface.co/simonlqy/SkillGate-9B. Grounded in the full arXiv HTML, appendices included.</em></p>
@@ -91,6 +93,6 @@ for each task prompt x in batch:                 # 491 train tasks, no Claw
 <li><strong>Partition, don't redistribute</strong>: when a trajectory interleaves decisions judged by different evidence, give each a disjoint credit channel with equal per-batch mass in one GRPO update — delete the read call from the task mask, land a group-centred, single-read-gated utility on exactly the identity tokens.</li>
 <li><strong>Train the chooser inside the policy</strong>: a 27B router with better top-1 accuracy yields a <em>worse</em> agent than a trained-in-policy 9B selector, and SkillGate choosing from 16 candidates beats oracle-injection into its frozen predecessor — selection, acceptance, and execution co-adapt only when the same weights learn all three.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

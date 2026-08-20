@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Multi-Turn OPD via Teacher Replay (Microsoft)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Multi-Turn OPD via Teacher Replay (Microsoft)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.04763">arXiv:2607.04763</a> · <a href="https://arxiv.org/abs/2607.04763">arXiv</a> · <a href="https://x.com/dair_ai/status/2081560214554419700">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Paper: "Multi-Turn On-Policy Distillation with Prefix Replay" (arXiv 2607.04763), by Baohao Liao, Hanze Dong, Christof Monz, Xinxing Xu, Li Dong, and Furu Wei; v1 July 6, 2026. The thread attributes the work to Microsoft Research and the University of Amsterdam. Grounded in the fetched abstract plus the dair_ai thread.</em></p>
@@ -100,6 +102,6 @@ return pi_theta
 <li>The <strong>prefix trap</strong>: student-shifted histories are more relevant but push the teacher onto unreliable states; multi-turn OPD is a two-sided distribution-shift problem, and prefix selection is the control knob.</li>
 <li>The practical recipe is a <strong>step-decaying prefix schedule</strong> — supervise early, low-shift steps preferentially — which preserved or improved accuracy across math+Python and search environments at multiple scales.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

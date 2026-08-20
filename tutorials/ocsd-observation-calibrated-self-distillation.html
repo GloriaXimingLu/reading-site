@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OCSD: Observation-Calibrated Self-Distillation for Agentic RL</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>OCSD: Observation-Calibrated Self-Distillation for Agentic RL</h1><p class="meta">7 min read · <a href="https://arxiv.org/abs/2608.04788">arXiv:2608.04788</a> · <a href="https://arxiv.org/abs/2608.04788">arXiv</a> · <a href="https://github.com/yiy1x/OCSD">GitHub</a> · <a href="https://x.com/gurtej__gill_/status/2086741441737302418">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
@@ -74,6 +76,6 @@ for each task x:
 <li>The fix is a controlled contrast: score under Full and Observation-Ablated views that differ <em>only</em> in the real observation, and use the residual <span class="arithmatex">\(q=\tanh((\delta^F-\delta^A)/2)\)</span> — applied only at high-NLL steps, never flipping the GRPO advantage's sign.</li>
 <li>It works across scales (ALFWorld 46.6→55.5 at 1.7B, 70.6→82.8 at 4B) and, more importantly, the residual demonstrably tracks real environment feedback (AUROC, observation-swapping) — a diagnosis worth retrofitting to every hindsight-distillation method in this tracker.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

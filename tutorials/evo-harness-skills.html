@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Evo-Harness: Context-to-Harness Skill Compilation for Self-Evolving Agents</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.15071">arXiv:2608.15071</a> · <a href="https://arxiv.org/abs/2608.15071">arXiv</a> · <a href="https://x.com/Xudong07452910/status/2090281166758953314">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.15071 (v1, Aug 15 2026), by Tianxin Wei, Zhan Shi, Minhua Lin, Bing He, Zewen Liu, Yisi Sang, Yuanchen Bei, Xuying Ning, Jiaru Zou, Ting-Wei Li, Xiao Lin, Yanjun Zhao, Chi Wang, Benoit Dumoulin, Dakuo Wang, Jingrui He, Hanqing Lu. The thread attributes the team to UIUC and Amazon (consistent with the author list; affiliations not in my fetched sources). Grounded in the full TeX source from arXiv. Not to be confused with EvoHarness-RL (arXiv 2608.05446) — see How it connects.</em></p>
@@ -84,6 +86,6 @@ Output: evolved harness H_{K+1} and task results
 <li><strong>Grounding is the safety rail</strong>: LLM self-judged feedback makes harness evolution <em>worse than no evolution</em> (−1.6 to −2.0 points below baseline); external verifier/test/environment signals are what make the loop net-positive. Confirm the lesson is true before you keep it.</li>
 <li><strong>Harness transfer is solver-gated</strong>: Sonnet-evolved skills lift Opus (+5.3 over its No-Evolve) yet fail to lift Sonnet itself (−2.5); frozen-agent gains scale with the solver's ability to interpret guidance — evolved harnesses are amplifiers of capability, not substitutes for it.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

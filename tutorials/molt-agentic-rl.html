@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Molt: NVIDIA&#x27;s PyTorch-Native Agentic RL Framework</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Molt: NVIDIA&#x27;s PyTorch-Native Agentic RL Framework</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2607.21653">arXiv:2607.21653</a> · <a href="https://arxiv.org/abs/2607.21653">arXiv</a> · <a href="http://github.com/NVIDIA-NeMo/labs-molt">GitHub</a> · <a href="https://x.com/dair_ai/status/2081770344952803628">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "Molt: A Scalable PyTorch-Native Training Framework for Agentic Reinforcement Learning" (arXiv 2607.21653, tech report). Authors: Jian Hu, Huiying Li, Hao Zhang, Binfeng Xu, Yifan Zhang, Shaokun Zhang, Hemil Desai, Michael Demoret, Pavlo Molchanov, Jan Kautz, Yi Dong (NVIDIA). Code, recipes, and containers: github.com/NVIDIA-NeMo/labs-molt (Apache 2.0). Notably, Jian Hu is the original author of OpenRLHF.</p>
@@ -85,6 +87,6 @@ loop:
 <li><strong>Agents remain ordinary programs</strong>: an <code>Env.step()</code> or your own SDK loop against a loopback URL that captures tokens — existing harnesses train unchanged, which is the right abstraction for long-horizon, tool-heavy agents.</li>
 <li>Throughput parity with a Megatron-based stack at ~4x less researcher-facing code is credible, but <strong>convergence at scale is not yet demonstrated</strong> — the 30B comparison measures step time while the sequence gate is rejecting updates.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

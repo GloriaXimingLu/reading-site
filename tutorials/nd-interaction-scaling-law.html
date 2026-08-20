@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
 window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
 </head>
 <body>
 <article><a class="crumb" href="../index.html">← all papers</a><h1>Skaling: A Coupled N–D Scaling Law and 10x-Cheaper Experiment Grids</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.07222">arXiv:2608.07222</a> · <a href="https://arxiv.org/abs/2608.07222">arXiv</a> · <a href="https://x.com/rosinality/status/2086708534989778961">X post</a> · <a href="https://alphaxiv.org/abs/2608.07222">alphaxiv.org</a> · <a href="../index.html#architecture">Architecture &amp; Efficiency</a></p><h2>TL;DR</h2>
@@ -71,6 +73,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>One outer exponent fixes it:</strong> <span class="arithmatex">\(L=(A/N^{\alpha}+B/D^{\beta})^{k}+E\)</span> with fitted <span class="arithmatex">\(k\approx0.31\text{–}0.45\)</span> cuts MAPE 1.5–3x, keeps a closed-form compute-optimal allocation, and recovers Chinchilla when data are truly additive.</li>
 <li><strong>Fit on the cheap edges:</strong> an L-shaped grid (D-sweeps on small models + N-sweeps on short horizons) matches or beats full-grid fits at ~10x less compute — but only with a coupled form; additive Chinchilla falls apart off the dense grid (far-extrapolation MAPE 14.6%).</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-20 18:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
