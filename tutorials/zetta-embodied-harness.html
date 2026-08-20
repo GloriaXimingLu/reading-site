@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zetta: A Closed-Loop Embodied Harness for Self-Evolving Physical Intelligence</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Zetta: A Closed-Loop Embodied Harness for Self-Evolving Physical Intelligence</h1><p class="meta">11 min read · <a href="https://arxiv.org/abs/2608.16590">arXiv:2608.16590</a> · <a href="https://arxiv.org/abs/2608.16590">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2090351736624144866">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.16590 (v1, Aug 17 2026), by Xin Ding, Liang Mi, Mingzhe Huang, Zixuan Wang, Chao Zhang, Zixu Hao (equal contribution), Fu Chen, Xiangyu Li, Yikai Zheng, Yaoyu Guo, Weijun Wang, Kun Li, Hao Wu, Yunxin Liu, Ting Cao — Institute for AI Industry Research (AIR), Tsinghua University, and Z-Trans AI. Grounded in the full arXiv HTML text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>Zetta ports the frozen-model/evolving-harness recipe to robot manipulation, where the binding constraint text-agent harnesses never face is <em>frequency</em>: physical failures unfold at millisecond timescales, far above what an LMM can adjudicate per step. The fix is to make the evolving artifact <strong>code</strong> — runtime critics <span class="arithmatex">\(C\)</span> scanning the trajectory every action step, a recovery playbook <span class="arithmatex">\(R\)</span>, a synthesized toolset <span class="arithmatex">\(\mathcal{T}\)</span> — with a fixed orchestrator adjudicating only when a critic fires and evolution agents fully offline: three loops at action, rollout-batch, and iteration timescales.</li>
+<li>With base VLAs frozen (<span class="arithmatex">\(\pi_{0.5}\)</span> on LIBERO-Pro, GR00T N1.5 on RoboCasa), held-out success scales with self-exploration: RoboCasa's 18-task macro climbs 73.56 → <strong>93.56%</strong> over four validated repair rounds; LIBERO-Pro Goal rises from 31.0/38.0 to <strong>92.5/89.0%</strong> (T/S) — the abstract's 90.8% is the Goal-suite average; the full 40-pair macro is 32.00 → 71.13.</li>
+<li>Skills transfer zero-shot because critics key on task-independent physical variables (PnP-Stove's pregrasp/regrasp/placement stack lifts three unevolved PnP tasks 64 → 84% macro), and discrete "Aha moments" appear when diagnosis finally hits the true bottleneck. Z-Infra raises rollout throughput 1.7 → 35.1 ep/min (20.6×) and cuts latency 11.1× vs the agent-in-the-loop RPent baseline.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every harness-evolution system in this tracker — Evo-Harness, Living-Harness, DarwinX, Harness-R1 — operates in a regime where the harness can afford to <em>be</em> an LLM call: text agents act at seconds-per-step. Zetta is the first item here to hit the regime where that breaks. A slipping grasp cascades into episode failure in milliseconds; post-hoc reflection can diagnose it but can't govern it, and an agent-in-the-loop harness (their RPent baseline: 392–513s per episode) is 11.1× too slow to matter. Zetta's answer generalizes beyond robotics: <strong>compile the harness's runtime half into code that runs at environment frequency, and reserve model intelligence for two slower loops — event-driven adjudication and offline evolution.</strong> Coding-agent harnesses will want the same pattern as they move toward governing sub-second tool streams or fleets of parallel rollouts.</p>
+<p>Also worth noticing: the evolved artifact is a versioned package — <code>SKILL.md</code> (milestones, adjudication rules, re-entry predicate), <code>tools/</code>, <code>plans/</code>, <code>params/</code> — literally the skills-package shape, populated by an automated diagnose-repair-generalize pipeline behind a hard validation gate.</p>
+<h2>The core idea</h2>
+<p>A frozen VLA is an open-loop feedforward policy with no sensory-motor error correction; an LMM orchestrator is smart but slow. Zetta inserts an evolvable layer between them:</p>
+<div class="arithmatex">\[\mathcal{H}=\{C,R,\mathcal{T}\},\qquad P_{t}=C(\tau_{0:t})=\langle e_{t},\hat{\sigma}_{t}\rangle,\qquad \sigma_{t}=\mathcal{A}_{orch}(P_{t},R,\mathcal{T},\mathcal{K}),\]</div>
+<p>where critics <span class="arithmatex">\(C\)</span> are code-level monitoring functions scanning the trajectory <span class="arithmatex">\(\tau_{0:t}\)</span> at every step, emitting auditable failure evidence <span class="arithmatex">\(e_t\)</span> (collisions, stalled progress, grasp loss) and a suggested execution mode <span class="arithmatex">\(\hat{\sigma}_t\)</span>; the fixed orchestrator <span class="arithmatex">\(\mathcal{A}_{orch}\)</span> approves the actual mode <span class="arithmatex">\(\sigma_t\)</span> (VLA vs a specialized tool) using recoveries <span class="arithmatex">\(R\)</span>, tools <span class="arithmatex">\(\mathcal{T}\)</span>, and task knowledge <span class="arithmatex">\(\mathcal{K}\)</span>. Critics run at high frequency; the LMM is event-driven, invoked only on validated evidence. Evolution then optimizes only <span class="arithmatex">\(\mathcal{H}\)</span>:</p>
+<div class="arithmatex">\[\max_{\mathcal{H}}\ J(\mathcal{H})=\mathbb{E}_{g,s_{0}\sim\mathcal{D}}\big[\text{Success}(\tau)\mid\pi,\mathcal{A}_{orch},\mathcal{H}\big],\]</div>
+<p>with policy <span class="arithmatex">\(\pi\)</span> and orchestrator both invariant (<span class="arithmatex">\(\nabla\theta=0\)</span>). Code gives no gradients, so updates are an "SGD-like" bounded search in code space (drawing on SkillOpt and EmbodiSkill), disciplined by causal diagnosis and a validation gate.</p>
+<p><img alt="Zetta framework: parallel rollouts under an orchestrator-adjudicated evolvable harness of critics, recoveries, and tools; failed trajectories feed a three-phase offline cycle of failure profiling, causal diagnosis and repair, and harness generalization" src="assets/zetta-embodied-harness/fig1.png" />
+<em>Figure 2 from the paper: (left) online execution — the frozen action policy runs under harness <span class="arithmatex">\(\mathcal{H}=\{C,R,T\}\)</span> with orchestrator adjudication; (right) failed rollouts drive Phase I failure profiling, Phase II causal diagnosis + minimal repair at root layer <span class="arithmatex">\(L^*\)</span>, and Phase III consolidation into a versioned harness package fed back into execution.</em></p>
+<h2>How it works</h2>
+<p><strong>Loop 1 — critic-governed action loop (online).</strong> Rollouts log traces <span class="arithmatex">\(\tau=\{(s_t,a_t,\mu_t,\phi_t)\}\)</span> — state, action, semantic-milestone status <span class="arithmatex">\(\mu_t\)</span>, physio signals <span class="arithmatex">\(\phi_t\)</span> (collision intensities, contact forces). Successes build a nominal-state index <span class="arithmatex">\(I_{succ}(\mu)\)</span>; failures get a <strong>First Missing Milestone</strong> <span class="arithmatex">\(m^{*}\)</span> and an <strong>Earliest Observable Divergence</strong></p>
+<div class="arithmatex">\[t_{EOD}=\min\{t\mid\mathrm{dist}(s_{t},s_{t}^{ref})&gt;\epsilon,\ s_{t}^{ref}\in I_{succ}(\mu_{t})\},\]</div>
+<p>the first step where the state leaves the healthy distribution (<span class="arithmatex">\(\mathrm{dist}\)</span> a state-space metric, <span class="arithmatex">\(\epsilon\)</span> a preset threshold) — this lets diagnosis see <em>the moment</em> of failure rather than its downstream wreckage, the thing episode-level reflection structurally can't do.</p>
+<p><strong>Loop 2 — rollout-batch candidate proposal (offline).</strong> A diagnosis agent clusters failures by <span class="arithmatex">\((t_{EOD}, m^{*},\)</span> relative poses, active tools<span class="arithmatex">\()\)</span>, picks a medoid seed per cluster, and — under a single-view grounded protocol to suppress multiview hallucination — runs <em>top-down causal diagnosis</em> over layers Evaluation → Critic → State → Planning → Recovery → Parameter, committing to the highest layer <span class="arithmatex">\(L^{*}\)</span> that explains the failure. The stated principle: "if high-level logic resolves the failure, never modify low-level parameters" — parameter-forcing repairs corrupt the VLA's action distribution and wreck held-out generalization. A repair agent writes a minimal patch <span class="arithmatex">\(\{C^{*},R^{*},\mathcal{T}^{*}\}\)</span> embedding a <strong>VLA re-entry contract</strong></p>
+<div class="arithmatex">\[\Psi(s_{t})=\mathbb{1}(\text{FailureCleared})\land\mathbb{1}(\text{Stability}(s_{t})&gt;\gamma),\]</div>
+<p>which returns control to the frozen policy only once the triggering evidence is cleared and contact stability exceeds threshold <span class="arithmatex">\(\gamma\)</span> — preventing recoveries from handing the VLA a state that immediately re-fails.</p>
+<p><strong>Loop 3 — validation-gated skill update (offline).</strong> A generalization agent consolidates per-seed patches cluster-wide (OR-merged critic triggers, generalized recoveries, expanded tools) into a versioned package <span class="arithmatex">\(\mathcal{H}_{merged}\)</span>. The gate is two-sided: <strong>historical regression</strong> — 100% success on every failed seed in the originating cluster — plus <strong>held-out evaluation</strong> (positive <span class="arithmatex">\(\Delta SR\)</span> on strictly isolated seeds); if held-out exposes new failures, that seed is demoted to dev and a <em>fresh</em> held-out set is drawn before the iteration closes.</p>
+<pre><code class="language-text"># Zetta three-loop harness evolution (reconstructed from Sec. 2)
+H &lt;- {C, R, T};  freeze policy pi and orchestrator A_orch
+repeat (evolution iteration):
+  # Loop 1: action frequency, online (parallel via Z-Infra)
+  for each dev seed:
+    while not done:
+      a_t &lt;- pi(s_t, g)                      # frozen VLA/WAM
+      P_t &lt;- C(tau_0:t) = &lt;e_t, sigma_hat&gt;   # code critics, every step
+      if e_t and A_orch approves:            # LMM only on critic trigger
+        run recovery from R using tools T
+        resume pi only when Psi(s_t) holds   # re-entry contract
+    log tau = {(s_t, a_t, mu_t, phi_t)}
+  # Loop 2: rollout batch, offline
+  build I_succ; compute m* and t_EOD per failure
+  cluster failures by (t_EOD, m*, poses, tools); pick medoid seeds
+  L* &lt;- top-down diagnosis over {eval,critic,state,plan,recover,param}
+  H_patch &lt;- minimal repair at L*  (C*, R*, T*)
+  check: replay detects t_EOD; fresh rollout reaches goal milestone
+  # Loop 3: validation-gated update
+  H_merged &lt;- Consolidate({H_patch})  # SKILL.md + tools/ + plans/ + params/
+  if 100% regression on cluster AND DeltaSR &gt; 0 on held-out seeds:
+    H &lt;- H_merged (versioned)
+  else: demote failed held-out seed to dev; redraw held-out; continue
+</code></pre>
+<p><strong>Z-Infra.</strong> Evolution rate is bounded by rollout throughput, so a three-layer Ray infrastructure (control plane / env workers / rollout workers) supplies fork-from-template MuJoCo environments, a GIL-released C++ step controller, VLM/action-expert partitioning over CUDA IPC (53% latency cut for <span class="arithmatex">\(\pi_{0.5}\)</span>), and selective W8A8 quantization (1.18–1.32×, no success-rate loss).</p>
+<h2>Results</h2>
+<p>Evaluation is per-task with disciplined seed hygiene: RoboCasa evolves on 50 random dev seeds, reports on 50 disjoint test seeds; LIBERO-Pro evolves on 50 parent seeds and reports exclusively on the excluded seeds 1–20. Base policies are never fine-tuned.</p>
+<ul>
+<li><strong>RoboCasa (GR00T N1.5 frozen):</strong> 18-task macro 73.56 → <strong>93.56%</strong> (+20.00), improving all 18 tasks, largest on contact-rich ones (CloseBlenderLid 50 → 100). The four cumulative repair rounds land 78.71 / 84.85 / 90.54 / 93.56 — monotone scaling in reflection experience.</li>
+<li><strong>LIBERO-Pro (<span class="arithmatex">\(\pi_{0.5}\)</span> frozen):</strong> Goal-T 31.0 → <strong>92.5</strong>, Goal-S 38.0 → <strong>89.0</strong>; LIBERO-10 T 50.0 → 63.0, S 9.0 → 40.0; 40-pair macro 32.00 → <strong>71.13</strong>, improving 32 pairs and matching 8.</li>
+<li><strong>Zero-shot transfer:</strong> PnP-Stove's three evolved skills (pregrasp alignment, bounded regrasp, stable placement) applied unchanged lift PnP-Sink 58 → 82, PnP-Cabinet 62 → 80, PnP-Toaster 72 → 90; TurnOffStove's stack lifts three articulated tasks 64 → 80 macro; Goal-T8's stack takes Goal-S3 from 9/20 to 20/20. Critics fire on EEF alignment and contact stability, not memorized trajectories.</li>
+<li><strong>"Aha moments":</strong> early repairs plateau on symptoms, then success jumps when diagnosis isolates the decisive physical variable: Goal-T2 10 → 15 → 95% (retained-object critic before transport), Goal-S6 5 → 5 → 90% (semantic-approach recovery).</li>
+<li><strong>Infrastructure:</strong> 22.09 ep/min at concurrency 16 — 7.7× over themselves without Z-Infra, 12.8× over RPent — plateauing at 35.1 ep/min on 8 GPUs; both baselines OOM beyond 16. The abstract's 11.1× speedup is the 91% latency cut vs RPent, which pays an LLM call at every decision point.</li>
+</ul>
+<p><img alt="PnP-Stove evolution rounds and zero-shot transfer: pregrasp alignment, eggplant regrasp, and stable placement critics/recoveries, with success curves for the source and three transfer tasks" src="assets/zetta-embodied-harness/fig2.png" />
+<em>Figure 10 from the paper: rounds on PnP-Stove add pregrasp alignment (78 → 84%), bounded regrasp (→ 94%), and stable placement (→ 96%); the same cumulative stack transfers zero-shot to PnP-Sink, PnP-Cabinet, and PnP-Toaster (right: the critic's failure signatures and the recoveries).</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>living-harness</strong> — the nearest sibling: frozen actor, post-episode evolution of trigger conditions and recovery actions, hard commit gates. The regime difference is decisive: Living-Harness's repairs are retrieval-time text/graph state consulted at LLM speed; Zetta's are code executed at action frequency <em>during</em> the episode — a τ²-Bench turn waits for you, a slipping eggplant doesn't. The re-entry contract <span class="arithmatex">\(\Psi\)</span> answers a problem Living-Harness never has: handing control back mid-failure.</li>
+<li><strong>evo-harness-skills</strong> — its core finding was that self-judged feedback makes evolution worse than nothing; grounding is the safety rail. Zetta is maximally grounded — milestones, contact forces, simulator state judge every patch — and its gate is far stricter than Add/Merge/Revise/Skip curation. Both evolve only from failures; Zetta adds <em>when</em> the failure happened (<span class="arithmatex">\(t_{EOD}\)</span>) as the clustering key, which text harnesses could copy.</li>
+<li><strong>darwinx-harness-evolution</strong> — the preserve-and-extend contract (bounded regression <span class="arithmatex">\(\delta\)</span>) and Zetta's historical-regression-100% are the same instinct at different strictness; DarwinX keeps a population archive against path dependence, Zetta a single versioned lineage. DarwinX's proxy-saturation warning (in-loop 1.000 vs held-out 68.3%) is what Zetta's fresh-held-out redraw exists to catch — though at 50 seeds per task, quietly consuming held-out data is a live risk.</li>
+<li><strong>rethinking-harness-evolution</strong> — the null hypothesis: harness-evolution gains are often covert test-time scaling plus test-set adaptation. Zetta's seed hygiene and zero-shot transfer are the right kind of rebuttal, but no arm answers what an equal rollout budget spent on plain sampling buys — and a <em>code critic that retries grasps</em> is itself test-time search baked into the artifact.</li>
+<li><strong>harness-r1-trainable-harness</strong> — its lifecycle hooks (pre-action guardrail, post-feedback recovery) are the text-world isomorph of critics and recoveries around a frozen policy. Harness-R1 trains a 9B engineer with realized success-delta as RL reward; Zetta keeps its evolution agents prompted and buys reliability from the validation gate. Obvious composition: RL-train Zetta's repair agent on <span class="arithmatex">\(\Delta SR\)</span>.</li>
+<li><strong>recursive-harness-self-improvement</strong> — RHI showed harness-as-text can self-refine when the model can read its whole loop. Zetta marks that framing's boundary: when the loop runs above model frequency, the harness must be compiled artifacts the model writes but does not execute — refining a prompt spec vs shipping a runtime.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>The headline number is the friendly slice.</strong> 90.8% is the LIBERO-Pro <em>Goal</em> average; the full 40-pair macro is 71.13%, LIBERO-10-S lands at 40.0%, and two Long tasks stay at 0. The wins concentrate where a single physical bottleneck gates an otherwise-competent VLA; long-horizon composition remains largely unsolved.</li>
+<li><strong>No harness baseline in the success tables.</strong> The intro claims improvement over "embodied-agent baselines," but Tables 2–3 compare only against the pure frozen VLA; RPent appears solely in the latency evaluation, where Zetta's no-per-step-LLM design wins by construction. Success-rate comparison against reflection-style embodied agents at matched rollout budget is the missing experiment.</li>
+<li><strong>Generalization is across seeds, not tasks.</strong> Evolution runs per task on 50 dev seeds; held-out means new initial conditions of the <em>same</em> task, and the LIBERO-Pro loop stops at a modest ≥50% dev bar. The zero-shot studies are genuine cross-task evidence but cover related task families (whether transfer targets were chosen post hoc is not stated — verify in the paper).</li>
+<li><strong>Simulation privilege.</strong> Critics consume simulator-grade state — contact force vectors <span class="arithmatex">\(\phi_t\)</span>, exact poses, milestone flags — and recoveries lean on strong pre-built tools (GraspGen, CAP placement). On real robots the perception layer under every critic becomes the hard part; sim-to-real is deferred to future work. Also unpriced: the offline evolution compute (diagnosis/repair/generalization LMM calls per cluster per round) never enters any budget accounting.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Frequency separation is the port.</strong> Frozen policy + evolving harness survives real-time control by splitting the harness across three timescales — code critics at action frequency, a fixed LMM adjudicator invoked only on critic evidence, offline evolution agents. Model intelligence writes the fast path but never sits on it.</li>
+<li><strong>Diagnose at the moment, repair at the minimal layer, gate on held-out.</strong> <span class="arithmatex">\(t_{EOD}\)</span> + first-missing-milestone localize failures precisely; top-down layer diagnosis stops repairs from overfitting; nothing ships without 100% cluster regression and positive held-out <span class="arithmatex">\(\Delta SR\)</span>. RoboCasa 73.56 → 93.56, LIBERO-Pro Goal 34.5 → 90.8, VLA frozen throughout.</li>
+<li><strong>Skills transfer when critics key on physics, not trajectories</strong> — pregrasp/regrasp/placement move +20 macro points to unevolved tasks zero-shot — but the evaluation still owes a matched-budget test-time-scaling control and a harness-vs-harness comparison before "self-evolution scales physical intelligence" is fully earned.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-20 16:31 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
