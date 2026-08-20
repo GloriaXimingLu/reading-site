@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPADE: Self-Play in Adaptive Synthetic Executable Environments</title>
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>SPADE: Self-Play in Adaptive Synthetic Executable Environments</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.19197">arXiv:2608.19197</a> · <a href="https://arxiv.org/abs/2608.19197">arXiv</a> · <a href="https://x.com/rosinality/status/2090354168108048674">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p><em>Paper: arXiv 2608.19197 (v1, Aug 19 2026; flagged work-in-progress), by Bo Liu, Simon Yu, Yiding Jiang, Ao Qu, Andrew Zhao, Zichen Liu, Junsu Kim, Zijian Zhou, Seungone Kim, Tongzheng Ren, Mickel Liu, Hanfei Yu, Zhaorun Chen, Weiyan Shi, Paul Pu Liang, Luke Zettlemoyer, Yejin Choi, Natasha Jaques. Acknowledgments indicate a UW-centered collaboration. Grounded in the full arXiv HTML text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>SPADE</strong> has a single LLM play two roles under shared weights: an <strong>Environment Designer</strong> that writes complete, long-horizon training environments as executable Python with a Gym-style <code>reset()</code>/<code>step()</code> interface (state transitions, reward function, and verifier all in code), and a <strong>Reasoning Agent</strong> that learns to solve them — both trained jointly with GRPO. Environments, not just tasks: multi-turn MDPs with partial rewards, unified with single-turn reasoning under one interface.</li>
+<li>The generator's reward is <strong>hint-based regret</strong>: the Designer also emits a privileged hint, and is paid the gap between the agent's mean return <em>with</em> the hint in context and <em>without</em> it — a cheap minimax-regret estimate (PAIRED without a separate antagonist) that selects environments which are solvable but not yet solved, i.e. at the learning frontier. Two anti-collapse inputs are critical: <strong>corpus grounding</strong> (fresh pretraining documents seed each design round) and an <strong>environment memory</strong> of past designs annotated with regret and skill tags.</li>
+<li>At Qwen3-30B-A3B: <strong>+8.1 over base and +5.3 over the strongest fixed-environment baseline</strong> (RLVE) on an eight-benchmark held-out suite, with the margin <em>growing</em> with scale (Fixed-env GRPO stays ~+1.2 at every size); tool-use setting: <strong>+13.9 ACEBench-Agent, +5.7 BFCL v4 multi-turn</strong> (+10.3 at 4B). Freezing the Designer (no memory) collapses to 9.7 <em>below</em> base; a frozen GPT-5.5 designer recovers only ~35% of the gain.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The environments bottleneck is your rl category's macro-story: labs reportedly weighing $1B/year environment budgets, startups raising nine figures to hand-build them — and every hand-built or statically synthesized pool is a fixed distribution the learner eventually exhausts. SPADE is the cleanest demonstration so far that <strong>environment design itself can be a trained component of post-training</strong>: a designer whose output distribution shifts because it is rewarded by the solver's measured learning frontier — exactly the tweet's one-liner: the generator's reward is the difference of solver rewards conditioned on privileged information or not.</p>
+<p>Two results carry most of the argument. First, the frozen-designer controls: same environments-as-code machinery, no designer training, and you get either catastrophe (40.5 avg, below the untrained base) or a fraction of the gain even from a <em>stronger</em> frozen model (GPT-5.5 designer: 53.0 vs SPADE's 58.3). Adaptivity, not generation, is the active ingredient. Second, the scaling shape: fixed pools are a training signal big models fit and exhaust (+1.2 flat), while the co-evolving designer's margin grows from +5.2 (4B) to +8.1 (30B-A3B) — the opposite scaling direction from static data.</p>
+<h2>The core idea</h2>
+<p>Regret-based unsupervised environment design (PAIRED) needs an estimate of "how much better could an optimal policy do here than the current one" — classically supplied by a separate antagonist policy. SPADE's trick: let the designer attach a <strong>privileged hint</strong> <span class="arithmatex">\(h\)</span> to each environment it writes (a key insight or strategy sketch, never the literal answer), and use the <em>hint-equipped agent as the upper-bound policy</em>:</p>
+<div class="arithmatex">\[r_{D}(e)=\bar{r}_{A}(e\mid h)-\bar{r}_{A}(e)\]</div>
+<p>where <span class="arithmatex">\(\bar{r}_{A}(e\mid h)=\frac{1}{G}\sum_{i}r_{A}(y'_{i}\mid e,h)\)</span> is the Reasoning Agent's mean return over <span class="arithmatex">\(G\)</span> rollouts with the hint in context and <span class="arithmatex">\(\bar{r}_{A}(e)\)</span> the mean without it. Three regimes fall out: high regret = frontier (solvable with the hint, unsolved without — maximally teachable); low regret with high returns = mastered; low regret with low returns even hinted = intractable. A pure adversary would drive environments unsolvable; a cooperative designer would inflate agent reward without teaching; the hint gap rewards only environments that are both feasible and unlearned. An equilibrium analysis (Appendix E) shows that under idealized assumptions every pure Nash equilibrium yields hint-free optimality on every valid environment.</p>
+<p><img alt="SPADE framework: the Environment Designer conditions on corpus documents and environment memory to emit executable environments plus privileged hints; the Reasoning Agent plays with and without the hint; the return gap rewards the designer, task correctness rewards the agent, both updating shared weights" src="assets/env-generator-dynamics/fig1.png" />
+<em>Figure 4 from the paper: one policy, two roles, two reward channels, one GRPO update.</em></p>
+<h2>How it works</h2>
+<p><strong>Code-as-environment.</strong> In role <span class="arithmatex">\(D\)</span>, the model emits a Python class implementing <code>reset()</code>/<code>step()</code> — a full MDP <span class="arithmatex">\((\mathcal{S},\mathcal{A},T,R,\rho_0)\)</span> with transitions and reward encoded in <code>step()</code>. Any computable MDP is expressible, so the design space is unbounded rather than a hand-parameterized family; single-turn reasoning and multi-turn agentic interaction share one interface. Candidates pass syntax/executability validation before entering the pool (tool use adds a deterministic reset gate over seeds and an LLM reachability check per success criterion).</p>
+<p><strong>Grounding and memory.</strong> A generator conditioned only on its own outputs mode-collapses (the "invisible leash"). Each round the Designer conditions on freshly sampled pretraining documents — 10k math + 5k science docs (DCLM, MegaScience) for games, 15k code-corpus docs for tool use — supplying <em>what environments are about</em>; and on an environment memory of past designs annotated with regret and skill tags, supplying <em>how hard they should be</em>.</p>
+<p><strong>Training both roles.</strong> Standard GRPO with group-normalized advantages,</p>
+<div class="arithmatex">\[\hat{A}^{i}=\frac{r^{i}-\mathrm{mean}(\{r^{j}\}_{j=1}^{G})}{\mathrm{std}(\{r^{j}\}_{j=1}^{G})}\]</div>
+<p>normalized <em>per role</em> (agent returns standardized within each environment's rollouts; designer rewards mean-centered within each skill). Stabilizers that matter in practice: upweighting the rarer designer trajectories; delaying the designer update by <span class="arithmatex">\(k\)</span> rollouts so a difficulty anchor can score each environment's win rate over the full window (with truncated importance sampling to correct the resulting off-policyness); asymmetric clipping (<span class="arithmatex">\(\varepsilon_{\text{low}}{=}0.2\)</span>, <span class="arithmatex">\(\varepsilon_{\text{high}}{=}0.28\)</span>); and flooring raw regret at zero. The deployed designer reward is a blend: <strong>0.4 × floored regret + 0.6 × a flat-top difficulty anchor</strong> that pays environments whose agent win rate falls in <span class="arithmatex">\([0.4,0.6]\)</span> and decays linearly outside — the anchor regulates difficulty, regret picks the most teachable environments within the band.</p>
+<pre><code class="language-text"># SPADE self-play loop (Algorithm 1 of the paper, condensed)
+Require: LLM pi_theta; domain prompts {p_d}; batch B; group size G
+for n = 1..N:
+    # -- Environment Designer role --
+    for b = 1..B:
+        sample domain prompt p_d; e_b ~ pi_theta(. | p_d, role=D)
+        #   (conditioned on corpus docs + environment memory)
+        validate e_b (syntax, executability); discard invalid
+        h_b ~ pi_theta(. | e_b, role=D)          # privileged hint
+    # -- Reasoning Agent role --
+    for each valid e_b:
+        {y_i}  ~ pi_theta(. | e_b,      role=A)  # G no-hint plays
+        {y'_i} ~ pi_theta(. | e_b, h_b, role=A)  # G hinted plays
+    # -- rewards and joint update --
+    r_D(e_b) = mean_i r_A(y'_i) - mean_i r_A(y_i)   # hint-based regret
+    #          (floored at 0; blended 0.4 with 0.6 difficulty anchor)
+    A_D^b = r_D(e_b) - mean over same-skill envs     # designer advantage
+    A_A^i = standardize r_A(y_i) within environment  # agent advantage
+    GRPO update of pi_theta on {A_D} ∪ {A_A}
+</code></pre>
+<h2>Results</h2>
+<p><strong>Games setting</strong> (Designer writes cognitive-skill game environments; evaluation entirely held-out): at 30B-A3B the eight-benchmark average — AIME'25/'26, GPQA-Diamond, LiveCodeBench-v6, four Reasoning-Gym categories — goes 50.2 → <strong>58.3</strong> (+8.1 over base, +5.3 over Fixed-env RLVE, the strongest fixed-pool baseline). Gains concentrate on procedural reasoning (RG-Math 45.0 → 63.3) while competition math is preserved. <strong>Tool-use setting</strong> (simulated tools, backend state, per-instruction checks): +13.9 ACEBench-Agent, +5.7 BFCL v4 multi-turn, +3.6 τ²-bench at 30B-A3B, leading the transcribed numbers of dedicated data-synthesis systems (AgentScaler, Agent-World, AWM, EnvScaler) on the first two.</p>
+<p><strong>Ablations</strong> (games, 30B-A3B): full 58.3; w/o memory 53.2; w/o corpus 53.5; frozen designer + no memory <strong>40.5</strong> (9.7 below base); frozen GPT-5.5 designer with corpus+memory 53.0. Corpus grounding keeps the design distribution alive — Vendi diversity 0.68 vs <strong>0.04</strong> without it; the ungrounded run emits the same <code>RotatingMazeEnv</code> 41 times in a row. Against an EMA learning-potential designer reward, hint-based regret wins +8.1 vs +5.7 — though the gap between <em>any</em> trained designer and a frozen one dwarfs the gap between rewards. Emergent behavior: with the generation prompt fixed throughout, the designer stops printing the governing formula in the task prompt (25% → 5% of physics environments) and grades rewards more finely (3.7 → 5.8 levels); the agent shifts from front-loaded derivation to evidence-first interaction.</p>
+<p><img alt="Emergent curriculum: four designer-written environments from step 0 to step 384 of a 30B run, shifting toward state-gated multi-turn interaction" src="assets/env-generator-dynamics/fig2.png" />
+<em>Figure 2 from the paper: the curriculum keeps moving with the learner — the property fixed pools and frozen generators lack.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>beyond-env-scaling</strong> — the complementary claim: given a <em>pool</em>, naive environment-type scaling can hurt, and ability-aware selection over 200 environments beats using all of them. SPADE dissolves the pool premise, but AES-style ability profiling would be a natural upgrade to its coarse skill tags; both agree the operative variable is coverage-at-the-frontier, not count.</li>
+<li><strong>Echoverse (tracked, no tutorial)</strong> — evolving environments for computer-use agents; SPADE is the general-recipe version with a <em>trained</em> generator and an explicit frontier signal, where Echoverse pushes depth in one domain.</li>
+<li><strong>evolving-benchmarks</strong> — the Lean coevolution paper made the same bet (evolve the task distribution with the agent, +13 points over a fixed benchmark) with a mastery-throttled curriculum and verifier grounding; SPADE generalizes it: the "benchmark" is an unbounded code-defined MDP space and the throttle is a learned regret signal rather than a hand-set mastery rule.</li>
+<li><strong>skill-self-play</strong> — Qwen's proposer/solver/controller loop targets the same diversity–verifiability dilemma via a skill library; SPADE's answer is stronger on the verifiability side (the verifier is <em>part of each generated environment</em>, co-evolving with the designer) and grounds novelty in a corpus rather than a skill router. The shared open question: both regret and skill-routing are proxy signals — what do they Goodhart into at 10× the training budget?</li>
+<li>From the privileged-information angle: <strong>privileged-value-functions</strong>, and opd-no-free-lunch's mode 3 — privileged conditioning fails when instance-specific info must be <em>internalized</em>. SPADE dodges this elegantly: the hint is never a training target, only a measurement instrument for the gap.</li>
+</ul>
+<h2>Critical take</h2>
+<ul>
+<li><strong>Work in progress, and it shows in the controls.</strong> The frozen-designer ablations each change multiple things at once (the paper admits this), so "designer <em>training</em> is the active ingredient" rests mainly on the GPT-5.5 comparison — which differs in model, prompts, and cost. The regret-vs-EMA comparison is the one clean isolation, and there the gap is 2.4 points, not the headline 8.1.</li>
+<li><strong>The regret estimate is noisy exactly where it's needed most.</strong> At 4B and 8B the finite-sample regret dips below zero for long stretches (hints mislead weaker agents), yet those runs still gain +5.2/+5.7 — which suggests the 0.6-weight difficulty anchor, a much blunter instrument, is doing substantial work. How much of SPADE is minimax regret and how much is a win-rate band curriculum is not fully separated.</li>
+<li><strong>Hint quality is an unmodeled confounder.</strong> The designer is rewarded through its own hint's effectiveness, creating an incentive to write maximally informative hints for hard environments — but also, potentially, to write environments that are <em>hint-dependent</em> in degenerate ways (solvable only by following the hint's exact plan). The reward-hacking discussion covers environment validity, not hint gaming; I did not find a control for this (inferred from the text — verify in the appendix).</li>
+<li><strong>Benchmark transfer is the right test but a bounded one.</strong> Held-out fixed-task suites measure transfer, not open-endedness — the authors concede current evals can't measure "open-ended reasoning growth" — so the self-improvement claim outruns what eight static benchmarks can certify.</li>
+</ul>
+<h2>If you remember three things</h2>
+<ul>
+<li>The environment generator can be a <strong>trained role, not a frozen tool</strong>: reward it with the solver's hinted-minus-unhinted return gap <span class="arithmatex">\(r_D(e)=\bar r_A(e\mid h)-\bar r_A(e)\)</span> — a PAIRED-style regret estimate where the hint-equipped agent plays the antagonist — blended with a win-rate difficulty anchor, and it learns to keep writing environments at the moving frontier.</li>
+<li><strong>Adaptivity beats strength for generators</strong>: a frozen designer with no memory lands 9.7 <em>below</em> the untrained base, a frozen GPT-5.5 recovers ~35% of the gain, while the trained 30B designer delivers +8.1 held-out — and the margin over fixed pools grows with model scale (+1.2 flat for Fixed-env GRPO).</li>
+<li>Ungrounded self-play mode-collapses (Vendi 0.04, one maze task emitted 41× in a row); <strong>fresh corpus documents supply breadth, the environment memory supplies difficulty placement</strong> — two different axes, both required, echoing that all self-generation loops need an external source of novelty.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-20 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
