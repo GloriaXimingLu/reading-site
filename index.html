@@ -13,7 +13,46 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="annotate.js"></script>
 </head>
 <body>
-<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">499 papers/posts · 90 tutorials · 2 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-08-20</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">79</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">73</span></a><a href="#distillation">Distillation <span class="count">28</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">61</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">21</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">23</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">54</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">17</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">74</span></a><a href="#data">Data &amp; Datasets <span class="count">15</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">32</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">22</span></a></nav><section id="walkthroughs"><h2>🧭 Walkthroughs</h2><p class="latest-row"><a href="walkthroughs/harness-optimization.html"><strong>Paper Walkthrough: Harness Optimization</strong></a> · 19 min · 24 papers · 2026-08-17</p></section><section id="latest"><h2>🆕 Latest additions</h2><p class="latest-row">2026-08-20 · <a href="#distillation">Distillation</a> · <strong>Open-MOPD: Open Reproduction of Industrial Multi-Teacher On-Policy Distillation (Tsinghua/ByteDance)</strong> · <a href="tutorials/open-mopd.html">📖 tutorial</a></p><p class="latest-row">2026-08-20 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Evo-Harness: Distilling Execution Experience into Reusable Harness Skills (UIUC/Amazon)</strong> · <a href="tutorials/evo-harness-skills.html">📖 tutorial</a></p><p class="latest-row">2026-08-20 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Solver-Generator Dynamics for Synthetic Environment Generation</strong> · <a href="tutorials/env-generator-dynamics.html">📖 tutorial</a></p><p class="latest-row">2026-08-20 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Can AI Debate Reduce Reward Hacking in RLAIF? (DeepMind)</strong></p><p class="latest-row">2026-08-20 · <a href="#reasoning">Reasoning &amp; Test-Time Compute</a> · <strong>The Problem Is the Problem: Scalable Mathematical Discovery</strong></p><p class="latest-row">2026-08-20 · <a href="#multi-agent">Multi-Agent Systems</a> · <strong>Physics of Agents (Stanford: Ganguli/Zou)</strong></p><p class="latest-row">2026-08-20 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>Apodex TRACES: Grading the Process, Not Just the Final Answer</strong></p><p class="latest-row">2026-08-20 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Revisiting DPO&#x27;s Foundations Beyond Bradley-Terry (DeepMind, ICML26)</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="evo-harness-skills">
+<div class="wrap"><h1>📚 Reading Tracker</h1><p class="meta">519 papers/posts · 93 tutorials · 2 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-08-21</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">84</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">76</span></a><a href="#distillation">Distillation <span class="count">28</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">64</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">21</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">25</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">56</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">18</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">76</span></a><a href="#data">Data &amp; Datasets <span class="count">15</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">34</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">22</span></a></nav><section id="walkthroughs"><h2>🧭 Walkthroughs</h2><p class="latest-row"><a href="walkthroughs/harness-optimization.html"><strong>Paper Walkthrough: Harness Optimization</strong></a> · 19 min · 24 papers · 2026-08-17</p></section><section id="latest"><h2>🆕 Latest additions</h2><p class="latest-row">2026-08-21 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Harness Continual Learning: Continual Adaptation Beyond Model Parameters (Nanjing U.)</strong> · <a href="tutorials/harness-continual-learning.html">📖 tutorial</a></p><p class="latest-row">2026-08-21 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>EnvHarness: Awakening Static Worlds for Agent Learning (Google Cloud AI Research)</strong> · <a href="tutorials/envharness-envrigger.html">📖 tutorial</a></p><p class="latest-row">2026-08-21 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>On the Fragility of Self-Improving Agents: Variance, Task Order, and Underspecification (Salesforce)</strong> · <a href="tutorials/fragility-self-improving-agents.html">📖 tutorial</a></p><p class="latest-row">2026-08-21 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>What is Missing from AI Post-Training AI: Strategy Lock-In in Autonomous Post-Training Agents</strong></p><p class="latest-row">2026-08-21 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Pretraining Scale Predicts RL Post-Training Gains: A Controlled Chess-Pipeline Study</strong></p><p class="latest-row">2026-08-21 · <a href="#tools">Tools &amp; Infrastructure</a> · <strong>Hawkeye: Hardware-Aware GPU Kernel Optimization by Coding Agents with Minimal Supervision</strong></p><p class="latest-row">2026-08-21 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>Marin 535B-A23B Hero Run: Scaling-Ladder Simulation Predicts Training Trajectories Within 1%</strong></p><p class="latest-row">2026-08-21 · <a href="#memory-context">Memory &amp; Context Engineering</a> · <strong>Chroma Foundation: Self-Improving Memory Built from Agent Sessions (research preview)</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="harness-continual-learning">
+<div class="card-head"><span class="title">Harness Continual Learning: Continual Adaptation Beyond Model Parameters (Nanjing U.)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger paper on harness continual learning.
+
+(bookmark it)
+
+If you already are allowing your agents to rewrite their own prompts, skills, or memory files, this one is worth your ti…</p>
+<p class="card-meta">@omarsar0, @Xudong07452910 · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.19013">arXiv</a> · <a href="https://x.com/omarsar0/status/2090533587066249514">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/harness-continual-learning.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card" data-key="fragility-self-improving-agents">
+<div class="card-head"><span class="title">On the Fragility of Self-Improving Agents: Variance, Task Order, and Underspecification (Salesforce)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Finally a good paper testing whether memory-based self-improving agents actually improve.
+
+The re-evaluation adds two things prior work skipped, multiple runs to measure variance a…</p>
+<p class="card-meta">@dair_ai · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.18066">arXiv</a> · <a href="https://x.com/dair_ai/status/2090559561128407336">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/fragility-self-improving-agents.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card" data-key="2090466402809561334">
+<div class="card-head"><span class="title">What is Missing from AI Post-Training AI: Strategy Lock-In in Autonomous Post-Training Agents</span><span class="badge feed">feed</span></div>
+<p class="snippet">Finally a good paper testing whether agents can really post-train other agents.
+
+(bookmark it)
+
+They analyzed a large corpus of publicly released post-training trajectories. Across…</p>
+<p class="card-meta">@omarsar0, @askalphaxiv · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.19072">arXiv</a> · <a href="https://x.com/omarsar0/status/2090466402809561334">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.19072v1">alphaxiv.org</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090695401493934132">
+<div class="card-head"><span class="title">Mechanist: AI as a Scientific Instrument for Autonomous Mechanistic-Interpretability Research</span><span class="badge feed">feed</span></div>
+<p class="snippet">AIの性能を測るだけでなく、AIがなぜその答えを出したかまで実験する「科学装置」が提案された（https://t.co/0LuOXrRZCm）。
+
+浙江大学などのMechanistは、mechanistic interpretability（AI内部の部品を操作し、挙動の原因を調べる研究）を、手作業の分析から自律的な研究工程へ広げるエージェント型システムだ。…</p>
+<p class="card-meta">@itarutomy · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.12036">arXiv</a> · <a href="https://x.com/itarutomy/status/2090695401493934132">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090734859417498008">
+<div class="card-head"><span class="title">Efficient LLM Agents with REPL Harnesses: Executable Composition and Validated Reuse (Macaron MindLab)</span><span class="badge feed">feed</span></div>
+<p class="snippet">A good harness is also a good memory layer and toolbox.
+
+https://t.co/JkJFcf5SIu</p>
+<p class="card-meta">@di_zhang_fdu · added 2026-08-21 · <a href="https://x.com/di_zhang_fdu/status/2090734859417498008">X post</a> · <a href="https://macaron.im/mindlab/research/efficient-llm-agents-with-repl-harnesses-executable-composition-and-validated-reuse">macaron.im</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="evo-harness-skills">
 <div class="card-head"><span class="title">Evo-Harness: Distilling Execution Experience into Reusable Harness Skills (UIUC/Amazon)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Agent 真正的在线学习，可能从一次失败就开始了。
 
@@ -622,12 +661,33 @@ Instead…</p>
 <p class="snippet">SkillRise organizes related tasks into progressively more challenging sequences, allowing agents to extract, refine, and reuse transferable skills across tasks rather than treating…</p>
 <p class="card-meta">@gm8xx8, @Xudong07452910 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.26784">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084306270194946230">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/skillrise-curriculum-skills.html">📖 Tutorial · 9 min</a> </p>
-</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="env-generator-dynamics">
+</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="envharness-envrigger">
+<div class="card-head"><span class="title">EnvHarness: Awakening Static Worlds for Agent Learning (Google Cloud AI Research)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Impressive research from Google on building better environments for agents.
+
+Training environments for agents are hand-built and go stale. The agent improves, the environment does …</p>
+<p class="card-meta">@omarsar0 · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.19880">arXiv</a> · <a href="https://x.com/omarsar0/status/2090797828163637286">X post</a> · <a href="https://github.com/google-research/envharness">github.com</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/envharness-envrigger.html">📖 Tutorial · 10 min</a> </p>
+</div><div class="card" data-key="2090617779783336352">
+<div class="card-head"><span class="title">Pretraining Scale Predicts RL Post-Training Gains: A Controlled Chess-Pipeline Study</span><span class="badge feed">feed</span></div>
+<p class="snippet">understanding reasoning from pretraining to post-training
+
+standard LLM pipelines eval RL post-training largely in isolation from the massive pretraining phase. Instead, the author…</p>
+<p class="card-meta">@ethantsliu · added 2026-08-21 · <a href="https://x.com/ethantsliu/status/2090617779783336352">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090665700713013251">
+<div class="card-head"><span class="title">Libra: Efficient Resource Management for Agentic RL Post-Training (CUHK)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Why do agentic AI systems stall? Because a handful of long, tool-heavy trajectories hog GPUs, while training and rollout fight over resources. 
+
+Hong Kong’s CUHK team built Libra t…</p>
+<p class="card-meta">@jiqizhixin · added 2026-08-21 · <a href="https://arxiv.org/abs/2606.03077">arXiv</a> · <a href="https://x.com/jiqizhixin/status/2090665700713013251">X post</a> · <a href="https://github.com/NetX-lab/Libra">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="env-generator-dynamics">
 <div class="card-head"><span class="title">Solver-Generator Dynamics for Synthetic Environment Generation</span><span class="badge feed">feed</span></div>
 <p class="snippet">https://t.co/CqGU1XLhRJ
 
 Synthetic environment generation through solver agent and environment generator dynamics. The rewards for environment generator are calculated using the di…</p>
-<p class="card-meta">@rosinality, @Benjamin_eecs · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.19197">arXiv</a> · <a href="https://x.com/rosinality/status/2090354168108048674">X post</a></p>
+<p class="card-meta">@rosinality, @Benjamin_eecs, @natashajaques, @simon_ycl, @shi_weiyan, @zhaorunc · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.19197">arXiv</a> · <a href="https://x.com/rosinality/status/2090354168108048674">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/env-generator-dynamics.html">📖 Tutorial · 10 min</a> </p>
 </div><div class="card" data-key="2090055888111349811">
 <div class="card-head"><span class="title">Can AI Debate Reduce Reward Hacking in RLAIF? (DeepMind)</span><span class="badge feed">feed</span></div>
@@ -711,7 +771,7 @@ New paper from Google DeepMind:
 <div class="card-head"><span class="title">GLM-5.3: Scaling Post-Training on a Fixed Base — SAO Asynchronous RL, Multi-Teacher On-Policy Distillation, Verified Executable Sandboxes</span><span class="badge feed">feed</span></div>
 <p class="snippet">GLM-5.3’s Biggest Upgrade Isn’t the Base Model. It’s the Post-Training Stack.
 A technical breakdown from Zhihu contributor 欠阿贝尔两块钱 on why GLM-5.3’s gains appear to come largely fro…</p>
-<p class="card-meta">@jietang, @ZhihuFrontier · added 2026-08-19 · <a href="https://x.com/jietang/status/2089941544581403107">X post</a> · <a href="http://Z.ai">Z.ai</a></p>
+<p class="card-meta">@jietang, @ZhihuFrontier, @ZixuanLi_ · added 2026-08-19 · <a href="https://x.com/jietang/status/2089941544581403107">X post</a> · <a href="http://Z.ai">Z.ai</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2089560622186865110">
 <div class="card-head"><span class="title">Discovering High-Quality Chess Puzzles with Offline RL</span><span class="badge feed">feed</span></div>
@@ -1266,7 +1326,7 @@ A training-free framework that distills knowledge from a large teacher agent int
 <p class="snippet">💥 Our new 116-pages long paper: we extract encrypted raw reasoning from OpenAI, Anthropic, and Gemini models at scale. 
 
 This vulnerability leads to many security issues, including…</p>
-<p class="card-meta">@maksym_andr, @timotheechauvin, @askalphaxiv, @natolambert, @omarsar0, @rohanpaul_ai, @fly51fly · added 2026-08-11 · <a href="https://arxiv.org/abs/2608.09867">arXiv</a> · <a href="https://x.com/maksym_andr/status/2087159312242164035">X post</a></p>
+<p class="card-meta">@maksym_andr, @timotheechauvin, @askalphaxiv, @natolambert, @omarsar0, @rohanpaul_ai, @fly51fly, @jiqizhixin · added 2026-08-11 · <a href="https://arxiv.org/abs/2608.09867">arXiv</a> · <a href="https://x.com/maksym_andr/status/2087159312242164035">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/stealing-reasoning-traces.html">📖 Tutorial · 10 min</a> </p>
 </div><div class="card" data-key="2086586918880596406">
 <div class="card-head"><span class="title">Trace Inversion: How to Steal Reasoning Without Reasoning Traces</span><span class="badge feed">feed</span></div>
@@ -1373,12 +1433,37 @@ On-policy distillation has become a default post-training tool in many open-sour
 A new on-policy distillation paradigm that uses evolving contexts to capture task preferences in open-ended domains, without verifiable rewards https://t.co/LofGf3rTnZ</p>
 <p class="card-meta">@HuggingPapers · added 2026-08-03 · <a href="https://x.com/HuggingPapers/status/2083713047353266678">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="embedders-dilemma">
+</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="2090466566743974191">
+<div class="card-head"><span class="title">Chroma Foundation: Self-Improving Memory Built from Agent Sessions (research preview)</span><span class="badge feed">feed</span></div>
+<p class="snippet">I’ve been looking forward to today for 3 years 
+
+Today we’re announcing Foundation - Chroma’s solution to memory 
+
+Our research preview of this technology builds self-improving mem…</p>
+<p class="card-meta">@jeffreyhuber · added 2026-08-21 · <a href="https://x.com/jeffreyhuber/status/2090466566743974191">X post</a> · <a href="https://trychroma.com/foundation">trychroma.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090535851612942340">
+<div class="card-head"><span class="title">CTIFoundry: An Agent-Native Corpus Scaffold with Typed Edges and Span-Grounded Provenance (Amazon)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Very interesting new work Amazon and colleagues.
+
+(bookmark it)
+
+This connects to the emerging theme of treating the corpus as part of the harness. Planning loops, tool protocols, …</p>
+<p class="card-meta">@dair_ai · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.18613">arXiv</a> · <a href="https://x.com/dair_ai/status/2090535851612942340">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090639209493402089">
+<div class="card-head"><span class="title">Inject, Align, Recover: Staged Post-Training for Retrieval-Free Document Knowledge Internalization</span><span class="badge feed">feed</span></div>
+<p class="snippet">Inject, Align, Recover: Staged Post-Training for Retrieval-Free Document Knowledge Internalization
+
+Presents a three-stage method that writes documents into model weights, tunes it…</p>
+<p class="card-meta">@_reachsumit · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.20281">arXiv</a> · <a href="https://x.com/_reachsumit/status/2090639209493402089">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="embedders-dilemma">
 <div class="card-head"><span class="title">The Embedder&#x27;s Dilemma: LLMs Beat Embedding Models, but at What Cost?</span><span class="badge feed">feed</span></div>
 <p class="snippet">can LLMs replace embedding models? in a new work &quot;embedder&#x27;s dilemma&quot; we find LLMs now beat embedding models -- but at much higher cost. when to choose which?...
 
 📜 https://t.co/OV…</p>
-<p class="card-meta">@Muennighoff · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.12875">arXiv</a> · <a href="https://x.com/Muennighoff/status/2090423856964256248">X post</a></p>
+<p class="card-meta">@Muennighoff, @askalphaxiv · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.12875">arXiv</a> · <a href="https://x.com/Muennighoff/status/2090423856964256248">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/embedders-dilemma.html">📖 Tutorial · 11 min</a> </p>
 </div><div class="card" data-key="2089827192184471980">
 <div class="card-head"><span class="title">Task Completion Hides Compaction Cost: Retrieval-Call Inflation Under Agent Context Compression</span><span class="badge feed">feed</span></div>
@@ -1389,7 +1474,7 @@ If you built or tuned one, this one is worth your time.
 (bookmark it)
 
 Task completion is the standard way to validate compres…</p>
-<p class="card-meta">@dair_ai · added 2026-08-19 · <a href="https://arxiv.org/abs/2608.16370">arXiv</a> · <a href="https://x.com/dair_ai/status/2089827192184471980">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a></p>
+<p class="card-meta">@dair_ai, @rohanpaul_ai · added 2026-08-19 · <a href="https://arxiv.org/abs/2608.16370">arXiv</a> · <a href="https://x.com/dair_ai/status/2089827192184471980">X post</a> · <a href="https://academy.dair.ai/">academy.dair.ai</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2089950898135159107">
 <div class="card-head"><span class="title">DEPT: Document-Embedding-Preserving Tuning for Unified Query Expansion and Retrieval</span><span class="badge feed">feed</span></div>
@@ -2014,7 +2099,23 @@ A computer science paper builds a graph-based workflow serving engine that unifi
 The result: dynamic …</p>
 <p class="card-meta">@beamnxw · added 2026-08-03 · <a href="https://x.com/beamnxw/status/2083890242818302419">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="reasoning"><h2>Reasoning &amp; Test-Time Compute</h2><p class="cat-desc">Test-time scaling, tree search, CoT monitoring, recursive LMs, novelty-driven intelligence.</p><div class="card" data-key="2090073813614510538">
+</div></section><section id="reasoning"><h2>Reasoning &amp; Test-Time Compute</h2><p class="cat-desc">Test-time scaling, tree search, CoT monitoring, recursive LMs, novelty-driven intelligence.</p><div class="card" data-key="2090802358913732867">
+<div class="card-head"><span class="title">Pandora&#x27;s Box Model Routing: Efficient Allocation with Costly Value Estimation (DeepMind)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger paper from Google DeepMind.
+
+It&#x27;s on the very hot topic of model routing.
+
+Routers assume the value estimate is free. Working out which specialist handles a query best costs…</p>
+<p class="card-meta">@dair_ai · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.20316">arXiv</a> · <a href="https://x.com/dair_ai/status/2090802358913732867">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090720403417366905">
+<div class="card-head"><span class="title">Budget-Aware Tool Use Enables Effective Agent Scaling (Google, COLM 2026)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Excited to share that Budget-Aware Tool Use Enables Effective Agent Scaling has been accepted to #COLM 2026, and our full codebase is now open source!
+
+Since our initial release, i…</p>
+<p class="card-meta">@TengxiaoLiu · added 2026-08-21 · <a href="https://arxiv.org/abs/2511.17006">arXiv</a> · <a href="https://x.com/TengxiaoLiu/status/2090720403417366905">X post</a> · <a href="https://github.com/google-research/budget-aware-agent">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090073813614510538">
 <div class="card-head"><span class="title">The Problem Is the Problem: Scalable Mathematical Discovery</span><span class="badge feed">feed</span></div>
 <p class="snippet">New paper led by Zeyu Zheng (@regunivers): 
 
@@ -2191,7 +2292,19 @@ basically, you combine exploration with latent reasoning models (e.g., on sudoku
 Progressive pessimistic verification starts with whole-proof verification, then progressively subdivides proofs into smaller seg…</p>
 <p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2511.21522">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084307496613695645">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2090037539537317905">
+</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2090485210370732532">
+<div class="card-head"><span class="title">Marin 535B-A23B Hero Run: Scaling-Ladder Simulation Predicts Training Trajectories Within 1%</span><span class="badge feed">feed</span></div>
+<p class="snippet">At Marin we’ve found that scaling laws let us simulate the entire training trajectory. This became clear in our last 67B MoE run. The run hit the loss target within 1%, but perhaps…</p>
+<p class="card-meta">@classiclarryd, @timodonnell · added 2026-08-21 · <a href="https://x.com/classiclarryd/status/2090485210370732532">X post</a> · <a href="https://github.com/marin-community/marin/issues/8435">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090729405031100626">
+<div class="card-head"><span class="title">Let&#x27;s Scale Step by Step: Compute-Efficient Hyperparameter Transfer for Large-Scale MoE (10T-token scale)</span><span class="badge feed">feed</span></div>
+<p class="snippet">https://t.co/vGiGuN9q04
+
+Hyperparameter transfer attempt for 10T scale. Transfer over token horizon was done through a scaling law. https://t.co/JVemJbrVJj</p>
+<p class="card-meta">@rosinality · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.20061">arXiv</a> · <a href="https://x.com/rosinality/status/2090729405031100626">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090037539537317905">
 <div class="card-head"><span class="title">Fixing State Overwrite in Recurrent Models</span><span class="badge feed">feed</span></div>
 <p class="snippet">Recurrent Models have always promised to liberate us from the quadratic nightmare of Transformer KV Caches, but in practice, their fixed size states constantly overwrite past detai…</p>
 <p class="card-meta">@gurtej__gill_ · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.12435">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2090037539537317905">X post</a></p>
@@ -2213,7 +2326,7 @@ Introducing cross-layer connections is popular now. The problem is how to parall
 <p class="snippet">🧵New paper: Matryoshka LM Suites
 
 Instead of training all models of a suite independently, we nest them within a single architecture and train the suite in a single run =&gt; much les…</p>
-<p class="card-meta">@nthngdy · added 2026-08-19 · <a href="https://x.com/nthngdy/status/2090073045146677693">X post</a></p>
+<p class="card-meta">@nthngdy, @askalphaxiv · added 2026-08-19 · <a href="https://arxiv.org/abs/2608.09703">arXiv</a> · <a href="https://x.com/nthngdy/status/2090073045146677693">X post</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2089988698246942874">
 <div class="card-head"><span class="title">Training-Free Top-to-Bottom Activation Feedback: Why Recurrent-Depth Injection Works Without Training</span><span class="badge feed">feed</span></div>
@@ -2592,7 +2705,12 @@ The key idea is simple: attend to what each layer adds (Δh) instead of accumula
 Frac-Connections revisits residuals by partitioning hidden states instead of expanding them like Hyper-Connections, a…</p>
 <p class="card-meta">@peony__snow · added 2026-08-03 · <a href="https://arxiv.org/abs/2503.14125">arXiv</a> · <a href="https://x.com/peony__snow/status/2084272256168141223">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="world-models"><h2>World Models &amp; Embodiment</h2><p class="cat-desc">World models, video-as-world, robot policies.</p><div class="card" data-key="2090199601651617974">
+</div></section><section id="world-models"><h2>World Models &amp; Embodiment</h2><p class="cat-desc">World models, video-as-world, robot policies.</p><div class="card" data-key="2090557486348763198">
+<div class="card-head"><span class="title">Hydra-0: A Generalist World Model Representing Robot Actions as Action Flow</span><span class="badge feed">feed</span></div>
+<p class="snippet">What if robots, humans, and video models could all describe action in the same language? Introducing Hydra-0🐍: a generalist world model that represents robot actions as action flow…</p>
+<p class="card-meta">@Hongyu_Lii · added 2026-08-21 · <a href="https://x.com/Hongyu_Lii/status/2090557486348763198">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090199601651617974">
 <div class="card-head"><span class="title">Q-Learning with World Models (Stanford/PKU)</span><span class="badge feed">feed</span></div>
 <p class="snippet">[LG] Q-Learning With World Models
 P Dong, Y Jia, C Finn, D Sadigh [Stanford University &amp; Peking University] (2026)
@@ -2716,14 +2834,28 @@ So the world is what stays stable, like the scene, character, voice, and ambienc
 Most manipulation systems can only follow a si…</p>
 <p class="card-meta">@stepjamUK · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.21725">arXiv</a> · <a href="https://x.com/stepjamUK/status/2084281886348652725">X post</a> · <a href="https://lianegalanti.github.io/Pigey/">lianegalanti.github.io</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2090173381895430184">
+</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2090773411039457342">
+<div class="card-head"><span class="title">SWE-bench Science: Scientific Software Engineering Benchmark (119 tasks, 98 repos, 20 domains)</span><span class="badge feed">feed</span></div>
+<p class="snippet">SWE-bench Science
+
+A new benchmark for scientific software engineering: 119 tasks across 98 repositories and 20 domains. Even the best agent, Claude Code with Opus-5, achieves unde…</p>
+<p class="card-meta">@HuggingPapers · added 2026-08-21 · <a href="https://x.com/HuggingPapers/status/2090773411039457342">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090639110738481663">
+<div class="card-head"><span class="title">Projecting BrowseComp-Plus onto ClimbMix: Realistic Corpora for Agentic Search</span><span class="badge feed">feed</span></div>
+<p class="snippet">Projecting BrowseComp-Plus onto ClimbMix: Toward More Realistic Corpora for Agentic Search
+
+@Sahel_Sharify et al. relocate an agentic search benchmark onto a much larger web corpus…</p>
+<p class="card-meta">@_reachsumit · added 2026-08-21 · <a href="https://arxiv.org/abs/2608.20317">arXiv</a> · <a href="https://x.com/_reachsumit/status/2090639110738481663">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090173381895430184">
 <div class="card-head"><span class="title">Apodex TRACES: Grading the Process, Not Just the Final Answer</span><span class="badge feed">feed</span></div>
 <p class="snippet">This is a good example of why final-answer accuracy can hide bad agent behaviour.
 
 Most AI benchmarks measure whether a model can reach a known answer.
 
 Apodex introduced TRACES 🧭,…</p>
-<p class="card-meta">@rohanpaul_ai, @hasantoxr · added 2026-08-20 · <a href="https://x.com/rohanpaul_ai/status/2090173381895430184">X post</a></p>
+<p class="card-meta">@rohanpaul_ai, @hasantoxr, @itarutomy · added 2026-08-20 · <a href="https://arxiv.org/abs/2608.11341">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2090173381895430184">X post</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2090117595907383672">
 <div class="card-head"><span class="title">What Actually Incurs Cost in Production Agents</span><span class="badge feed">feed</span></div>
@@ -2862,7 +2994,7 @@ The Wiggle Framewor…</p>
 <p class="snippet">//  Skill Misevolution in Self-Improving LLM Agents //
 
 Self-improving agents write their successes down as reusable skills. An unsafe success becomes reusable policy long after th…</p>
-<p class="card-meta">@dair_ai · added 2026-08-15 · <a href="https://arxiv.org/abs/2608.12851">arXiv</a> · <a href="https://x.com/dair_ai/status/2088354997176320491">X post</a></p>
+<p class="card-meta">@dair_ai, @rohanpaul_ai · added 2026-08-15 · <a href="https://arxiv.org/abs/2608.12851">arXiv</a> · <a href="https://x.com/dair_ai/status/2088354997176320491">X post</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2087536612628398444">
 <div class="card-head"><span class="title">DiG-bench: In-Context Discovery of Unseen Mechanisms in Text Games</span><span class="badge feed">feed</span></div>
@@ -3387,7 +3519,22 @@ A million-scale synthetic dataset of private records—medical files, financial 
 A Grounded Code-Agent Platform for Constructing Editable LLM Data Pipelines https://t.co/9JP0L73LNn</p>
 <p class="card-meta">@_akhaliq · added 2026-08-03 · <a href="https://x.com/_akhaliq/status/2079980795071000858">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2090266638356566321">
+</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2090491662170456152">
+<div class="card-head"><span class="title">Hawkeye: Hardware-Aware GPU Kernel Optimization by Coding Agents with Minimal Supervision</span><span class="badge feed">feed</span></div>
+<p class="snippet">We’ve seen an explosion of new ML chips with unique architectural features, but software support remains the critical bottleneck
+
+Achieving peak performance increasingly relies on …</p>
+<p class="card-meta">@AryaTschand, @askalphaxiv · added 2026-08-21 · <a href="https://x.com/AryaTschand/status/2090491662170456152">X post</a> · <a href="https://www.alphaxiv.org/pdf/2608.hawkeye-hardware-aware-gpu-kernel-optimizationv1">alphaxiv.org</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090630027792830844">
+<div class="card-head"><span class="title">OpenAI Codex Harness Open-Sourced: codex-rs/core Agent Loop under Apache-2.0</span><span class="badge feed">feed</span></div>
+<p class="snippet">Codex 的核心 Agent Harness 已经公开，并采用 Apache-2.0 许可证。官方 GitHub 地址是：
+OpenAI Codex 官方仓库：https://t.co/vcS057Cnzf
+Rust 版 Harness 主体：codex-rs，https://t.co/3M4C3ILwlY
+核心 Agent Loop：codex-rs/c…</p>
+<p class="card-meta">@Tao100086 · added 2026-08-21 · <a href="https://x.com/Tao100086/status/2090630027792830844">X post</a> · <a href="https://github.com/openai/codex">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2090266638356566321">
 <div class="card-head"><span class="title">Anthropic&#x27;s discernment-nudge Skill: Trigger Logic for Agent Self-Questioning</span><span class="badge feed">feed</span></div>
 <p class="snippet">Anthropic shipped a skill called discernment-nudge that does nothing but decide when Claude should second-guess itself in front of you
 
@@ -3844,6 +3991,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-08-20 19:08 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-21 16:07 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>

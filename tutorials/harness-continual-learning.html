@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Continual Learning: Guarded Evolution of the Agent State Outside the Model</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Continual Learning: Guarded Evolution of the Agent State Outside the Model</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.19013">arXiv:2608.19013</a> · <a href="https://arxiv.org/abs/2608.19013">arXiv</a> · <a href="https://x.com/omarsar0/status/2090533587066249514">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.19013 (v1, Aug 19 2026), by Borui Kang, Jinrui Gu, Junhan Lv, Wenbin Li, Lei Wang, Yang Gao — Nanjing University State Key Lab for Novel Software Technology + University of Wollongong. Grounded in the full arXiv HTML text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>Harness Continual Learning (HCL)</strong> reframes continual learning around a <em>frozen</em> model: the state that evolves with experience is the harness — prompts, memories, skills, routing rules — and the paper names the failure mode this creates <strong>harness-level forgetting</strong>: a harness update that fixes the current task silently breaks previously reliable behavior, with the model untouched.</li>
+<li>The mechanism is <strong>guarded harness evolution</strong>: a Continual Optimizer proposes a candidate harness from post-execution feedback, and a Continual Evaluator commits it only if it passes three gates — current improvement <span class="arithmatex">\(\Delta_n \geq \delta_n\)</span>, historical retention <span class="arithmatex">\(D_n \leq B_n\)</span> (rerunning a compact <strong>anchor set</strong> of past cases), and validity checks. The tolerance <span class="arithmatex">\(B_n\)</span> is an explicit stability–plasticity dial.</li>
+<li>Results with frozen models: ALFWorld 47.1% (static harness) → <strong>61.7–63.0%</strong> (HCL, Qwen3.5-9B); a 50-task Minecraft curriculum where the static harness plateaus at task 15 and <strong>HCL completes all 50</strong>; controlled 4-task streams where the retention sweep shows unguarded updates (<span class="arithmatex">\(b=\infty\)</span>) end up <em>worst</em> — the gate isn't overhead, it's where the performance comes from.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This is the paper that gives your harness-evolution category its missing continual-learning vocabulary. Everything in the self-improving cluster — skill libraries, memory banks, self-edited prompts, routing rules — is an agent accumulating state outside the weights. The whole model-centric continual-learning literature (replay, regularization, architectural isolation) exists because naive sequential updates to <em>weights</em> destroy old capabilities. HCL's claim is that the same catastrophe recurs one level up: because prompts, memories, skills, and routing jointly shape execution, editing any one of them is a global intervention on behavior. A new skill can shadow an old one; a revised routing rule can misdirect tasks that used to work; a "better" task-interface prompt can break parsing for a format learned ten tasks ago.</p>
+<p>What makes this more than a rename is that the paper <em>measures</em> it — controlled retention sweeps show stage-wise forgetting curves for harnesses, the direct analogue of the classic CL forgetting matrix — and shows the trade-off is controllable by a single scalar (how many previously-solved anchor cases you're willing to lose per update). That turns "my agent's memory made it worse" from an anecdote (the exact anecdote the fragility re-evaluation paper documents, see below) into a tunable design parameter.</p>
+<h2>The core idea</h2>
+<p>Formally: a frozen model <span class="arithmatex">\(F_\theta\)</span> plus a deployed harness <span class="arithmatex">\(H_n\)</span> at interaction step <span class="arithmatex">\(n\)</span>, where the mutable state is four jointly-versioned components</p>
+<div class="arithmatex">\[H_{n}=\left(I_{n},M_{n},C_{n},R_{n}\right)\]</div>
+<p>— Task Interface (input parsing/normalization prompts), Experience Memory (raw episodic records + LLM-summarized abstract guidance), Capability Map (external tools + inner skills abstracted from memory), Adaptive Router (retrieval/selection/workflow rules that assemble the execution context). After each interaction <span class="arithmatex">\(\mathbf{e}_n = (\mathbf{u}_n, \mathbf{i}_n, \mathbf{z}_n, \mathbf{y}_n, \mathbf{f}_n)\)</span> (raw input, structured task, execution context, outcome, feedback), the Optimizer — the frozen model itself, prompted with an update rule — drafts a candidate:</p>
+<div class="arithmatex">\[\widetilde{H}_{n+1}=\mathcal{O}_{F_{\theta}}\left(H_{n},\mathbf{e}_{n}\right)\]</div>
+<p>The key move is that the candidate <strong>does not deploy by default</strong>. It must pass a hard admissibility gate combining three checks:</p>
+<div class="arithmatex">\[G_{n}^{(k)}=\mathbf{1}\left[(\Delta_{n}^{(k)}\geq\delta_{n})\land(D_{n}^{(k)}\leq B_{n})\land\left(\forall\ell,\; v_{n,\ell}(\widetilde{H}_{n+1}^{(k)})=1\right)\right]\]</div>
+<p>where <span class="arithmatex">\(\Delta_n\)</span> is the improvement on current-task validation cases, <span class="arithmatex">\(v_{n,\ell}\)</span> are validity checks (syntax, output schema, legal tool use), and the historical loss counts previously-solved anchors the candidate breaks:</p>
+<div class="arithmatex">\[D_{n}=\sum_{a\in A_{n}}\mathbf{1}\left[q(H_{n},a)=1\land q(\widetilde{H}_{n+1},a)=0\right]\]</div>
+<p>with <span class="arithmatex">\(q(H,a)\in\{0,1\}\)</span> the success indicator of anchor <span class="arithmatex">\(a\)</span> (a stored raw input + success criterion, rerunnable under any harness). <span class="arithmatex">\(B_n=0\)</span> is <strong>Stability-HCL</strong> (no regression tolerated); <span class="arithmatex">\(B_n=\infty\)</span> is <strong>Plasticity-HCL</strong> (commit anything that helps now). Uncommitted candidates vanish; the deployed harness only ever moves through gated commits.</p>
+<p><img alt="HCL framework: the deployed harness (Task Interface, Experience Memory, Capability Map, Adaptive Router) executes tasks with a frozen model; post-execution feedback feeds a Continual Optimizer that proposes a candidate harness, and a Continual Evaluator that commits or rejects it based on current improvement, historical retention, and validity" src="assets/harness-continual-learning/fig2.png" />
+<em>Figure 2 from the paper: execution path on top, proposal–evaluation–commitment loop underneath. The candidate harness stays isolated until it passes all three gates.</em></p>
+<h2>How it works</h2>
+<p><strong>Candidate generation is component-wise and greedy.</strong> When feedback implicates multiple components, the Optimizer walks them in a fixed order, generating up to <span class="arithmatex">\(K\)</span> alternatives per component; each alternative is scored with all other components held fixed, the best admissible one is locked in, and the walk proceeds. If nothing passes for a component, it stays unchanged. This bounds LLM calls but means the search never considers coordinated multi-component rewrites.</p>
+<p><strong>Memory feeds skills.</strong> Raw Memory keeps a bounded number of concrete interactions per task (input, trajectory, feedback); Abstract Memory is LLM-consolidated guidance distilled from it (output conventions, reliable patterns, errors to avoid); inner skills in the Capability Map are a further abstraction of Abstract Memory into invocable procedures with explicit I/O and scope. This raw → abstract → skill pipeline is the same distillation ladder as MSCE-style memory-to-skills work, but here every rung is versioned and gated.</p>
+<p><strong>Anchors are the replay buffer.</strong> At the end of each task, anchors are sampled at a predefined ratio of previously successful and failed cases (80 per earlier task in the sweep experiments). They are hidden from the Optimizer — evaluation-only — so the candidate can't be prompt-engineered to the retention test. Deployed and candidate harnesses are compared under identical model, decoding, tool, environment, and seed conditions.</p>
+<pre><code class="language-text"># Guarded harness evolution (condensed from §3.3)
+deploy H_0; anchors A = {}
+for each task interaction n:
+    i_n = I_n(u_n); z_n = R_n(i_n, M_n, C_n)      # parse, route
+    y_n = execute(F_theta, z_n); observe feedback f_n
+    if feedback available:
+        for component in [I, M, C, R] flagged by f_n:   # fixed order
+            for k in 1..K:                               # alternatives
+                H~ = swap candidate component k into current candidate
+                Δ  = P(H~, V_n) - P(H_n, V_n)            # current gain
+                D  = #{a in A : solved by H_n, broken by H~}
+                if Δ &gt;= δ_n and D &lt;= B_n and all validity checks pass:
+                    keep best admissible alternative
+        if any admissible full candidate: commit H_{n+1} = best; else H_{n+1} = H_n
+    A += sampled anchors (input + success criterion) from task n
+</code></pre>
+<h2>Results</h2>
+<p>All gains come from harness updates only — the model is frozen in every run.</p>
+<ul>
+<li><strong>ALFWorld</strong> (Qwen3.5-9B, 6-category stream, 134 eval episodes): Static Harness 47.12 avg; RAG 55.56; MemP 53.15; MemRL 51.51. <strong>Stability-HCL 61.74</strong> (forgetting 2.64, best on 4/6 categories), <strong>Plasticity-HCL 62.98</strong> (forgetting 10.94, solves 100% of Two-object). Same framework, one scalar apart — a clean demonstration that <span class="arithmatex">\(B_n\)</span> is a real dial.</li>
+<li><strong>Minecraft</strong> (Qwen3.6-27B, 50-task curriculum): static harness tracks HCL for 15 tasks then plateaus; <strong>HCL completes all 50</strong>, using 83 environment actions vs 88 (MemRL) and 91 (MemP) — accumulated skills reduce redundant re-diagnosis on later multi-step tasks.</li>
+</ul>
+<p><img alt="Curriculum progression and execution efficiency on Minecraft: HCL completes all 50 tasks while the static harness plateaus at 15; cumulative environment actions are lower for HCL than MemRL and MemP" src="assets/harness-continual-learning/fig3.png" />
+<em>Figure 3 from the paper: capability accumulation (left) and cumulative actions (right) over the 50-task Minecraft curriculum.</em></p>
+<ul>
+<li><strong>Textual reasoning</strong> (DeepSeek-V4-Flash; MuSiQue → ProofWriter → GSM8K → HotpotQA): zero-shot 45.50 → Stability-HCL 52.20 (forgetting 0.00) → Plasticity-HCL <strong>64.70</strong> (forgetting 0.07; GSM8K jumps 49.40 → 92.00). <strong>Multimodal</strong> (Qwen3.6-27B; detection → captioning → grounding → VQAv2): zero-shot 39.40, DGG 42.73, <strong>Stability-HCL 68.92</strong> (forgetting 0.22). Caveat: MuSiQue <em>drops below</em> zero-shot under both profiles (35.0 → 27.6/29.0) — the first task in the stream pays for everyone else's harness.</li>
+<li><strong>The retention sweep is the most instructive table.</strong> Fixing <span class="arithmatex">\(B_n \equiv b\)</span>: final avg 61.25 (<span class="arithmatex">\(b{=}0\)</span>), <strong>63.46 (<span class="arithmatex">\(b{=}1\)</span>)</strong>, 62.04 (<span class="arithmatex">\(b{=}3\)</span>), 60.13 (<span class="arithmatex">\(b{=}\infty\)</span>) with forgetting rising monotonically 0.39 → 3.45. Unguarded evolution is <em>worst overall</em> — commit-anything doesn't just forget more, it ends lower. And note the tension with Table 3, where Plasticity-HCL won by 12.5 points under a different data allocation: which side of the dial wins is configuration-dependent, but <em>some</em> gate always beats none.</li>
+<li>Ablations (Qwen3.5-4B): each of the four components contributes; the gate thresholds used throughout are <span class="arithmatex">\(\delta_n\)</span> = at least two additional correct validation cases and ≥90% output-format compliance.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>rethinking-harness-evolution / darwinx-harness-evolution / harnesscompass-guided-evolution</strong> — the evolution-side literature this plugs into: those works optimize the harness forward; HCL adds the missing backward constraint (don't break what worked) and the metric to detect when you did.</li>
+<li><strong>fragility-self-improving-agents</strong> (tutorial, same week) — the Salesforce re-evaluation supplies the empirical indictment HCL needs: memory-based self-improvement amplifies run variance and degrades under shuffled task order, with contagious bad memories. HCL's anchor gate is precisely the mechanism that would catch a Haversine-style contagious memory before commit — an obvious experiment neither paper runs.</li>
+<li><strong>SkillMisevo-Gym (tracked, no tutorial)</strong> — skill misevolution as a <em>safety</em> failure: unsafe experience distilled into persistent skills. HCL's validity + retention gates are the benign-case version of that paper's SAFEEVOLVE check-repair-retire loop; anchors with safety criteria would unify them.</li>
+<li><strong>msce-memory-to-skills / oeo-self-evolving-skills</strong> — the raw-memory → abstract-memory → inner-skill ladder in HCL's Capability Map is the same consolidation pipeline, now with versioning and gated commits instead of append-only growth.</li>
+<li><strong>macaron-v1-continual-learning</strong> — the productized claim that continual learning lives in the harness layer; HCL is the academic formalization with a forgetting metric attached.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The gate is the contribution, and the gate is expensive: every candidate costs reruns on validation cases <em>plus</em> the anchor set under controlled conditions, and the anchor set grows with the stream (80 per earlier task in the sweep). The paper doesn't report the update-time compute multiplier, which is the number a practitioner needs. Retention is also only measured <em>on the anchors</em> — behavior outside the anchor distribution can still silently regress; <span class="arithmatex">\(D_n\)</span> is a lower bound on harness-level forgetting, not the thing itself. The greedy fixed-order, one-component-at-a-time candidate search can't express coordinated rewrites (e.g., a new skill plus the routing change that invokes it), which is arguably where the interesting harness updates live. Baselines (MemP, MemRL) are reimplemented inside the authors' own framework — fair for controlled comparison, but it means no evolved-harness system from the wild was stress-tested. And the Table 3 vs Table 5 disagreement about whether plasticity or an intermediate tolerance wins suggests the gate's own evaluation signal is noisy — exactly the failure mode the fragility paper warns about, one level up. Still: as a formulation paper, it does what formulation papers should — names the phenomenon, gives it a metric, and shows a scalar that trades it off.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Harness-level forgetting is real and measurable</strong>: updating prompts/memory/skills/routing around a frozen model can break previously reliable behavior; HCL defines the metric (<span class="arithmatex">\(D_n\)</span> on rerunnable anchors) and the controlled-stream protocol to expose it.</li>
+<li><strong>Guarded evolution = propose, evaluate, commit</strong>: candidates must clear current-improvement, historical-retention (<span class="arithmatex">\(D_n \leq B_n\)</span>), and validity gates before deployment; the tolerance <span class="arithmatex">\(B_n\)</span> is an explicit stability–plasticity dial (<span class="arithmatex">\(b{=}0\)</span> → zero forgetting, <span class="arithmatex">\(b{=}\infty\)</span> → most plastic).</li>
+<li><strong>No gate is the worst gate</strong>: in the controlled sweep, commit-anything (<span class="arithmatex">\(b{=}\infty\)</span>) finished below every guarded setting (60.13 vs 63.46 at <span class="arithmatex">\(b{=}1\)</span>) — for self-evolving harnesses, the evaluator is not overhead, it's load-bearing.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-21 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

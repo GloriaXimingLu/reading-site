@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EnvHarness: A Harness for the Environment — Reshaping Static Worlds Around the Agent&#x27;s Weaknesses</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>EnvHarness: A Harness for the Environment — Reshaping Static Worlds Around the Agent&#x27;s Weaknesses</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.19880">arXiv:2608.19880</a> · <a href="https://arxiv.org/abs/2608.19880">arXiv</a> · <a href="https://x.com/omarsar0/status/2090797828163637286">X post</a> · <a href="https://github.com/google-research/envharness">github.com</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p><em>Paper: arXiv 2608.19880 (v1, Aug 20 2026), by Chengsong Huang (WashU, interned at Google), Zifeng Wang, Rujun Han, Jun Yan, et al., Tomas Pfister, Chen-Yu Lee — Google Cloud AI Research. Code: github.com/google-research/envharness. Grounded in the full paper PDF text; figures extracted from the PDF.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>EnvHarness</strong> applies the harness idea to the <em>other side</em> of the agent–environment loop: a programmable layer of plug-in components that wraps a frozen, hand-built environment and reshapes its behavior purely at the <code>reset()</code>/<code>step()</code>/<code>obs()</code> interface — Agent = Model + Harness, and now Customized Env = Static Env + EnvHarness. Because nothing inside the environment changes, every reshaped variant <strong>inherits the original human-built verifier</strong>, dodging the correctness tax that plagues LLM-generated environments.</li>
+<li>Three component types: <strong>Stage</strong> (rewrites the initial state by applying an action sequence after <code>reset()</code> — hide the mug in a drawer, or pre-complete subgoals), <strong>Contract</strong> (rewrites action/observation spaces and transition rules — block shortcut actions, truncate observations, enforce preconditions), <strong>Chain</strong> (composes two environments into one extended episode). <strong>EnvRigger</strong> automates customization: Observe rollouts → Diagnose the policy's flaws → Write candidate components → Validate on fresh rollouts, accepting only components that are challenging-but-solvable.</li>
+<li>Skill-based learning: up to <strong>+9.0 points over original environments</strong> (ALFWorld OOD) across five benchmarks in four domains, with <strong>9.8% fewer steps</strong> on SWE-bench Verified — while purpose-built generators (SWE-smith, GenEnv, VeriEnv) are beaten in their own domains. Under GRPO the reshaped environments also train stronger policies, and in the scaling study EnvHarness climbs 47.7 → 54.8 at 300 environments while real and generated environments flatten.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The environments story in your rl category has so far been about <em>generation</em> — SPADE trains a designer to write executable environments from scratch; the whole synthetic-env wave over-generates and filters because LLM-written verifiers can't be trusted. EnvHarness stakes out the complementary position: the world already has a stock of expensive, human-verified environments (ALFWorld, WebArena, SWE-bench task instances), and the binding constraint isn't their number but their <em>staticness</em> — they present the same episode to every policy regardless of what that policy is bad at, and have nothing left to teach once solved. Reshaping-at-the-interface gets you targeted, policy-conditioned training signal while keeping the one thing generation can't reliably produce: a trusted reward.</p>
+<p>The scaling figure is the strategic claim. Under an identical environment budget on SWE-bench Verified, skills from original environments and from SWE-smith-generated ones flatten out (52.1 / 50.4 at 300 envs), while EnvHarness keeps climbing (54.8) — because each new batch is synthesized <em>against the policy equipped with previously accumulated skills</em>. That is environment–policy co-evolution with a frozen verifier, the same "targeting the learning frontier" logic as SPADE's regret signal, implemented as wrappers instead of world-models-from-scratch. If sandbox scaling is the new post-training axis (the GLM-5.3 thesis), this is an argument that the cheap direction is up the harness, not out into generated worlds.</p>
+<p><img alt="Analogy between agent harness and EnvHarness: an agent harness adds skills, memory, and tools around a frozen LLM; EnvHarness adds Stage, Contract, and Chain components around a frozen environment, mediating the same observation/action loop" src="assets/envharness-envrigger/fig1.jpg" />
+<em>Figure 2 from the paper: the same plug-in principle on both sides of the interaction loop — capabilities for the frozen model, customization for the frozen environment.</em></p>
+<h2>The core idea</h2>
+<p>Model the environment as <span class="arithmatex">\(E=(\mathcal{S},\mathcal{A},\mathcal{O},T,R,s_{0})\)</span>. An EnvHarness component is an environment-agnostic transformation applied strictly at the interface:</p>
+<div class="arithmatex">\[E^{\prime}=w(E),\qquad E^{\prime}=(\mathcal{S}^{\prime},\mathcal{A}^{\prime},\mathcal{O}^{\prime},T^{\prime},R^{\prime},s_{0}^{\prime})\]</div>
+<p>The three instantiations, on the running ALFWorld task "put a clean mug on the desk":</p>
+<ul>
+<li><strong>Stage</strong> <span class="arithmatex">\(w_{\text{stage},\delta}\)</span>, parameterized by an action sequence <span class="arithmatex">\(\delta=(a_{1},\dots,a_{k})\)</span> replayed on the fresh initial state:</li>
+</ul>
+<div class="arithmatex">\[s_{0}^{\prime}=T(\cdots T(T(s_{0},a_{1}),a_{2})\cdots,a_{k})\]</div>
+<p>e.g. <code>take mug 1, open drawer 1, put mug 1 in drawer 1, close drawer 1</code> — the mug is now hidden, forcing search skills; or conversely pre-clean the mug to shorten the horizon for a struggling policy.
+- <strong>Contract</strong> <span class="arithmatex">\(w_{\text{contract},r}\)</span>, a triplet <span class="arithmatex">\(r=(f_{A},f_{T},f_{O})\)</span> rewriting exposed spaces and transitions: <span class="arithmatex">\((\mathcal{A}^{\prime},\mathcal{O}^{\prime},T^{\prime})=(f_{A}(\mathcal{A}),f_{O}(\mathcal{O}),f_{T}(T))\)</span> — truncate the room description to two sentences (partial observability), block <code>clean mug</code> unless the mug is held (precondition), remove teleport-style navigation (force stepwise search).
+- <strong>Chain</strong> <span class="arithmatex">\(w_{\text{chain},\ell}\)</span>, <span class="arithmatex">\(\ell=(E_{\text{ext}},g)\)</span>: compose a second environment under one interface with union spaces and a composite reward — append "heat a potato and put it on the countertop," success only when <em>both</em> verifiers pass, training goal persistence past the natural stopping point.</p>
+<p>Components compose (non-commutatively): <span class="arithmatex">\(E^{\prime}=w_{\text{chain},\ell}\,w_{\text{contract},r}\,w_{\text{stage},\delta}(E)\)</span>. Since every intervention is external, the ground-truth evaluation logic is preserved — the original verifier still scores the episode.</p>
+<h2>How it works</h2>
+<p>Customization must be conditioned on the policy. The task-policy-conditioned map</p>
+<div class="arithmatex">\[E^{\prime}=\mathcal{H}(E,t;\pi)=(w_{k}\circ w_{k-1}\circ\cdots\circ w_{1})(E)\]</div>
+<p>is realized by <strong>EnvRigger</strong>, which treats <span class="arithmatex">\(\pi\)</span> strictly as a black box:</p>
+<p><img alt="EnvRigger loop: the execution loop runs the policy against the frozen environment wrapped in accepted EnvHarness components; trajectories feed Observe, Diagnose, Write, and Validate stages, where Write emits candidate components as code and Validate accepts, rejects, or refines them based on fresh rollouts" src="assets/envharness-envrigger/fig2.jpg" />
+<em>Figure 4 from the paper: Observe → Diagnose → Write → Validate, with a write-and-validate inner loop. The example Contract blocks <code>take mug</code> while the drawer is closed, returning "Open the container first!" — turning a silent no-op dead-loop into a learnable signal.</em></p>
+<pre><code class="language-text"># EnvRigger (condensed from §3.2)
+for each training task t:
+    # Observe: run policy π in current (wrapped) env, collect rollouts
+    trajs = rollout(π, E_wrapped, t)          # successes bound the flaw, failures expose it
+    # Diagnose: root-cause analysis as text
+    diag = analyze(trajs)                     # dead loops, unparsed long obs, misread constraints
+    #   struggling policy -&gt; scaffold/simplify; perfect policy -&gt; make env harder
+    # Write &amp; Validate loop:
+    repeat until accepted or budget exhausted:
+        cand = write_components(diag)         # one or more Stage/Contract (code)
+        E' = wrap(E_current, cand)
+        fresh = rollout(π, E', t)
+        decide(fresh):  accept  -&gt; add cand to EnvHarness
+                        reject  -&gt; unsolvable or non-challenging
+                        refine  -&gt; feed trajectories + scaling feedback back to Write
+# skills are then extracted from trajectories in customized envs (ReasoningBank-style)
+</code></pre>
+<p>Two design choices matter for interpreting the results. First, <strong>EnvRigger and the policy share the same backbone</strong> (Gemini-3.1-Flash-Lite on ALFWorld/WebArena, Gemini-3.5-Flash elsewhere), so gains cannot come from distilling a stronger external model. Second, downstream learning is <strong>skill extraction following ReasoningBank</strong> from trajectories collected in the customized environments, evaluated on strictly disjoint held-out instances; Chain is excluded from the automated loop (EnvRigger can't observe joined environments' internal states) and analyzed separately.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Skill-based learning, five benchmarks</strong> (means over 3 runs): ALFWorld avg 62.4 → <strong>68.3</strong> (+5.9; OOD 61.4 → 70.4, <strong>+9.0</strong>); WebArena avg 38.5 → <strong>41.6</strong> (+3.1); SWE-bench Verified 49.88 → <strong>52.58</strong> SR with steps 55.01 → <strong>49.61</strong> (skills from <em>unmodified</em> envs made trajectories longer); OfficeQA 54.40 → 56.20 EM; SpreadsheetBench 45.88 → 49.15 pass@1 — where skills from static environments fall <em>below</em> the no-skill baseline (45.88 vs 46.44). Static worlds only let the policy practice what it already does; badly chosen practice actively hurts.</li>
+<li><strong>Beats the domain specialists on their home turf</strong>: +5.7 avg over GenEnv on ALFWorld (+8.5 OOD), ahead of VeriEnv on WebArena, +2.46 SR over SWE-smith on SWE-bench with 5.11 fewer steps — from one domain-agnostic interface, including office automation where no generation baseline exists at all.</li>
+<li><strong>RL compatibility</strong> (GRPO, Qwen3-8B-base): training on reshaped environments beats original-environment training on 3/4 metrics — ALFWorld in-dist 81.4 → <strong>87.9</strong>, WebShop score 75.6 → <strong>79.2</strong>, SR 66.0 → 67.4 (ALFWorld OOD dips 89.6 → 88.8). The reshaped environments are an optimization signal, not just skill-mining substrate.</li>
+<li><strong>Environment scaling</strong> (SWE-bench Verified, fixed budget, skill bank rebuilt every 50 envs): EnvHarness 47.67 → <strong>54.79</strong> and still rising at 300; original envs 52.13, SWE-smith 50.37, both flattening. The stated mechanism: baseline batches are drawn independently of the learner, EnvHarness batches target the policy <em>with its accumulated skills</em> — co-evolution.</li>
+<li><strong>Cross-model</strong>: on four backbones spanning 30.7 → 67.2 no-skill SR (Gemini 3.1 Flash-Lite, Qwen3.6-27B, Gemini 3.5 Flash, Claude Sonnet 4.6), EnvHarness skills beat original-env skills by 2.7–3.7 points everywhere — the loop neither breaks on the weakest policy nor saturates on the strongest; capability changes the <em>content</em> of diagnoses, not the applicability of the loop.</li>
+<li><strong>Chain</strong>: alone, SR 49.63 (≈ baseline) but average steps 53.58 → <strong>41.96</strong>; combined with Stage/Contract skills, best of both — <strong>54.30 SR / 43.12 steps</strong>. Training under "success = both halves" buys efficiency and goal persistence rather than raw success rate.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>env-generator-dynamics (SPADE)</strong> — the same week's opposite bet: SPADE <em>generates</em> environments-as-code with a trained designer and pays for it with verifier trust issues; EnvHarness <em>reshapes</em> trusted environments and pays with dependence on an existing environment stock. Both condition on the learner's frontier (regret signal vs. diagnose-and-validate loop); the obvious synthesis is a SPADE-style trained rigger, since EnvRigger is currently pure prompting with no learning signal of its own.</li>
+<li><strong>beyond-env-scaling</strong> — ability-aware selection over a fixed pool beats using everything; EnvHarness makes the stronger claim that you can <em>manufacture</em> the frontier from few base environments rather than select toward it. The shared conclusion across all three: coverage-at-the-frontier, not environment count, is the operative variable.</li>
+<li><strong>fragility-self-improving-agents</strong> (tutorial, same week) — the awkward neighbor: EnvHarness's SL gains flow through ReasoningBank-style skill extraction, which the Salesforce re-evaluation shows is high-variance and order-sensitive on WebArena. EnvHarness reports 3-run means with stds (WebArena stds up to 3.1 against a +3.1 avg gain), so the web numbers specifically deserve the fragility paper's stress tests — shuffled orders, more runs.</li>
+<li><strong>GLM-5.3 sandbox scaling (tracked item)</strong> — the industrial version of the thesis: executable-environment quantity and diversity as the new post-training scaling axis. EnvHarness is a concrete answer to where the marginal sandbox should come from: wrap, don't build.</li>
+<li><strong>evolving-benchmarks / zetta-embodied-harness</strong> — coevolving the task distribution with the agent, and harness layers for embodied stacks; EnvHarness generalizes the pattern with the cleanest separation yet between what evolves (the wrapper) and what stays trusted (the verifier).</li>
+</ul>
+<h2>Critical take</h2>
+<p>The verifier-preservation guarantee is doing less work than the framing suggests. It holds <em>mechanically</em> — the reward function is untouched — but a Stage that rearranges the initial state or a Contract that masks observations changes what the episode <em>is</em>; whether the original success criterion still measures the intended competence is validated only by EnvRigger's own LLM judgment over fresh rollouts of the <em>same policy being trained</em>. Challenging-but-solvable-for-π is a moving target, and nothing independent audits it (contrast SPADE, where at least the hint-gap is a measured quantity). Per-benchmark gains are also modest relative to reported variance outside ALFWorld — WebArena +3.1 with baseline stds up to 3.1, OfficeQA +1.8 EM with stds ~2.3 — so the robust findings are the aggregate consistency, the efficiency gains, and the scaling curve, not any single benchmark delta. Chain, arguably the most novel component, had to be excluded from the automated loop and paired randomly. And the co-evolution loop was run to 300 environments and 15 skills — far short of where Goodharting of the diagnose-write-validate signal (an LLM grading environments by its own policy's failure profile) would show up. The idea, though, is exactly right-shaped for this tracker: the harness abstraction applied symmetrically, with the environment side now programmable, versioned, and cheap.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Customized Env = Static Env + EnvHarness</strong>: Stage (initial state), Contract (actions/observations/transitions), Chain (composition) reshape a frozen environment strictly at the <code>reset()</code>/<code>step()</code> interface — so every variant keeps the original human-built verifier, the thing LLM-generated environments can't guarantee.</li>
+<li><strong>EnvRigger closes the loop black-box</strong>: Observe → Diagnose → Write → Validate, accepting only components that fresh rollouts show are challenging-but-solvable for <em>this</em> policy — up to +9.0 points over static environments, beating domain-specific generators with one domain-agnostic mechanism, at matched backbone (no teacher distillation).</li>
+<li><strong>Reshaped beats more</strong>: under identical budgets, policy-targeted reshaped environments keep improving (47.7 → 54.8 at 300 envs on SWE-bench Verified) where both real and generated environment scaling flatten — the frontier, not the count, is what scales.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-21 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
