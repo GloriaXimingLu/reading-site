@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MidTool: Teaching Tool Use in Mid-Training, Before Post-Training Ever Sees a Trajectory</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>MidTool: Teaching Tool Use in Mid-Training, Before Post-Training Ever Sees a Trajectory</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.20314">arXiv:2608.20314</a> · <a href="https://arxiv.org/abs/2608.20314">arXiv</a> · <a href="https://x.com/fly51fly/status/2090917347066540440">X post</a> · <a href="../index.html#data">Data &amp; Datasets</a></p><p><em>Paper: arXiv 2608.20314 (v1, Aug 20 2026), by Fengqing Jiang (UW, work done at Snowflake), Yite Wang, Boyi Liu, Zhaoyang Wang, Canwen Xu, Zhewei Yao, Radha Poovendran, Yuxiong He — University of Washington / Snowflake / UNC. Data &amp; models on Hugging Face (MidTool release). Grounded in the full paper PDF text; figures from the arXiv HTML.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>MidTool is an open pipeline (and MidTool-Mix, its 20.3B-token / 11.22M-sample output) for <em>mid-training</em> general tool use</strong> — the stage between pretraining and post-training — built from four source families (web 42%, code 26%, PDF 23%, native agentic trajectories 9%) and two synthesis branches targeting the two deficits of tool use: <em>grounding</em> (inferring tool boundaries, arguments, and workflow structure from messy documentation) and <em>execution</em> (multi-turn planning, clarification, recovery against real APIs and MCP skills).</li>
+<li><strong>The recipe works and compounds with RL</strong>: mid-training Qwen3-4B/8B-Base on MidTool-Mix before an identical SFT (100K TOUCAN subset) + agentic-RL recipe lifts BFCLv3 overall from 39.7→50.3 (4B, SFT) and to 54.2/55.1 with RL, with multi-turn subsets up &gt;10 points; τ²-Bench overall Pass@1 4B goes 8.5→12.2→20.0, and MCP-Universe overall score 13.2→18.7→23.8 — both mid-trained models beat the <em>official post-trained Qwen3</em> releases.</li>
+<li><strong>The ablation is the thesis</strong>: a matched-budget generic mid-training mix (Dolmino-20BT) helps BFCL a bit and <em>destroys</em> MCP-Universe (13.2→5.4); each synthesis branch alone helps somewhere and hurts elsewhere; only the full mixture improves all three benchmarks at once. And one boundary stays fixed: MCP-Universe web-search stays at 0.00 throughout — deep-search-style agency does not fall out of general tool-use supervision.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Post-training has been carrying the entire weight of tool use — SFT and RL on curated traces — while the knowledge that underlies tool use (API references, manuals, SDK docs, schemas, orchestration code) mostly never appears as clean demonstrations. The mid-training wave already claimed math/science (MegaMath, Dolmino), deep research (AgentFounder), and SWE (daVinci-Dev); MidTool is the first open pipeline+corpus staking out <em>general</em> tool use, and it's the "data" answer to a question your rl/harness threads keep asking from the training-algorithm side: where should agentic capability actually be installed? Agent Lightning and ClawGym II assume the capability substrate exists and optimize it through harnesses; MidTool argues a chunk of that substrate belongs <em>before</em> post-training, where you can afford 20B tokens of heterogeneous, weakly-structured supervision instead of 100K precious trajectories.</p>
+<p>The capability-boundary finding is the strategically interesting part. General tool-use mid-training transfers to unfamiliar MCP servers (browser automation, finance, location all improve) — so it's not memorizing tools, it's installing schema-grounding and composition priors. But web-search stays at zero at both scales, through both SFT and RL. Long-horizon evidence-gathering with iterative refinement is apparently a <em>different</em> capability that needs its own dedicated data (the AgentFounder bet), not an emergent bonus of tool fluency. That's a concrete map of where "general agentic capability" factorizes.</p>
+<p><img alt="MidTool overview: left, MidTool-Mix built from web, PDF, tool, and code sources plus agentic trajectories; middle, the training pipeline from base model through mid-training, tool-use SFT, and agentic RL; right, on MCP-Universe the mid-trained 4B and 8B models outperform official Qwen3 models" src="assets/midtool-midtraining/fig1.png" />
+<em>Figure 1 from the paper: a 20.3B-token mid-training corpus, a base→mid-train→SFT→RL pipeline, and MCP-Universe results where mid-trained models beat official post-trained Qwen3.</em></p>
+<h2>The core idea</h2>
+<p>Treat tool use like math was treated a year ago: a capability with its own mid-training distribution. The pipeline has three stages. Stage 1 collects four complementary source families — FineWeb dumps 2020–2025 prescreened for developer content; the English slice of FinePDFs (manuals, handbooks — longer procedural content, noisier extraction); two GitHub slices seeded from GH Archive events (agent/MCP-related repos + high-quality multi-language repos, with an actively maintained benchmark blacklist against leakage); and structured tool artifacts (REST APIs, MCP skills) that expose executable schemas directly. Stage 2 is source-specific filtering: StarCoder-style heuristics and doc-directory matching for code; a four-phase web/PDF pipeline (keyword/URL prescreen → fastText classifier trained on LLM-labeled seeds → document-level quality filter → MinHash LSH dedup).</p>
+<p>Stage 3 converts the refined corpus into supervision through two branches. <strong>Context-grounded trajectory augmentation</strong> (the grounding branch): Qwen3-235B-A22B-Instruct annotates each document with a quality score and an <em>affordance profile</em> (schema/API structure, CLI usage, workflow structure, tool topology); a rule-based planner converts affordances into a bounded budget of QA types — tool selection, schema-grounded parameter extraction, format-constrained calls, workflow recognition, parallel use — plus at most one multi-turn chain per document. <strong>Native agentic trajectory synthesis</strong> (the execution branch): group real endpoints/skills into a tool inventory, have GPT-5 score feasibility over trajectory families (single-call, multi/parallel, information-missing), synthesize personas and candidate plans, then let a <em>deterministic quality-adaptive budget controller</em> — conditioned on source quality, tool count, argument structure — allocate generation, biased toward multi-turn. Generated trajectories (GPT-5/5.1/5.2) are strictly validated for turn ordering, schema grounding, required arguments, and tool-response consistency, with retry-on-feedback before discard; AWM synthetic-environment rollouts and filtered Nemotron Agentic traces are mixed in.</p>
+<p>The mid-training objective itself is standard next-token prediction over the mixture (reconstructed — the paper specifies the mixture, not the loss):</p>
+<div class="arithmatex">\[\mathcal{L}_{\text{mid}}(\theta) = -\,\mathbb{E}_{x \sim \text{MidTool-Mix}} \sum_{t} \log p_\theta(x_t \mid x_{&lt;t}),\]</div>
+<p>with trajectories normalized into a plain chat template without control tokens, and the mixture ratio (web : code : PDF : native ≈ 42 : 26 : 23 : 9) the operative design variable.</p>
+<h2>How it works</h2>
+<pre><code class="language-text">Stage 1 — Collect:
+  web   ← FineWeb dumps 2020–25, keyword/URL prescreen        # API refs, docs, tutorials, CLI
+  pdf   ← FinePDFs (English)                                   # manuals, handbooks
+  code  ← GH Archive seeds → agent/MCP repos + quality repos   # benchmark blacklist applied
+  tools ← real REST APIs + MCP skills                          # executable schemas
+
+Stage 2 — Preprocess (per source):
+  fastText quality classifier (LLM-labeled seeds) → doc-level filter → MinHash LSH dedup
+  code: StarCoder-style content filters; keep docs/, examples/, tutorials/, cookbook/
+
+Stage 3 — Synthesize (two branches):
+  A) grounding (web/pdf/code):
+     annotate doc → (quality, affordance profile)              # Qwen3-235B annotator
+     rule-based planner → bounded QA budget + ≤1 multi-turn chain per doc
+  B) execution (tools):
+     inventory → GPT-5 feasibility profile per source
+     personas + candidate plans → deterministic budget controller (prefers multi-turn)
+     generate (GPT-5/5.1/5.2) → validate: turn order, schema grounding,
+        required args, tool-response consistency; retry w/ QC feedback, else discard
+  mix ← sources + branch-A QAs/chains + branch-B trajectories + AWM rollouts + Nemotron (filtered)
+
+Train: Qwen3-{4B,8B}-Base → mid-train on 20.3B-token mix → SFT (100K TOUCAN) → agentic RL (526 AWM envs)
+</code></pre>
+<h2>Results</h2>
+<p>All comparisons hold the downstream recipe fixed and vary only whether mid-training happens (references: official post-trained Qwen3-4B/8B, thinking disabled).</p>
+<ul>
+<li><strong>BFCLv3</strong>: 4B overall 39.73 (SFT) / 39.51 (SFT+RL) → <strong>50.25 / 54.18</strong> with MidTool-Mix; multi-turn average 15.50 → 26.63 (+11.1) → 27.63. 8B overall 47.62/45.79 → <strong>51.12 / 55.12</strong>, multi-turn 25.25 → 32.25 → 37.63. Official Qwen3-4B/8B sit at 24.27/26.45.</li>
+<li><strong>τ²-Bench</strong>: 4B overall Pass@1 8.54 → 12.23 (SFT) → <strong>19.96</strong> (RL), Pass@4 20.50 → 28.06 → 38.49; 8B Pass@1 10.43 → 14.75 → <strong>21.31</strong>. Gains concentrate in airline/retail; telecom stays hard for everyone (4B RL: 6.36).</li>
+<li><strong>MCP-Universe</strong>: 4B overall score 13.20 → 18.66 → <strong>23.80</strong> (pass rate 1.68% → 5.03% → 10.06%); 8B 15.18 → 17.82 → <strong>25.16</strong>. Biggest jumps in financial analysis (4B: 5.00 → 38.33 with RL) and location; <strong>web search: 0.00 for every variant at both scales.</strong></li>
+<li><strong>Ablation (4B, SFT fixed, only mid-training corpus varies)</strong>: no mid-training 39.73 BFCL overall / 13.20 MCP-U score; Dolmino-20BT 43.10 / <strong>5.41</strong>; processed sources without trajectories 42.30 / 12.20; +native-trajectories-only 47.59 / 6.80; +context-grounded-only 44.66 / 8.46; full MidTool-Mix <strong>50.25 / 18.66</strong> and the only row that also lifts τ² (12.23/28.06). Each branch alone overfits its own strength; the mixture is the product.</li>
+<li>Appendix-level evidence: mid-training also yields lower SFT loss curves and faster early-stage RL reward growth, i.e. it's a better <em>substrate</em> for post-training, not just a head start on the metric.</li>
+</ul>
+<p><img alt="MidTool pipeline: Stage 1 collects web data (8 FineWeb dumps 2020–2025), PDF data (English FinePDFs), code data (GH Archive queries), and tool data (real APIs and MCP skills); Stage 2 applies fastText classifiers, LLM annotation, quality scoring, filtering, and deduplication; Stage 3 synthesizes trajectories via context-grounded augmentation from document context and native agentic trajectory synthesis with persona and plan generation" src="assets/midtool-midtraining/fig2.png" />
+<em>Figure 2 from the paper: the three-stage pipeline — collection, source-specific preprocessing, and the two synthesis branches that turn documents and schemas into agentic supervision.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Midtraining deep-dive (tracked: 2086849991721546189)</strong> and <strong>OctoLong (2085297063319797871)</strong> — the general mid-training playbook and its long-context-code instance; MidTool is the tool-use instance, and its Table 1 (FineWeb → Dolmino → MegaMath → AgentFounder → daVinci-Dev → MidTool) is the cleanest one-slide map of the "every capability gets a mid-training corpus" trend.</li>
+<li><strong>agent-lightning-v1 / clawgym-ii (tracked) / training-agents-in-harnesses</strong> — the RL-through-harness thread optimizes behavior <em>in situ</em>; MidTool argues the atomic capabilities being optimized (schema grounding, argument extraction, recovery) should be installed pre-SFT. These are complementary layers of the same stack, and MidTool's "RL compounds the gains" rows are evidence the layers multiply.</li>
+<li><strong>Bitter Lesson of Tool Calling (tracked: 2086846794840019178)</strong> — programmatic vs JSON tool-call formats; MidTool's corpus is format-heterogeneous by construction (CLI docs, code, schemas), which may be part of why transfer to unseen MCP servers works.</li>
+<li><strong>When Do Agents Need MCP? (tracked, this week)</strong> — the CLI-vs-MCP cost study and MidTool's web-search zero both point at the same decomposition: tool <em>invocation</em> is nearly solved, tool-<em>strategy</em> (search, long-horizon control flow) is the open frontier.</li>
+<li><strong>liquid-harness-native-post-training</strong> — Liquid's multi-stage recipe put agentic RL inside production harnesses; MidTool is the missing earliest stage of that pipeline diagram.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The honest caveats are about provenance and circularity. The "open corpus" is synthesized substantially by closed models — GPT-5/5.1/5.2 generate the native trajectories, so MidTool-Mix is partly a distillation channel from OpenAI's tool-use behavior into open Qwen bases (with the ToS and reproducibility questions that implies; the <em>pipeline</em> is open, but rerunning it requires frontier-API budget). Second, the RL environments (526 AWM synthetic envs) and the evaluation harness both come from the same AWM line of work the authors follow — τ²/MCP-U results are computed under "the eval harness developed by Wang et al. (2026)," which is also a MidTool data source; nothing looks improper, but the training-eval ecosystem is tighter-knit than the three-benchmark framing suggests. Third, leakage control is a blacklist plus an overlap audit (Appendix A.3) — necessary, but with 20.3B tokens crawled from developer-adjacent web/PDF/GitHub, BFCL-style function-call patterns are exactly the content hardest to de-duplicate semantically. Finally, some deltas are fragile: telecom Pass@1 <em>drops</em> under mid-training at 8B (5.26 → 2.19 with RL), hallucination scores dip at 4B SFT (60.46 → 56.95), and the ablation's single-branch rows show this mixture was tuned — treat the 42:26:23:9 ratio as a searched hyperparameter, not a law. None of this dents the main claim, which the Dolmino-20BT row makes cleanly: at matched budget, <em>generic</em> mid-training does not buy tool use, and <em>targeted</em> mid-training does.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Tool use is now a mid-training target</strong>: 20.3B tokens of web/PDF/code/tool data with synthesized grounding-and-execution supervision beat identical SFT+RL recipes by ~10–15 points on BFCL overall and roughly doubled τ²-Bench and MCP-Universe pass rates at 4B/8B.</li>
+<li><strong>The mixture, not either branch, is the contribution</strong> — matched-budget Dolmino <em>hurt</em> MCP-Universe, and each synthesis branch alone regressed somewhere; only sources + grounding QAs + native trajectories lifted all three benchmarks.</li>
+<li><strong>General tool fluency doesn't buy deep search</strong>: MCP-Universe web-search stayed at 0.00 through every variant — long-horizon exploratory agency needs its own dedicated data, which is the next mid-training corpus someone will build.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-22 16:12 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
