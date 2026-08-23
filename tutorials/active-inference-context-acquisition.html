@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Active Inference as Context Acquisition: When Should an Agent Ask, Retrieve, or Just Act?</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Active Inference as Context Acquisition: When Should an Agent Ask, Retrieve, or Just Act?</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.19202">arXiv:2608.19202</a> · <a href="https://arxiv.org/abs/2608.19202">arXiv</a> · <a href="https://x.com/omarsar0/status/2091199978014458081">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><p><em>Paper: "Active Inference as Context Acquisition for AI Agents", arXiv 2608.19202, by Sanchayan Dutta, Sai Niranjan Ramachandran, Suvrit Sra (affiliations not listed on the abstract page — verify in the PDF). Grounded in the arXiv abstract and HTML full text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>Agents constantly face a hidden decision: the user left out a constraint, so do you proceed on a default assumption, or spend tokens on a clarifying question, a retrieval call, a tool call, or a prompt trial? Today that choice is vibes and system-prompt folklore ("ask clarifying questions when uncertain"). This paper gives it an objective function: <strong>context acquisition as active inference over a latent task state</strong>, where an inner step updates beliefs and an outer step picks the next context action, task action, or stop action to minimize expected free energy under token cost.</li>
+<li>In deterministic settings the epistemic term collapses to <strong>expected information gain, optionally normalized by token cost</strong> — a directly implementable scoring rule: acquire context iff <span class="arithmatex">\(I(x;o\,|\,a) &gt; \lambda\,c(a)\)</span>. There is also a clean stopping theorem: stop asking when no context action reduces expected Bayes risk by more than its cost.</li>
+<li>The paper instantiates this as <strong>Optimal Question Asking (OQA)</strong> — 20-questions-style tasks with exact posteriors and a dynamic-programming oracle, 25–300 candidates, binary and multiway — and benchmarks frontier models (GPT-5, GPT-4.1, Gemini 2.5 Pro, Gemini 2.0 Flash, Claude Sonnet 4.5, others). The headline: frontier models <em>do</em> reduce uncertainty every turn, but systematically ask more questions than the oracle — so you can now measure your agent's gap to the information-theoretic optimum.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Context engineering has been the most engineering-driven, least theory-driven layer of the agent stack. We have folk heuristics (front-load constraints, ask-before-write for destructive ops), we have empirical studies of what goes wrong — wasted tokens from underspecified prompts, agents plowing ahead on wrong assumptions — but no principled account of <em>when acquiring one more piece of context is worth it</em>. That's an objective-function-shaped hole, and this paper fills it with the tidiest candidate available: expected free energy from the active-inference literature, which decomposes exactly into the two things a practitioner cares about — "will this observation move my beliefs?" (epistemic value) and "will it steer me toward outcomes I want?" (pragmatic value) — with token cost as the Lagrangian knob between them.</p>
+<p>The reason I'd flag this for the harness-design thread of this tracker: the framework is <em>model-agnostic and sits entirely in the harness</em>. The LLM supplies the belief machinery implicitly; the acquisition policy — ask/retrieve/act/stop — is a scoring rule you can implement today as a wrapper: estimate information gain of each candidate context action, divide by its token cost, compare to a threshold. That's the same shape as the tool-selection and stopping problems, and the paper's stopping criterion is the first formal answer I've seen to "when should the agent stop gathering and start doing" — the failure mode that shows up everywhere from over-eager clarification to research agents that never stop reading.</p>
+<p>And because OQA has <em>exact</em> posteriors and a DP oracle, it's a rare eval where "optimal" is computable, not vibes. Gap-to-oracle is a much better training signal than pass rate.</p>
+<p><img alt="Binary OQA with 100 candidates (Places domain): mean posterior entropy per turn for frontier models versus the DP oracle; models reduce entropy each turn but converge more slowly than the oracle" src="assets/active-inference-context-acquisition/fig1.png" />
+<em>From Figure 2 of the paper (Places panel, N=100 binary OQA): every model's entropy curve decays — they are all doing real inference — but the DP oracle's curve drops faster, i.e. models buy less information per question.</em></p>
+<h2>The core idea</h2>
+<p>Model the unknown — the user's intent, the missing constraint, the target entity — as a latent task state <span class="arithmatex">\(x \in \mathcal{X}\)</span> with belief <span class="arithmatex">\(q_t(x)\)</span> at turn <span class="arithmatex">\(t\)</span>. Actions <span class="arithmatex">\(a\)</span> produce observations <span class="arithmatex">\(o\)</span> (answers, retrieved snippets, tool outputs) through a likelihood <span class="arithmatex">\(p_\theta(o\,|\,x,a)\)</span>. The inner loop is plain Bayes:</p>
+<div class="arithmatex">\[q_t(o\,|\,a) = \int p_\theta(o\,|\,x,a)\, q_t(x)\, dx, \qquad q_t(x\,|\,o,a) = \frac{p_\theta(o\,|\,x,a)\, q_t(x)}{q_t(o\,|\,a)}\]</div>
+<p>The outer loop scores each candidate action by <strong>expected free energy</strong>:</p>
+<div class="arithmatex">\[G_t(a) = \underbrace{\mathbb{E}_{o \sim q_t(\cdot|a)}\left[-\log p^*(o)\right]}_{\text{risk: expected surprise under preferences}} \; - \; \underbrace{\mathbb{E}_{o \sim q_t(\cdot|a)}\left[\mathrm{KL}\!\left(q^*_{t+1}(\cdot\,;a,o)\,\|\,q_t(\cdot)\right)\right]}_{\text{epistemic value: expected belief movement}}\]</div>
+<p>where <span class="arithmatex">\(p^*(o)\)</span> encodes preferred observations. The agent picks the action minimizing <span class="arithmatex">\(G_t\)</span> — which can be a <em>context action</em> (ask, retrieve, call a tool), a <em>task action</em> (just answer), or <em>stop</em>.</p>
+<p>Two corollaries make this practical. In deterministic settings, the epistemic term reduces to mutual information, giving the threshold rule (Proposition 3.3):</p>
+<div class="arithmatex">\[I_{q_t}(x; o \mid a) &gt; \lambda\, c(a)\]</div>
+<p>— acquire context only if information gain beats <span class="arithmatex">\(\lambda\)</span> times its token cost <span class="arithmatex">\(c(a)\)</span>. And the stopping criterion (Theorem 3.4) compares Bayes risk before and after:</p>
+<div class="arithmatex">\[R(q_t) - \mathbb{E}_{o}\left[R\big(q_t(\cdot \mid o, a)\big)\right] &gt; \lambda\, c(a)\]</div>
+<p>— keep acquiring while some action's expected risk reduction exceeds its cost; otherwise act.</p>
+<h2>How it works</h2>
+<p>OQA makes everything exactly computable: the candidate set is finite, answers deterministically filter it, so posteriors are uniform over the surviving set <span class="arithmatex">\(C_t\)</span> and entropy is <span class="arithmatex">\(\log |C_t|\)</span>. The oracle solves the question tree by dynamic programming (reconstructed notation — verify against Eqs. 16–21):</p>
+<div class="arithmatex">\[\mathrm{Cost}(C) = \min_{q} \left(1 + \sum_{r} \frac{|C_r|}{|C|}\, \mathrm{Cost}(C_r)\right)\]</div>
+<p>where question <span class="arithmatex">\(q\)</span> partitions the surviving candidates <span class="arithmatex">\(C\)</span> into answer-groups <span class="arithmatex">\(\{C_r\}\)</span>; recursion bottoms out when <span class="arithmatex">\(|C| \le 1\)</span> or no attribute splits further.</p>
+<pre><code class="language-text"># Active-inference context-acquisition loop (condensed from §3)
+q ← prior over latent task state x        # e.g. uniform over candidates
+loop:
+    for each candidate action a in {context actions, task actions, stop}:
+        predict observation distribution q(o|a)
+        score(a) = expected_risk(a) - epistemic_value(a)      # EFE
+        # deterministic case: epistemic_value = I(x; o | a)
+        # cost-aware: require I(x; o | a) &gt; λ · c(a)
+    a* ← argmin score
+    if a* is stop or a task action:
+        act / answer using argmax q(x); break
+    else:
+        o ← execute a*                    # ask question / retrieve / call tool
+        q ← bayes_update(q, a*, o)        # exact in OQA; amortized by LLM in general
+# oracle baseline: DP over answer-partitions minimizing expected #questions
+</code></pre>
+<p>The benchmark sweeps binary OQA (yes/no questions; Places / Cars / Animals domains) and multiway OQA (k=5-ary attributes; synthetic tables) at 25, 100, 200, 300 candidates, running each frontier model under the same question menu and stopping rule as the oracle. Two applied studies extend it: <strong>clarification before generation</strong> (hidden style preferences — tone, length, format — with up to 3 clarifying questions at synthetic costs of 24/48/72 tokens), and <strong>automated prompt optimization</strong> framed as Beta-Bernoulli bandits over a 6-prompt library on ARC-Challenge under a 120k-token budget, scored by entropy reduction per 1k tokens.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Models reduce entropy but overspend questions.</strong> Across binary and multiway OQA, all tested frontier models cut posterior entropy each turn yet consistently need more questions than the DP oracle under identical rules — a <em>planning</em> gap, not a comprehension gap. The gap persists at every candidate-set size tested (25–300).</li>
+<li><strong>Cost-aware asking beats both extremes.</strong> In the clarification study, the active_weighted policy (entropy-per-cost scoring, <span class="arithmatex">\(H(q_t(v))/c\)</span>) reaches 0.375 style-compliance at ~219 tokens versus a no-clarification baseline at 0.0417 compliance for ~112 tokens — an order-of-magnitude compliance gain for roughly 2× tokens.</li>
+<li><strong>In prompt optimization, information-based acquisition (MI / EFE scoring) is most informative early</strong>, while greedy/Thompson strategies commit too soon — the "avoid committing too soon" finding, visible as slower entropy collapse over which prompt is best but better final identification.</li>
+</ul>
+<p><img alt="Efficiency frontier from the clarification-before-generation study: compliance versus token cost for different question-asking policies; cost-aware active policies dominate the no-clarification baseline" src="assets/active-inference-context-acquisition/fig2.png" />
+<em>From Figure 4 of the paper: the compliance-vs-tokens frontier. The interesting region is the knee — a couple of well-chosen clarifying questions buy most of the compliance.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>agentic-context-management</strong> — that line of work is about <em>what to keep</em> once context exists; this paper is about <em>what to acquire</em> and when to stop. Together they bracket the context lifecycle; both ultimately want the same currency (task-relevant information per token).</li>
+<li><strong>prompt-induced-waste</strong> — documented the cost side empirically: underspecified prompts make coding agents do wildly different amounts of work. OQA supplies the normative answer for the same setting — the agent should have bought cheap bits of specification before spending expensive rollout tokens.</li>
+<li><strong>docmemo-probabilistic-memory-retrieval</strong> — closest methodological neighbor in the tracker: explicit probabilistic beliefs steering retrieval. DocMemo applies it to memory lookup; here the same posterior machinery decides across <em>all</em> context channels (user, retrieval, tools).</li>
+<li><strong>ThinkingBox (tracked item, added today)</strong> — Microsoft's stateful-workflow benchmark shows agents confidently finishing with wrong backend state; a large share of those failures are acting-on-assumed-context. An EFE-style acquisition gate is the natural harness-level countermeasure, and OQA's gap-to-oracle would be a good diagnostic for which models need it most.</li>
+<li><strong>Optimal stopping across the tracker</strong> — the strategy-lock-in finding in the autonomous post-training study (agents never revisit their opening choice) is a failure of exactly the exploration/exploitation account this framework formalizes: the epistemic term of EFE is what should keep "reconsider the strategy" alive as an action.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The framing is genuinely useful; the evidence is early-stage. Three concerns. First, everything sharp about the theory — exact posteriors, mutual information reducing to entropy of a shrinking candidate set — lives in OQA's deterministic, enumerable world. Real context acquisition has open-ended <span class="arithmatex">\(\mathcal{X}\)</span>, noisy likelihoods, and beliefs that exist only implicitly in model activations; the paper's own machinery becomes "estimate <span class="arithmatex">\(I(x;o|a)\)</span> with the same LLM whose beliefs you don't trust," and the error of that amortized estimate is exactly where the method could quietly fail. Nothing in the experiments measures how well LLM-estimated information gain tracks true information gain outside toy tables. Second, active inference brings baggage: the risk term needs a preference distribution <span class="arithmatex">\(p^*(o)\)</span> that someone must specify — in practice this will be another prompt, and the theory doesn't tell you how to set <span class="arithmatex">\(\lambda\)</span>, which absorbs all the hard product tradeoffs (annoying-the-user cost is not a token cost). Third, the benchmark result "models ask more questions than the oracle" is less damning than it sounds — the DP oracle exploits exhaustive knowledge of the candidate table, and a model matching it on 300-candidate tasks would be suspicious. The right reading is a calibrated yardstick, not "LLMs are bad at asking questions." What I'd actually build from this tomorrow: the threshold rule as a cheap harness gate — score each candidate clarification/retrieval by (estimated entropy reduction)/(token cost) and act when the max falls below threshold. That's implementable in an afternoon and testable against the paper's frontier.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Context acquisition deserves an objective function: pick the context/task/stop action minimizing expected free energy — risk minus information gain — under token cost, instead of leaving ask-vs-assume to system-prompt folklore.</li>
+<li>Two implementable rules fall out: acquire iff <span class="arithmatex">\(I(x;o|a) &gt; \lambda c(a)\)</span>, and stop when no action's expected Bayes-risk reduction beats its cost.</li>
+<li>OQA gives an exactly-solvable yardstick (DP oracle, 25–300 candidates): frontier models reduce uncertainty every turn but consistently overpay in questions — the gap is planning, and it's now measurable.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-23 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

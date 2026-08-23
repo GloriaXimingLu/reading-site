@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task-CoEvolve: Stop Grading Every Harness on Every Task</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Task-CoEvolve: Stop Grading Every Harness on Every Task</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.20169">arXiv:2608.20169</a> · <a href="https://arxiv.org/abs/2608.20169">arXiv</a> · <a href="https://github.com/Agent4Science-UTokyo/Task-CoEvolve">GitHub</a> · <a href="https://x.com/AtsuMiyaiAM/status/2091033626683244806">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.20169 (v1, Aug 20 2026), by Atsuyuki Miyai, Kiyoharu Aizawa, Toshihiko Yamasaki — University of Tokyo (inferred from the authors' affiliations and the Agent4Science-UTokyo GitHub org — verify in the paper). Code: github.com/Agent4Science-UTokyo/Task-CoEvolve. Grounded in the arXiv abstract and HTML full text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>Harness optimization (Meta-Harness-style iterative rewriting of harness code) spends most of its budget not on <em>search</em> but on <em>evaluation</em>: every candidate is scored on the full validation set every iteration, including tasks that every candidate passes or every candidate fails — which tell you nothing about which candidate is better. Task-CoEvolve's estimate is that these non-discriminative tasks are the majority of the set, and their share grows as the harness improves.</li>
+<li>The fix is to <strong>co-evolve the validation set with the harness</strong>: sample a small task subset each iteration with probability proportional to a variance-weighted informativeness score (tasks where past candidates <em>disagreed</em>), then correct for the biased sampling with Hájek / anchored-difference estimators so scores from different iterations — computed on different subsets — remain comparable.</li>
+<li>Evaluating only <strong>20% of tasks matches full-set search</strong>: 49.3% vs 48.6% average accuracy on online text classification (it slightly <em>exceeds</em> full search), and 51.7% vs 52.8% on Terminal-Bench 2.1 with 5× fewer evaluations. Input-token cost drops 80% for GPT-5.6-Luna (2,888M → 579M) and 67% for Qwen3.6, with ~1.9× wall-clock speedup. Random subsampling at the same 20% budget lands 3.3 points worse on Terminal-Bench.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every harness-evolution system in this tracker — Meta-Harness, the DGM line, HarnessCompass, SBCO, AutoDesign — has the same silent cost center: the fitness function. Proposing a candidate harness is one LLM call; <em>scoring</em> it is N agent rollouts, each potentially a multi-minute, multi-thousand-token episode. That's why published harness-optimization runs use validation sets of ~100 tasks and dozens of iterations, and why nobody runs them on the full SWE-bench. The field's answer so far has been to shrink the search: fewer candidates, fewer iterations, earlier stopping. Task-CoEvolve is the first work I've tracked that attacks the orthogonal axis — fewer <em>evaluations per candidate</em> — while keeping the search itself intact.</p>
+<p>The statistical framing is the interesting part. Once you evaluate different candidates on different task subsets, naive score comparison breaks: iteration 7's candidate got the easy tasks, iteration 12's got the hard ones, and your archive's "best harness so far" is an artifact of sampling luck. The paper's contribution is importing survey-sampling machinery (inclusion-probability-weighted estimators) so that partial evaluations remain comparable across iterations. That's the same move importance sampling makes in off-policy RL, applied to the outer loop of harness evolution — and it's the piece that ad-hoc "just evaluate on a random subset" schemes are missing, which is exactly why Random-Resample underperforms by 3.3 points at the same budget.</p>
+<p>There's also a nice conceptual echo: the validation set becomes a <em>curriculum that tracks the frontier</em>. Tasks that stop discriminating (everyone solves them, or nobody does) fade out of the sampling distribution; tasks where candidates disagree get oversampled. A task that was hard last round may be easy now, so the distribution keeps moving with the harness.</p>
+<p><img alt="Overview of the Task-CoEvolve procedure: variance-weighted task selection produces a subset for each iteration, candidate harnesses are evaluated only on that subset, task statistics are updated, and full-set scores are estimated with sampling-aware estimators" src="assets/task-coevolve/fig1.png" />
+<em>Figure 2 from the paper: the co-evolution loop — select an informative subset via variance weighting, evaluate the candidate harness on it, update per-task statistics, and estimate the full-set score with sampling-aware estimators.</em></p>
+<h2>The core idea</h2>
+<p>The quantity you actually care about is a candidate harness <span class="arithmatex">\(h\)</span>'s true full-set performance over validation tasks <span class="arithmatex">\(\mathcal{T}\)</span>, <span class="arithmatex">\(|\mathcal{T}| = N\)</span>:</p>
+<div class="arithmatex">\[S(h) = \frac{1}{N}\sum_{t \in \mathcal{T}} x_t(h)\]</div>
+<p>where <span class="arithmatex">\(x_t(h) \in \{0,1\}\)</span> is the outcome of harness <span class="arithmatex">\(h\)</span> on task <span class="arithmatex">\(t\)</span>. Full-set search computes this exactly, at cost <span class="arithmatex">\(N\)</span> per candidate. Task-CoEvolve replaces it with two components.</p>
+<p><strong>1. Variance-weighted task selection.</strong> Each task gets a sampling weight built from its outcome history across previously evaluated candidates:</p>
+<div class="arithmatex">\[w_t = \max\left(\bar{p}_t(1-\bar{p}_t),\ \ell_t\right) + \frac{\lambda}{\sqrt{n_t}}\]</div>
+<p>where <span class="arithmatex">\(\bar{p}_t\)</span> is task <span class="arithmatex">\(t\)</span>'s historical mean success rate, <span class="arithmatex">\(\bar{p}_t(1-\bar{p}_t)\)</span> is the Bernoulli variance (maximal when candidates disagree, zero when the task is always-solved or never-solved), <span class="arithmatex">\(\ell_t\)</span> is a floor constant (0.125 for so-far-unsolved tasks, 0 otherwise — so hard tasks aren't permanently abandoned), and <span class="arithmatex">\(\lambda/\sqrt{n_t}\)</span> (<span class="arithmatex">\(\lambda = 0.025\)</span>) is an uncertainty bonus for tasks with few observations <span class="arithmatex">\(n_t\)</span>. Each iteration samples <span class="arithmatex">\(m = \lceil \rho N \rceil\)</span> tasks proportional to these weights.</p>
+<p><strong>2. Sampling-aware score estimation.</strong> With inclusion probabilities <span class="arithmatex">\(\pi_t = \Pr[t \in S_k]\)</span>, the Hájek estimator reweights observed outcomes:</p>
+<div class="arithmatex">\[\hat{S}(h) = \frac{\sum_{t \in S_k} x_t(h)/\pi_t}{\sum_{t \in S_k} 1/\pi_t}\]</div>
+<p>and the anchored-difference variant exploits the historical means as a control variate — estimate the <em>deviation</em> from history rather than the score itself:</p>
+<div class="arithmatex">\[\hat{S}(h) = \frac{1}{N}\sum_{t \in \mathcal{T}} \bar{p}_t + \frac{1}{N}\sum_{t \in S_k} \frac{x_t(h) - \bar{p}_t}{\pi_t}\]</div>
+<p>The anchoring term is the clever bit: since most tasks behave like their history, the residual <span class="arithmatex">\(x_t(h) - \bar{p}_t\)</span> has much lower variance than <span class="arithmatex">\(x_t(h)\)</span>, so the estimator is far tighter at small <span class="arithmatex">\(m\)</span>.</p>
+<h2>How it works</h2>
+<pre><code class="language-text"># Task-CoEvolve (condensed from §3 of the paper)
+# Inputs: task pool T (|T| = N), sampling ratio ρ, harness optimizer (Meta-Harness)
+Phase 0 — Initialization:
+    evaluate 2 baseline harnesses on the FULL set T
+    record outcomes as initial history {p̄_t, n_t}
+for iteration k = 1..K:
+    Phase 1 — Selection:
+        for each task t: w_t = max(p̄_t(1-p̄_t), ℓ_t) + λ/√n_t
+        sample S_k of size m = ⌈ρN⌉ proportional to w_t   # ρ = 0.2 typically
+    Phase 2 — Partial evaluation:
+        optimizer proposes candidate harness h_k
+        run h_k on tasks in S_k only; update p̄_t, n_t
+    Phase 3 — Estimation:
+        Ŝ(h_k) = Hájek or anchored-difference estimate     # comparable across k
+Phase 4 — Final selection:
+    return argmax_h Ŝ(h), ties broken toward earliest iteration
+</code></pre>
+<p>The base optimizer is Meta-Harness (the same iterative harness-rewriting loop this tracker covered separately), so the contribution is cleanly factored: nothing about proposal or acceptance changes, only who pays for fitness evaluation. Two testbeds:</p>
+<ul>
+<li><strong>Online text classification</strong> (LawBench, Symptom2Disease, USPTO-50k; 130 validation examples): classifier LLM is GPT-OSS-120B at temperature 0, meta-agent is Claude Opus 4.6.</li>
+<li><strong>Terminal-Bench 2.1</strong> (89 command-line tasks): agent models GPT-5.6-Luna and Qwen3.6-35B-A3B.</li>
+</ul>
+<h2>Results</h2>
+<ul>
+<li><strong>Text classification (Table 1):</strong> full search 48.6±0.8% average test accuracy; Task-CoEvolve at a 20% budget: <strong>49.3±0.8%</strong> — slightly above full search; at an extreme 7% budget it still reaches 47.6±0.9%. Naive fixed-subset and Random-Resample baselines at 20%: 47.2% and 48.2%.</li>
+<li><strong>Terminal-Bench 2.1 (Table 2):</strong> full search 52.8% average pass rate; Task-CoEvolve at 20%: <strong>51.7%</strong> — 1.1 points shy with 5× fewer evaluations. Naive: 47.2%; Random-Resample: 48.4%.</li>
+<li><strong>Cost (Table 3):</strong> input tokens 2,888M → 579M (−80%) for GPT-5.6-Luna and 741M → 246M (−67%) for Qwen3.6; wall-clock 22.2h → 11.5h and 38h → 20.5h (~1.9× both).</li>
+</ul>
+<p>The exceeding-full-search result on text classification is worth pausing on. The authors' framing (via the thread) is that non-discriminative tasks are pure noise for <em>selection</em>; my read is there may also be a mild regularization effect — noisy-but-unbiased fitness estimates make the outer loop less prone to overfitting the validation set, a known failure mode of harness evolution (inferred from the thread and general principle — verify in the paper's discussion).</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>meta-harness</strong> — Task-CoEvolve is a direct plug-in to Meta-Harness's loop: same proposer, same acceptance logic, 5× cheaper fitness. Any archive-based evolver (DGM-style) could adopt Phase 1/3 unchanged; the only requirement is logging per-task outcomes.</li>
+<li><strong>rethinking-harness-evolution</strong> — that paper asked whether harness-evolution gains survive proper evaluation; Task-CoEvolve supplies the missing statistical machinery for <em>comparing</em> candidates under partial, shifting evaluation sets. The anchored-difference estimator is exactly the kind of tooling those critiques call for.</li>
+<li><strong>evolving-benchmarks</strong> — "self-improving agents should evolve their benchmarks" argued the task set must move with the agent to keep teaching it; Task-CoEvolve is the cost-side dual: the task set must move with the harness to keep <em>measuring</em> it. Same co-evolution, different objective (discrimination, not difficulty).</li>
+<li><strong>envharness-envrigger</strong> — EnvRigger reshapes environments around the <em>policy's</em> weaknesses; Task-CoEvolve reshapes the validation distribution around the <em>candidate pool's</em> disagreements. Both are frontier-tracking mechanisms; combining them (rigged environments as the evolving validation pool) is an obvious next experiment.</li>
+<li><strong>fragility-self-improving-agents</strong> — the Salesforce re-evaluation showed self-improvement gains are variance-dominated across runs. That cuts both ways here: partial evaluation adds estimator variance on top of rollout variance, and the paper's ±0.8–0.9 stds suggest the margins (e.g., +0.7 over full search) are within noise — the safe claim is <em>parity at 20% cost</em>, not superiority.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The idea is simple, well-executed, and almost certainly correct in direction — adaptive test selection is decades old in psychometrics (computerized adaptive testing) and the paper is essentially CAT for harness evolution, though I'd want the related-work section to acknowledge that lineage. Three caveats. First, the method needs <em>outcome history to exist</em>: Phase 0 burns two full-set evaluations, and the weights are only as good as the candidate pool's diversity — a homogeneous pool makes every task look non-discriminative and the sampler could collapse onto a few noisy tasks (the <span class="arithmatex">\(\ell_t\)</span> floor and <span class="arithmatex">\(\lambda\)</span> bonus are doing quiet load-bearing work here; the constants look hand-tuned). Second, binary outcomes are assumed throughout; continuous or partial-credit metrics would change the variance formula, and agentic evals are drifting toward graded checks (ThinkingBox-style state grading). Third, 89 tasks (Terminal-Bench) and 130 examples are small pools — at SWE-bench scale the win should be <em>larger</em> (more redundant tasks), but inclusion probabilities get tiny and the Hájek estimator's tail variance could bite; the paper doesn't test at that scale. None of this dents the practical takeaway: if you're running any harness-optimization loop today, per-task outcome logging plus this estimator is close to free money.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>In harness optimization, evaluation — not proposal — is the budget, and most of it is spent on tasks that can't distinguish candidates; sample tasks by historical outcome <em>variance</em> instead.</li>
+<li>Different iterations evaluating different subsets is only sound with inclusion-probability-weighted estimators (Hájek / anchored-difference); skipping that correction is why naive subsampling loses 3+ points.</li>
+<li>20% of the evaluations buys ~100% of the final performance: 49.3% vs 48.6% (text classification, above full search) and 51.7% vs 52.8% (Terminal-Bench 2.1), with 67–80% token savings and ~1.9× faster wall-clock.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-23 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

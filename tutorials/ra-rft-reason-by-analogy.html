@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RA-RFT: Retrieve by Reasoning Benefit, Not Similarity — Then RL on Top</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>RA-RFT: Retrieve by Reasoning Benefit, Not Similarity — Then RL on Top</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2606.13680">arXiv:2606.13680</a> · <a href="https://arxiv.org/abs/2606.13680">arXiv</a> · <a href="https://x.com/gurtej__gill_/status/2091429880840040804">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p><em>Paper: "Learning to Reason by Analogy via Retrieval-Augmented Reinforcement Fine-Tuning", arXiv 2606.13680, by Zilin Xiao, Qi Ma, Chun-cheng Jason Chen, Xintao Chen, Avinash Atreya, Hanjie Chen, Vicente Ordonez (several authors are Rice University — inferred from author homepages, verify in the paper). Grounded in the arXiv abstract and HTML full text.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>Standard RAG retrieves by lexical/semantic similarity, which is the <em>wrong key</em> for reasoning: a problem that sounds identical may need a completely different trick (and actively mislead the model), while a superficially unrelated problem may share exactly the reasoning pattern you need. RA-RFT defines relevance <em>behaviorally</em> — a context is relevant iff conditioning on it raises the model's probability of producing the correct answer — and distills that definition from an LLM judge into a dense retriever.</li>
+<li>The pipeline is three stages: (1) a judge (GPT-4o) labels query–trace pairs for <strong>transferable reasoning patterns</strong> independent of surface similarity; (2) a late-interaction retriever (Reason-ModernColBERT) is fine-tuned on those labels with InfoNCE; (3) the policy is trained with <strong>GRPO while conditioning rollouts on the retrieved reasoning-analogous traces</strong>, under plain binary outcome rewards.</li>
+<li>On competition math with avg@32: <strong>+7.1 points on AIME 2025 over GRPO for Qwen3-1.7B</strong> (+4.7 AIME 2024, +1.9 HMMT Feb 25, +2.6 BrUMO 25; +4.1 average) and +2.8 on AIME 2025 for Qwen3-4B (+2.6 average). The sharpest ablation: the same retrieved context under SFT is worth almost nothing (40.5 vs 39.7) — the gains only materialize when the model learns to <em>use</em> retrieval under outcome rewards.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This paper sits at the intersection of three threads this tracker cares about — RL post-training, retrieval, and distillation — and its contribution to each is crisp. For retrieval: it operationalizes "relevance = usefulness to the downstream computation" rather than "relevance = closeness in embedding space," which is the same conceptual upgrade recommendation systems made when they moved from content similarity to engagement signal. For RL: it adds a genuinely <em>complementary</em> lever to the reward-function-and-curriculum axis everyone else is tuning — the conditioning distribution of the rollouts. For distillation: the teacher signal here isn't logits or traces, it's the judge's <em>counterfactual usefulness labels</em>, distilled into a retriever rather than into the policy — supervision one level removed from the model being trained.</p>
+<p>The SFT-vs-RL ablation is the finding I'd put on a slide. Give the model reasoning-analogous exemplars and train with SFT: nothing (+0.8). Same exemplars under GRPO: large, consistent gains. Under imitation, the retrieved trace is just more text to copy; under outcome rewards, the model gets credit precisely when it <em>transfers the strategy</em> rather than the surface form — so "reasoning by analogy" is a skill RL can install but SFT can't. That maps onto the broader SFT-memorizes / RL-generalizes pattern, but at the level of context-use rather than task performance. It also quietly reframes what a "retrieval corpus" is for a reasoning model: not a knowledge base, but a library of <em>strategies</em> — which is exactly the direction agent-memory work (ReasoningBank-style skill extraction) is converging on from the other side.</p>
+<p><img alt="Motivation figure: a surface-similar exemplar E1 solvable by direct substitution misleads the model, while a superficially different exemplar E2 sharing the same binomial-identity strategy transfers and improves rollout quality" src="assets/ra-rft-reason-by-analogy/fig1.png" />
+<em>Figure 1 from the paper: E₁ is lexically close to the query but its trick (direct substitution) doesn't transfer — rollouts degrade. E₂ looks unrelated but shares the load-bearing binomial identity — rollouts improve. Semantic similarity ranks E₁ above E₂; reasoning relevance ranks them correctly.</em></p>
+<h2>The core idea</h2>
+<p>Define the retrieval target counterfactually. For query <span class="arithmatex">\(q\)</span> with gold answer <span class="arithmatex">\(a^*\)</span>, corpus <span class="arithmatex">\(\mathcal{C}\)</span> of reasoning traces, and model <span class="arithmatex">\(M\)</span>:</p>
+<div class="arithmatex">\[c^*_{\text{reason}} = \arg\max_{c \in \mathcal{C}} \; \mathbb{P}_M\!\left(a = a^* \mid q, c\right)\]</div>
+<p>— the best context is whichever trace most raises the probability of a correct answer when placed in the prompt, regardless of what it looks like. Computing this exactly for every pair is intractable, so a judge model approximates it with binary labels <span class="arithmatex">\(y_{i,c} \in \{0,1\}\)</span>: does trace <span class="arithmatex">\(c\)</span> exhibit transferable reasoning patterns for query <span class="arithmatex">\(q_i\)</span>? Those labels train the retriever with an InfoNCE contrastive objective:</p>
+<div class="arithmatex">\[\mathcal{L}_{\text{retrieval}} = -\sum_i \sum_{c^+ \in \mathcal{C}_i^+} \log \frac{\exp(\langle e_{q_i}, e_{c^+}\rangle / \tau)}{\sum_{c} \exp(\langle e_{q_i}, e_{c}\rangle / \tau)}\]</div>
+<p>with <span class="arithmatex">\(\mathcal{C}_i^+ = \{c : y_{i,c} = 1\}\)</span> and temperature <span class="arithmatex">\(\tau = 0.05\)</span>. The policy is then optimized with GRPO, with retrieved traces <span class="arithmatex">\(\{c_j\}\)</span> inside the conditioning context:</p>
+<div class="arithmatex">\[\mathcal{L}_{\text{GRPO}} = \mathbb{E}_{(q,a)\sim\mathcal{D}}\left[-\frac{1}{G}\sum_{g=1}^{G} A_g \cdot \log M_\phi\!\left(\hat{a}_g \mid q, \{c_j\}\right)\right], \qquad A_g = \frac{r(\hat{a}_g, a) - \bar{r}}{\sigma_r}\]</div>
+<p>over <span class="arithmatex">\(G = 16\)</span> rollouts per problem, with the plain binary outcome reward <span class="arithmatex">\(r(\hat{a}_g, a) = \mathbb{1}[\text{verify}(\text{extract}(\hat{a}_g), a)]\)</span>. Nothing about the reward changes; only what the policy sees while rolling out.</p>
+<p><img alt="RA-RFT framework overview: judge model labels query-corpus pairs for reasoning relevance, a dense retriever is trained contrastively on the distilled labels, and retrieved reasoning-analogous traces augment GRPO fine-tuning" src="assets/ra-rft-reason-by-analogy/fig2.png" />
+<em>Figure 2 from the paper: the three-stage pipeline — gold-relevance distillation from the judge, contrastive retriever training, then reinforcement fine-tuning with retrieved blueprints in context.</em></p>
+<h2>How it works</h2>
+<pre><code class="language-text"># RA-RFT (condensed from §3)
+# Stage 1 — Gold-relevance distillation
+for each training query q_i and candidate trace c in corpus C:
+    y_{i,c} ← judge(q_i, c)        # GPT-4o: &quot;transferable reasoning pattern?&quot; ∈ {0,1}
+                                   # explicitly independent of surface similarity
+# Stage 2 — Reasoning-aware retriever
+initialize dense encoder (Reason-ModernColBERT, multi-vector late interaction)
+train with InfoNCE: pull (q_i, c+) together for y=1, push others apart
+
+# Stage 3 — Retrieval-augmented GRPO
+for each training problem (q, a):
+    {c_1..c_k} ← top-k traces from trained retriever
+    sample G=16 rollouts â_g ~ M_φ(· | q, {c_j})
+    r_g ← 1 if verified-correct else 0
+    A_g ← (r_g − mean(r)) / std(r)
+    update φ with GRPO on advantage-weighted log-likelihood
+# Inference: retrieve top-k with the same retriever, condition, decode
+</code></pre>
+<p>Models are Qwen3-1.7B and Qwen3-4B; evaluation is avg@32 on AIME 2024, AIME 2025, HMMT February 2025, and BrUMO 2025.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Main table:</strong> over the GRPO baseline, Qwen3-1.7B gains +7.1 (AIME 25), +4.7 (AIME 24), +1.9 (HMMT 25), +2.6 (BrUMO 25) — <strong>+4.1 average</strong>; Qwen3-4B gains +2.8 (AIME 25) and +5.9 (BrUMO 25) — +2.6 average. RA-RFT also beats OPSD (self-distillation with privileged traces) and QuestA (curriculum RLVR) under the authors' comparison.</li>
+<li><strong>The retriever must be reasoning-aligned:</strong> swapping in retrievers without the judge-distilled fine-tuning costs a lot — Reason-ModernColBERT goes 40.7 → <strong>47.4</strong> with reasoning supervision; Qwen3-Embedding-4B 38.5 → 40.5. Off-the-shelf semantic retrieval is not just weaker, it's most of the gap.</li>
+<li><strong>RL is the activation condition:</strong> RA-SFT ≈ SFT (40.5 vs 39.7), while RA-RFT ≫ GRPO. Training curves (Figure 3) show RA-RFT <em>starts below</em> GRPO — the unfamiliar in-context traces initially distract the policy — then crosses and converges higher: the model has to learn to exploit the analogies.</li>
+<li><strong>Per-problem spread (Figure 4):</strong> the top-1 retrieved trace lifts accuracy above raw GRPO for most problems, but different retrieved contexts surface distinct solution strategies with substantial variance — context choice is doing real work problem-by-problem.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong>discriminative-retrieval</strong> — same thesis, different training signal: retrieval quality is about the downstream decision, not embedding geometry. That work fixes the <em>architecture</em> (discriminative two-tower LLMs); RA-RFT fixes the <em>label source</em> (counterfactual usefulness via judge). The obvious composition is judge-distilled labels on a discriminative retriever.</li>
+<li><strong>privileged-info-self-distillation / opsd-without-supervision</strong> — OPSD puts privileged traces in the reference/teacher position and distills them <em>into the weights</em>; RA-RFT keeps traces <em>in context</em> and lets RL learn when to lean on them. The paper reports beating OPSD, which suggests context + outcome reward transfers strategy better than imitation pressure — consistent with the RA-SFT null result.</li>
+<li><strong>embedders-dilemma</strong> — the cost analysis there warned that LLM-quality embeddings are expensive; RA-RFT's late-interaction ColBERT-style retriever plus a one-time judge-labeling pass is a middle path: the expensive model runs once at label time, not per query.</li>
+<li><strong>fragility-self-improving-agents (ReasoningBank thread)</strong> — memory-based self-evolution extracts "skills" from past trajectories and retrieves them by similarity — exactly the retrieval key this paper indicts. If ReasoningBank-style memories were re-ranked by reasoning benefit instead, some of the fragility (misleading look-alike memories being repeatedly retrieved) should shrink. Testable with today's tools.</li>
+<li><strong>RL curricula (QuestA baseline)</strong> — curriculum work reshapes <em>which problems</em> the policy sees; RA-RFT reshapes <em>what accompanies each problem</em>. They're orthogonal levers on the same GRPO loop and should stack.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The counterfactual definition of relevance (Eq. 1) is the right one, and the ablations are unusually well-targeted — the retriever-quality and SFT-vs-RL tables answer the two questions I'd have asked first. But note the gap between the definition and the implementation: Eq. 1 is model-conditional (<span class="arithmatex">\(\mathbb{P}_M\)</span>), while the judge labels "transferable reasoning patterns" in a model-<em>independent</em> way with GPT-4o. What makes a trace useful to Qwen3-1.7B is not what makes it useful to GPT-4o — the honest version of this pipeline would validate judge labels against actual measured uplift (run the policy with/without the trace, Eq. 1 directly) on a subsample, and the paper would be stronger for reporting that agreement rate. Second, domain scope: all evidence is competition math, where "reasoning pattern" has crisp meaning (identities, standard tricks) and a verifiable answer exists; whether an LLM judge can label transferable patterns for, say, agentic debugging traces is much less obvious, and that's the setting where this would matter most. Third, the standard leakage worry: retrieval corpus + AIME-adjacent benchmarks means contamination hygiene deserves scrutiny — avg@32 on 2025 competitions post-dating the corpus helps, but I'd want explicit dedup detail (not visible in the HTML extraction — verify in the paper). Finally, there's an unpriced cost: judge-labeling scales as queries × corpus, and the paper's framing skips over how the candidate set for labeling was pruned. None of this undercuts the core result — for small models, +7.1 on AIME 2025 from a retrieval-side change, with the reward untouched, is a lot of signal for one lever.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>For reasoning, retrieval relevance should be counterfactual — <span class="arithmatex">\(\arg\max_c \mathbb{P}_M(a^*|q,c)\)</span>, "does this trace help solve it?" — not semantic similarity, which actively surfaces misleading look-alikes.</li>
+<li>Distill that judgment from an LLM judge into a cheap dense retriever (InfoNCE), then let GRPO — not SFT — teach the policy to exploit retrieved analogies: same contexts are worth ~0 under imitation and +4.1 average under outcome rewards.</li>
+<li>Qwen3-1.7B +7.1 on AIME 2025 over GRPO (4B: +2.8), beating OPSD and QuestA — the rollout conditioning distribution is a real, underused axis of RL post-training, orthogonal to rewards and curricula.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-23 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
