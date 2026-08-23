@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Paper Walkthrough: Harness Optimization</title>
+<title>Harness Optimization</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,159 +13,766 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Paper Walkthrough: Harness Optimization</h1><p class="meta">19 min · 24 papers · 2026-08-17</p><h1>Paper Walkthrough: Harness Optimization</h1>
-<p><em>A 45–60 minute team session guide. Every number and equation below is taken from the tracker's tutorials, which are verified against the papers. Links go to the full tutorials.</em></p>
-<h2>Why this session</h2>
-<p>The harness — the scaffold of prompts, tools, memory, and control flow around a frozen model — has stopped being plumbing and become the research object of 2026. Three forces converged: (1) harness choice now swings agent performance more than model choice (swapping harnesses moves SWE-bench Pro pass@1 from 23% to 52% on the same model); (2) harness execution traces are being framed as the next training corpus — Jianfeng Gao's Berkeley AI Summit pitch was literally "harnesses are the new training data"; and (3) a wave of papers now treats the harness as something to <em>optimize, evolve, or train against</em> rather than hand-author. This session maps that wave — and the counter-wave showing that many "harness evolution" gains are repeated sampling, judge-pleasing, or overfitting in disguise. Our job: find the real signal and decide what to build on it.</p>
-<h2>The landscape in one picture</h2>
-<p>The field splits into three sub-threads. <strong>(A)</strong> treats the harness itself as the optimization variable (model frozen). <strong>(B)</strong> treats the model as the optimization variable, trained <em>in or for</em> a harness. <strong>(C)</strong> asks whether the gains from either are real, transferable, and worth their cost.</p>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">21 min · 33 papers · 2026-08-23</p><p>An agent is a model plus a harness: prompts, tools, control flow, memory, and the code that binds them. Harness optimization covers systems that modify part of that scaffold automatically, using evidence from the agent's own execution.</p>
+<p>This page defines six dimensions that separate such systems, places nine systems on all six in detail, adds the evaluation audit they are read against, and lists where the remaining systems fall. Two final sections list work that shares the machinery or is frequently grouped with harness optimization but does not modify a harness.</p>
+<p>Where a source is silent, the cell says so rather than inferring a value. Statements below name the systems they cover; no corpus-wide proportions are asserted, because the corpus boundary is itself a judgement.</p>
+<h2>The six dimensions</h2>
 <table>
 <thead>
 <tr>
-<th>Thread</th>
+<th>#</th>
+<th>Dimension</th>
 <th>Question</th>
-<th>Papers (this session)</th>
+<th>Values</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>A. Optimize the harness</strong></td>
-<td>Can the scaffold be rewritten/evolved/repaired automatically?</td>
-<td>RHI (Sakana/Berkeley), Living-Harness, Harness Handbook, HarnessCompass, Harness-R1; skills line: MSCE (+ Agent Skills red-team in C)</td>
+<td>D1</td>
+<td>Object</td>
+<td>What artifact changes on disk?</td>
+<td>prompt-level spec · skill file · memory/context · harness code · environment · objective · model weights</td>
 </tr>
 <tr>
-<td><strong>B. Train the model for the harness</strong></td>
-<td>Can we push harness behavior into weights, with proper credit assignment?</td>
-<td>OpenForgeRL (Microsoft), EvoHarness-RL (UIUC/Meta — bridges A and B), TRACE, AgentOPSD; industry signal: Liquid AI's harness-native post-training</td>
+<td>D2</td>
+<td>Editor</td>
+<td>What performs the edit, and what can it see?</td>
+<td>single model call · reflective call under a fixed procedure · agent with tools · trained editor · gradient update; bandwidth in tokens where stated</td>
 </tr>
 <tr>
-<td><strong>C. Does any of it work?</strong></td>
-<td>Are the gains generalizable, attributable, and cheap?</td>
-<td>No-Universal-Harness, Rethinking Harness Evolution, Harness Delta Attribution, Harness-IF, Agent Skills Can Be Harmful, Prompt-Induced Waste, Sample More Reflect Less, Lost in Compaction, Harness Rankings Are Model-Dependent, Model or Harness</td>
+<td>D3</td>
+<td>Evidence</td>
+<td>What is each edit conditioned on?</td>
+<td>scalar score · execution traces · paired comparison · verifier or tests · LLM judge · human; self-generated or external</td>
 </tr>
 <tr>
-<td><strong>Maps</strong></td>
-<td>Shared vocabulary</td>
-<td>Long-Horizon Agents survey (Agent = π_θ ⊕ H), Self-Improvement survey (239 papers, 166 scaffold-side), Reliable Self-Evolving Agents (L0–L4 audit ladder), Self-Evolving Coding Agents</td>
+<td>D4</td>
+<td>Memory</td>
+<td>What persists across edits?</td>
+<td>none · linear history · raw archive · compiled artifacts · shared across agents; rejected edits kept or discarded</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Search</td>
+<td>How are candidates produced and admitted?</td>
+<td>none · greedy · archive · population · tree · Pareto · agent-directed; gate: functionality · strict improvement · preserve-and-extend · peer review · optimizer-chosen</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>Recursion</td>
+<td>Is the editor itself in the edit set?</td>
+<td>no · partial · yes</td>
 </tr>
 </tbody>
 </table>
-<p>One frame to hold throughout, from the <a href="../tutorials/long-horizon-agents-survey.html">Long-Horizon Agents survey</a>: <strong>Agent = π_θ ⊕ H</strong>, and progress is co-evolution — capabilities proven in the harness get internalized into weights, and stronger models enable more ambitious harnesses. Thread A is the H-half, Thread B the π-half, Thread C the referee. The <a href="../tutorials/self-improvement-survey.html">Self-Improvement survey</a> (Schmidhuber senior author) adds a telling statistic: 166 of its 239 papers update the scaffold rather than the weights — the field's center of gravity is already here.</p>
-<h2>Part A: Optimizing the harness (20 min)</h2>
-<h3>1. Recursive Harness Self-Improvement (RHI) — <a href="../tutorials/recursive-harness-self-improvement.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> If the harness is expressed as text — the whole agent loop as a prompt-level specification (roles, contracts, hops) — harness optimization becomes a text-refinement problem the model can do to itself: run the harness, compare each revision's output against its predecessor's via an LLM judge, rewrite the spec conditioned on the accumulated preference history. The authors argue the gains come from better task-specific <em>context management</em> (which information reaches which sub-agent), not longer reasoning.</p>
-<p><strong>The number.</strong> On 30 synthetic ML-research tasks, a few RHI iterations let a <strong>low-reasoning-effort</strong> agent beat the same model at <strong>maximum reasoning effort</strong>, at up to <strong>60% lower inference cost</strong>.</p>
-<p><strong>The mechanism.</strong> Instead of the intractable population objective (win rate against all competing harnesses, Θ(m²) comparisons), RHI uses a trajectory-local relaxation — compare only against the immediately previous revision, Θ(1) per iteration:</p>
-<div class="arithmatex">\[\widetilde f_x^{(i)}(H)=\mathbb{E}_{y\sim\mathcal{A}(H,x),\; y^{-}\sim\mathcal{A}(H_x^{(i-1)},x)}\big[\mathbf{1}\{\mathcal{L}_{\mathrm{eval}}(y,y^{-};x_{\mathrm{eval}})=y\succ y^{-}\}\big],
-\qquad H_x^{(i+1)}=\mathcal{L}_{\mathrm{harness}}\big(H_x^{(i)},\mathcal{D}_x^{(i)}\big)\]</div>
-<p>where <span class="arithmatex">\(\mathcal{L}_{\mathrm{eval}}\)</span> is an LLM judge and <span class="arithmatex">\(\mathcal{D}_x^{(i)}\)</span> the self-comparison history; under a Bradley–Terry latent-utility model each comparison is a noisy local-ascent signal.</p>
-<p><strong>Discussion question.</strong> RHI's judge is an LLM comparing the harness's own outputs — this is exactly the loop Part C says can be Goodharted. What external evidence would convince us an RHI-style loop improved the harness rather than trained it to please the judge?</p>
-<h3>2. Living-Harness — <a href="../tutorials/living-harness.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> The most disciplined evolve-the-harness system so far: after each <em>evaluated</em> episode, a frozen per-domain Evolution-SOP converts trajectory + evaluator signals into candidate repairs, which must pass five commit gates (schema, scope, evidence, constraint, merge) before landing in exactly two evolving stores — episodic memory (trigger/failure/recovery) and a state graph (repair edges). Tools, context, weights, and the SOP itself stay frozen; episodes are scored <em>before</em> their evidence can be committed.</p>
-<p><strong>The number.</strong> With GPT-5.2-medium: <strong>83.09 average Pass@1 on τ²-Bench</strong> (+10.07pp over Reflexion, above Gemini 3 Pro's 82.92) — and ablating the Evolution-SOP while keeping the memory/graph containers costs <strong>9.7 points</strong>, so structured bounded evolution, not memory per se, is the active ingredient.</p>
-<p><strong>The mechanism.</strong> The bounded-update decomposition:</p>
-<div class="arithmatex">\[H_{d}^{(n)}=\left(C_{d}^{\mathrm{act}},\;\psi_{d},\;S_{d}^{(n)}\right),\qquad S_{d}^{(n)}=\left(\mathcal{R}_{d}^{(n)},\,G_{d}^{(n)}\right)\]</div>
-<p>frozen actor context <span class="arithmatex">\(C\)</span>, frozen Evolution-SOP <span class="arithmatex">\(\psi\)</span>, and only the state <span class="arithmatex">\(S\)</span> (memory <span class="arithmatex">\(\mathcal{R}\)</span> + graph <span class="arithmatex">\(G\)</span>) evolves. The killer result: the evolved state is <em>portable capital</em> — frozen and reused retrieval-only, it improves four other backbones on every reported domain (MultiWOZ Taxi from 0.00 to ~43–45 for GLM-5/Qwen3-max/Kimi-k2).</p>
-<p><strong>Discussion question.</strong> The gates prevent noise ingestion but there's no rollback or re-audit of old entries — a plausible-but-wrong repair is retrieved forever. What would a regression-testing discipline for harness state look like?</p>
-<h3>3. EvoHarness-RL — <a href="../tutorials/evoharness-rl.html">tutorial</a> <em>(the bridge from A to B)</em></h3>
-<p><strong>Core idea.</strong> Everyone bolts memory/state/skill stores onto agents; nobody trains the policy for <em>when touching them is worth a turn</em>. EvoHarness-RL abstracts the harness into three policy-facing states — Belief, Progress, Experience — accessed via four meta-actions (<code>track</code>, <code>commit</code>, <code>recall</code>, <code>note</code>) that share the environment's action budget, then trains harness usage with SFT + cost-aware GRPO.</p>
-<p><strong>The number.</strong> ALFWorld with Qwen3-8B: ReAct 47.9% → <strong>96.9%</strong> on the seen split (matching Claude Opus 4.5's ReAct at 96.4%), 86.6% unseen.</p>
-<p><strong>The mechanism.</strong> The cost-aware reward — a dominant sparse success term plus shaping for adaptive harness use:</p>
-<div class="arithmatex">\[ R(\tau) = R_{\mathrm{succ}}(\tau) + \lambda_{\mathrm{eff}} R_{\mathrm{eff}}(\tau) + \lambda_{\mathrm{div}}(u)\, R_{\mathrm{div}}(\tau) - \lambda_{\mathrm{spam}} R_{\mathrm{spam}}(\tau) - \lambda_{\mathrm{inv}} R_{\mathrm{inv}}(\tau) \]</div>
-<p>with efficiency bonus granted only on success and a cosine-annealed diversity bonus. The generalizable finding is <strong>harness annealing</strong>: calls drop from frequent scaffolding to ~1/episode as routine harness behavior gets internalized into weights — direct evidence that the scaffold/capability boundary moves under RL, which is the co-evolution thesis made empirical.</p>
-<p><strong>Discussion question.</strong> Annealing looks clean on ALFWorld, where the environment state plausibly fits in an 8B model. Where should annealing <em>plateau</em> on SWE-scale tasks, and could "calls per episode" become our diagnostic for what belongs in weights vs. scaffold?</p>
-<h3>4. Harness Handbook — <a href="../tutorials/harness-handbook.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> RHI only works because its harness is a prompt; production harnesses are large codebases where one runtime behavior is scattered across distant files and shared state. The Handbook identifies <strong>behavior localization</strong> as the bottleneck of harness evolution and builds a behavior-centric index of the repo (static analysis + LLM structuring, auto-updated after edits), plus Behavior-Guided Progressive Disclosure to walk agents from behavior description to verified edit sites.</p>
-<p><strong>The number.</strong> Handbook-assisted planning raises plan win rates by <strong>+10.0 (Codex) and +18.9 (Terminus-2) points</strong> while <em>cutting</em> planner tokens 12.7%/8.6% — better localization and cheaper planning simultaneously.</p>
-<p><strong>The mechanism.</strong> Plan quality is a weighted judge score, localization dominant:</p>
-<div class="arithmatex">\[S = 0.5\,S_{\mathrm{Loc}} + 0.25\,S_{\mathrm{Scope}} + 0.25\,S_{\mathrm{Reason}}\]</div>
-<p>Caveat to say out loud: plan win rate is a proxy — no end-to-end did-the-edit-pass-tests numbers in the sources.</p>
-<p><strong>Discussion question.</strong> If harness choice must be re-tuned per model–task pair (Part C), edit frequency goes up and this infrastructure gets more valuable. Should we build a handbook for <em>our</em> harness before attempting any self-modification loop on it?</p>
-<h3>5. The skills line: MSCE — <a href="../tutorials/msce-memory-to-skills.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> Skills/memory are the harness's accumulating state, so governing them <em>is</em> harness optimization. MSCE's diagnosis: retrieved traces are passive — the frozen model must re-extract the lesson every time. Its fix is training-free governance: crystallize procedural policies into callable skills only when evidence shows <em>positive counterfactual gain</em>, with each skill carrying evidence links, applicability boundaries, verification rules, and a reliability estimate.</p>
-<p><strong>The number.</strong> Honest flag: <strong>no quantitative results survived into our verified sources</strong> (claims of outperforming skill/memory baselines on EvoAgentBench and LoCoMo are unverified) — this is the thinnest tutorial in the set; quote the mechanism, not a number.</p>
-<p><strong>The mechanism.</strong> Reflection-weighted value backfilling — a TD-style backup with self-reflection standing in for a critic — plus the crystallization gate:</p>
-<div class="arithmatex">\[V(f_{i,t}^{(1)})=\alpha_{i,t}R_{i}+(1-\alpha_{i,t})\,\gamma\,V(f_{i,t+1}^{(1)}),\qquad G(f^{(2)})=\bar{V}_{\mathrm{with}}-\bar{V}_{\mathrm{blend}}(S_{\mathrm{without}})&gt;0\]</div>
-<p><strong>Discussion question.</strong> MSCE's epistemics bottom out in self-assessment (reflection weights, LLM gain estimates). Given Part C's "Agent Skills Can Be Harmful" result, what <em>differential</em> test should gate any skill our agents crystallize?</p>
-<p><strong>Two more Thread-A results worth one slide each.</strong> <a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a> trains a dedicated 9B "harness engineer" with GRPO whose only reward is the realized success delta from rerunning a frozen agent under the patch: +9.3 points average (44.3%→53.6%), beating every <em>prompted</em> frontier editor, with gains transferring to 20 unseen target models (+7.06) — outcome-grounded training beats scale at harness editing. <a href="../tutorials/harnesscompass-guided-evolution.html">HarnessCompass</a> is the process-discipline counterpart: a generalization gate (no task IDs, test names, or token-triggered branches) plus grounded agent self-reports and a component-wise merge lift SWE-bench Verified <em>held-out</em> Pass@1 from 51.6% to 60.4% (prior SOTA: 54.7%) in 5 iterations instead of ~20 — and the ablation shows the gate alone carries most of the transfer, while richer feedback <em>hurts</em> generalization until the merge contains it.</p>
-<h2>Part B: Training into the harness (15 min)</h2>
-<h3>6. OpenForgeRL / Training Agents Inside Their Harnesses — <a href="../tutorials/training-agents-in-harnesses.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> Deployed agents live inside stateful, multi-process harnesses that open RL stacks can't express, so people train harness-free and hope behavior transfers. OpenForgeRL inverts control: the harness runs unmodified in its own container, and a lightweight proxy serves its model calls from the current policy <em>while recording them</em> as training data for a standard RL stack (veRL + GRPO) — harness complexity becomes invisible to the trainer.</p>
-<p><strong>The number.</strong> With only hundreds to a few thousand tasks, OpenForgeGUI hits <strong>72.3 WebVoyager / 63.0 Online-Mind2Web / 37.7 OSWorld-Verified</strong>, beating same-size open baselines nearly everywhere — and the qualitative headline: <strong>harness choice is a training variable</strong> (some harnesses are substantially harder to learn in than others), while error recovery stays weak even after RL.</p>
-<p><strong>The mechanism.</strong> The policy never sees raw state — only the harness-constructed context — and credit is broadcast terminal reward:</p>
-<div class="arithmatex">\[\tau=\big\langle(\mathcal{H}(s_{0}),a_{0}),\ldots,(\mathcal{H}(s_{T}),a_{T})\big\rangle,\qquad r_{t}=\gamma^{\,T-t}\cdot r_{T},\ \ \gamma=1.0\]</div>
-<p>i.e., every model call in a successful rollout gets full terminal reward — which is precisely the crudeness TRACE and AgentOPSD attack.</p>
-<p><strong>Discussion question.</strong> If harness choice shapes what RL can learn, do we co-design the harness <em>for trainability</em> — and is "easy to learn in" the same property as "good at inference time"?</p>
-<h3>7. TRACE — <a href="../tutorials/trace-turn-level-rewards.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> One terminal scalar smeared over 60 tool calls is why long-horizon agentic RL is sample-starved. TRACE gets dense turn-level credit with no critic, no process labels, no MC rollouts: a frozen reference model scores "answer readiness" — the gold answer's log-likelihood given each trajectory prefix — and one-step temporal differences of that value become per-turn rewards that telescope, so redundant tool calls can't farm credit.</p>
-<p><strong>The number.</strong> Pure RL from base models: Qwen3-4B <strong>7.2 → 35.6</strong> and Qwen3-30B-A3B 8.4 → 42.6 on BrowseComp-Plus, beating GRPO/GSPO/GiGPO (+5–6 points) under matched data/tools/rewards.</p>
-<p><strong>The mechanism.</strong></p>
-<div class="arithmatex">\[V(S_{k})=\log\frac{d_{0}}{d_{k}}=\log\frac{-\bar{\ell}_{0}+\epsilon}{-\bar{\ell}_{k}+\epsilon},\qquad \delta_{k}=V(S_{k+1})-V(S_{k})\]</div>
-<p>where <span class="arithmatex">\(\bar\ell_k\)</span> is the frozen reference's mean log-prob of the gold answer after <span class="arithmatex">\(k\)</span> turns and <span class="arithmatex">\(d_k\)</span> the remaining uncertainty gap. Scope is genuinely narrow — requires a short verifiable gold answer.</p>
-<p><strong>Discussion question.</strong> EvoHarness-RL's harness meta-actions are exactly the turns whose marginal value TRACE could price. Does a TRACE-style signal replace hand-built harness-usage shaping — and what's the analogue when the "answer" is a passing test suite?</p>
-<h3>8. AgentOPSD — <a href="../tutorials/agentopsd-recursive-self-distillation.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> The distillation-flavored answer to the same credit problem: the teacher is <em>the policy itself</em> conditioned on a training-only retrieved skill. Token-level privileged-vs-plain log-prob gaps aggregate into turn evidence, a decaying Bayesian log-odds filter (anchored at the group success rate) turns evidence into <em>marginal belief revisions</em>, and GRPO's sequence advantage is reweighted per turn — no critic, no extra rollouts, skills never used at inference.</p>
-<p><strong>The number.</strong> <strong>89.1% ALFWorld success at 7B</strong> (GRPO: 81.2); at 3B, Search-QA 36.4 → 46.7 and WebShop score 79.8 → 90.4 — with ablations attributing gains to the credit <em>construction</em>, not the privileged access.</p>
-<p><strong>The mechanism.</strong> Turn evidence as a self-teacher likelihood ratio:</p>
-<div class="arithmatex">\[e_{k}=\sum_{t=1}^{L_{k}}\Big[\log\pi_{\theta}(y_{k,t}\mid h_{k,t}^{+})-\log\pi_{\theta}(y_{k,t}\mid h_{k,t})\Big]
-=\log\frac{\pi_{\theta}(a_{k}\mid s_{k},c^{+})}{\pi_{\theta}(a_{k}\mid s_{k})}\]</div>
-<p>fed through <span class="arithmatex">\(B_k=\sigma(\operatorname{logit}(B_0)+\sum_j \gamma^{k-j}e_j)\)</span>, credit <span class="arithmatex">\(\Delta B_k\)</span>.</p>
-<p><strong>Discussion question.</strong> Here a skill library's third use appears: privileged <em>training-time</em> context rather than inference scaffolding. Should our skill libraries be built for training-time consumption from day one?</p>
-<p><em>Industry signal (one line):</em> Liquid AI reports a four-stage post-training recipe ending in multi-turn agentic RL run <em>through</em> Pi, Hermes Agent, and OpenClaw with sandboxed rollouts — harness-native training is already a production recipe, not just a research bet.</p>
-<h2>Part C: Does it actually work? (15 min)</h2>
-<p>Frame this section as red-team questions aimed back at Parts A and B.</p>
-<h3>9. No Universally Best Harness — <a href="../tutorials/harness-generalization.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> Decompose OpenEvolve/TTT-Discover-style discovery harnesses into 30 budget-matched variants, run them across 12 model–problem pairs with 3.1M+ rollouts and real hypothesis testing. Result: no fixed harness is reliably superior; complex machinery generally underperforms simpler alternatives; harness choice is a model–problem-specific hyperparameter. Constructively: early progress predicts final performance, so prune-and-reallocate across harnesses beats committing to any fixed one.</p>
-<p><strong>The number.</strong> The strongest fixed harness reaches cross-pair majority-win <span class="arithmatex">\(\widehat P_{\mathrm{maj}}=0.914\)</span> with raw <span class="arithmatex">\(p=0.023\)</span> — which rises to <strong>0.678 after Holm correction</strong>: not even the best harness survives multiple-comparison correction.</p>
-<p><strong>The mechanism.</strong></p>
-<div class="arithmatex">\[\widehat{P}_{\mathrm{maj}}(h) = \frac{1}{R} \sum_{r=1}^{R} \mathbf{1}\Big\{ \sum_{j=1}^{12} \mathbf{1}\{M^{h}_{j} &gt; M^{0,r}_{j}\} \geq 7 \Big\}\]</div>
-<p><strong>Red-team question for Part A.</strong> Every Thread-A paper reports one model on one benchmark family. Which of RHI / Living-Harness / HarnessCompass would survive this paper's 12-pair, repeated-trial, Holm-corrected protocol? (HarnessCompass's cross-model transfer is the only direct attempt.)</p>
-<h3>10. Rethinking the Evaluation of Harness Evolution <em>(<a href="../tutorials/rethinking-harness-evolution.html">tutorial</a> — arXiv 2607.12227, AI2/UW)</em></h3>
-<p><strong>Core idea.</strong> Self-evolving harness loops search directly on the test set, which quietly makes them a form of test-time scaling. Under matched feedback and inference budgets against four conditions (parallel sampling, sequential refinement, shared harness evolution, per-instance harness scaling), harness evolution <strong>fails to beat plain parallel sampling</strong>; its gains show up at pass@5 but barely at pass@1 (multiple attempts, not a better harness); and on a disjoint search/eval split the evolved harness transfers almost nothing — even though the budget accounting <em>favors</em> it (harness-generation compute is uncounted). The tracked "Harness Delta Attribution" blog extends this with a decomposition: harness evolution takes a 0.8B model to 100% on ALFWorld, but across 4 benchmarks much of the gain attributes to overfitting or extra compute rather than generalizable design.</p>
-<p><strong>Red-team question for Part A.</strong> Adopt this as a house rule? <em>No harness-evolution claim without a matched-budget repeated-sampling baseline, pass@1 (not pass@k) deltas, and a disjoint search/eval split.</em> Note this is exactly what "Sample More, Reflect Less" (<a href="../tutorials/sample-more-reflect-less.html">tutorial</a>) found one level down: at matched token cost, 0 of 36 self-refine/reflect comparisons beat repeated sampling, and 10 were significantly worse.</p>
-<h3>11. Harness-IF — <a href="../tutorials/harness-if.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> When an agent does what a harness rule says, did the rule cause it? Harness-IF scores 642 atomic rules across five instruction surfaces (system prompt, project file, user turn, tool description, skill description), with a zero-injection probe labeling which rules oppose the model's unprompted default. Only against-prior compliance is real steerability.</p>
-<p><strong>The number.</strong> All 12 frontier models drop when coincidence is stripped: raw Acc 72.1–85.9% vs. AP-Acc 66.1–78.6%, an inflation of <strong>3.6–7.4 points with a twofold spread across models</strong> — leaderboards partially rank agreeable defaults. Bonus: in conflicts, system prompt / project file / user instruction tie exactly for first (mean rank 2.22) while tool (3.78) and skill descriptions (4.56) reliably lose; 77.1% of failures are <em>omissions</em> of demanded behavior, not overstepping.</p>
-<p><strong>The mechanism.</strong></p>
-<div class="arithmatex">\[\mathrm{AP\mbox{-}Acc}(a)=\frac{\sum_{(i,r)\in\mathcal{E}_a,\ r\in\mathcal{P}} z_{a,i,r}}{|\{(i,r)\in\mathcal{E}_a: r\in\mathcal{P}\}|}\]</div>
-<p><strong>Red-team question.</strong> Every evolved harness in Part A accretes rules. How many of <em>our</em> harness rules are align-prior — i.e., decorative? An against-prior audit is a principled pruning criterion.</p>
-<h3>12. Agent Skills Can Be Harmful — <a href="../tutorials/agent-skills-harmful.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> Differential testing (same task/verifier/model, only the skill varies) surfaces 307 confirmed skill-induced failures. The shape is adversarial: the dangerous skill is not the irrelevant one but the topically <em>relevant</em> one whose examples and defaults quietly override task requirements — so better retrieval doesn't fix it.</p>
-<p><strong>The number.</strong> <strong>86/125 functional failures (68.8%) are Task-Implementation Faults</strong> from relevant skills (only 2/125 from misapplied ones); 62.6% of efficiency regressions come from skills making verification/pipelines mandatory, not from prompt length.</p>
-<p><strong>The mechanism.</strong> The conservative regression gate — both cost metrics up, one more than doubled:</p>
-<div class="arithmatex">\[\min(r_{\mathrm{tok}},r_{\mathrm{time}})&gt;1.0\;\land\;\max(r_{\mathrm{tok}},r_{\mathrm{time}})&gt;2.0\]</div>
-<p><strong>Red-team question for MSCE / Living-Harness / any skill-crystallizing loop.</strong> Auto-distilled skills inherit every failure mode here with no human author to scope them. Should this paper's paired no-skill/matched-skill audit be the acceptance gate for anything our agents write into their own libraries?</p>
-<h3>13. Prompt-Induced Waste — <a href="../tutorials/prompt-induced-waste.html">tutorial</a></h3>
-<p><strong>Core idea.</strong> A preregistered benchmark (4,644 runs, 24 deterministic tasks, six ≥500B-class models, two real harnesses) showing prompts allocate <em>work</em>, not just meaning: "develop several approaches" buys 2.4–7.4x reasoning tokens and ~3 discarded branches; "be absolutely certain" buys verification loops up to 18.25x cost — all with zero success gain, while a length-matched restatement costs ~1.0x.</p>
-<p><strong>The number.</strong> The harness result matters most for this session: Claude Code vs. PI.DEV differ 12–15x in static prefix, 2–7x in turns, and <strong>5–30x in cost-per-success at equal correctness</strong> — the harness effect dwarfs any prompt effect in the study.</p>
-<p><strong>The mechanism.</strong> The paired reasoning ratio, each run against its own block's baseline median:</p>
-<div class="arithmatex">\[ R_{\text{run}} = \frac{\text{reasoning tokens}(\text{run})}{\operatorname{median}\big(\text{baseline reasoning tokens in the same model–harness–task block}\big)} \]</div>
-<p><strong>Red-team question.</strong> None of Part A's objectives price cost-per-success. If a harness optimizer is rewarded on success alone, it will happily evolve 18x verification loops. What does a cost-aware <span class="arithmatex">\(f_x(H)\)</span> look like?</p>
-<p><strong>Three more skeptic results, one line each.</strong> <em>Lost in Compaction</em> (<a href="../tutorials/session-constraints.html">tutorial</a>): harness compaction silently drops session-scoped standing rules — average 17% retention, with a separate 9B extractor pass recovering 90–96%; an evolving harness that compacts is evolving away its own constraints. <em>Harness Rankings Are Model-Dependent</em> (tracked, no tutorial): 10 harnesses × 2 models on SWE-bench Pro yields rank correlation <strong>−0.05</strong> between the two models' harness leaderboards — there is no harness leaderboard, only (model, harness) pairs. <em>Model or Harness</em> (tracked, no tutorial): 41 agent failure modes assigned to component-interaction <em>edges</em>, LLM-judgeable at κ=0.76 — the shared vocabulary for whether a fix belongs in π_θ or H.</p>
-<h2>The through-line</h2>
-<p>What the evidence supports today is narrower and more interesting than the hype: <strong>harness optimization is real but local, and the burden of proof has shifted to transfer.</strong> Bounded, evidence-gated adaptation demonstrably works — Living-Harness's gated state (+10pp, portable across four backbones), Harness-R1's outcome-trained editor (+9.3, transferring to 20 unseen targets), HarnessCompass's admissibility gate (+5.7 over SOTA on <em>held-out</em> tasks) — and training the model in/for the harness works when credit assignment is dense (TRACE, AgentOPSD) or the infrastructure is honest about deployment (OpenForgeRL). But the skeptics have shown that unconstrained harness evolution largely rediscovers repeated sampling; that no fixed harness survives statistical correction across model–problem pairs; that measured compliance is partly agreeable defaults; and that relevant skills and innocuous phrasing silently tax or corrupt execution. The pattern in every positive result is the same: <strong>the discipline of the loop — gates, external evidence, matched budgets, differential audits — is worth more than the search machinery</strong>, which is exactly the <a href="../tutorials/reliable-self-evolving-agents.html">Reliable Self-Evolving Agents</a> survey's principle: <em>no update should control the only evidence used for its own acceptance.</em></p>
-<h2>Open problems for us</h2>
-<ul>
-<li><strong>Close the co-evolution loop nobody has closed.</strong> Nobody has shown a model trained on <em>optimized-harness</em> traces beating one trained on default-harness traces. This is a runnable experiment (an RHI-style loop inside OpenForgeRL rollouts) and the load-bearing claim of the whole "harnesses are the new training data" thesis.</li>
-<li><strong>A cost-aware harness objective.</strong> Every Thread-A objective optimizes success; Prompt-Induced Waste shows harness mechanics swing cost-per-success 5–30x. Define and optimize <span class="arithmatex">\(f(H)\)</span> = success per dollar, with the two waste carriers (token-borne branching, tool-borne verification loops) as regularizers.</li>
-<li><strong>The evaluation standard, packaged.</strong> One harness-evolution eval suite: matched-budget parallel-sampling baseline, pass@1 on disjoint search/eval splits, Holm-corrected multi-pair testing (the No-Universal-Harness null distributions are released), plus Harness-Delta-style attribution into generalization/overfitting/compute. Publishing this would discipline the field and de-risk our own claims.</li>
-<li><strong>Trained engineer + generalization gate.</strong> Harness-R1 shows outcome-trained editing beats prompted frontier editing; HarnessCompass shows gated prompted editing beats ungated. The obvious untested composition: a GRPO-trained harness engineer whose edit space is constrained by a HarnessCompass-style admissibility gate — does it dominate both?</li>
-<li><strong>Differential skill acceptance in the loop.</strong> Wire the Agent-Skills-Harmful audit (no-skill/matched-skill pairs + the min&gt;1/max&gt;2 cost gate) as the <em>commit gate</em> for MSCE/Living-Harness-style crystallization, and measure how much garbage it rejects from a live self-evolving library.</li>
-<li><strong>Harness annealing as a measurement instrument.</strong> EvoHarness-RL's calls-per-episode annealing curve is a live probe of what's migrating from scaffold to weights. Can we use it to <em>decide</em> which harness features to retire per model generation — operationalizing the survey's co-evolution ratchet?</li>
-<li><strong>Credit assignment for harness edits, not just turns.</strong> TRACE prices turns against a gold answer; Harness-R1 prices whole patches by batch rerun. Nothing prices an individual harness <em>edit</em> on held-out tasks cheaply. A TRACE-style prefix-value signal over harness revisions would make RHI-style loops trainable rather than judged.</li>
-</ul>
-<h2>Reading order</h2>
-<p><strong>Read fully before the session (the load-bearing five):</strong></p>
-<ol>
-<li><a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a> — the cleanest statement of harness-as-optimization-variable and the co-evolution framing.</li>
-<li><a href="../tutorials/living-harness.html">Living-Harness</a> — what disciplined, bounded harness evolution looks like; the transfer result is the best evidence in Thread A.</li>
-<li><a href="../tutorials/training-agents-in-harnesses.html">Training Agents Inside Their Harnesses (OpenForgeRL)</a> — the training-side half; "harness choice is a training variable."</li>
-<li><a href="../tutorials/harness-generalization.html">No Universally Best Harness</a> — the statistical bar every harness claim must clear.</li>
-<li><a href="../tutorials/agent-skills-harmful.html">Agent Skills Can Be Harmful</a> — the failure taxonomy that should gate everything our agents accumulate.</li>
-</ol>
-<p><strong>Skim (know the one number and the mechanism):</strong> <a href="../tutorials/evoharness-rl.html">EvoHarness-RL</a> · <a href="../tutorials/harness-handbook.html">Harness Handbook</a> · <a href="../tutorials/msce-memory-to-skills.html">MSCE</a> · <a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a> · <a href="../tutorials/harnesscompass-guided-evolution.html">HarnessCompass</a> · <a href="../tutorials/trace-turn-level-rewards.html">TRACE</a> · <a href="../tutorials/agentopsd-recursive-self-distillation.html">AgentOPSD</a> · <a href="../tutorials/harness-if.html">Harness-IF</a> · <a href="../tutorials/prompt-induced-waste.html">Prompt-Induced Waste</a> · <a href="../tutorials/sample-more-reflect-less.html">Sample More, Reflect Less</a> · <a href="../tutorials/session-constraints.html">Lost in Compaction</a></p>
-<p><strong>Context/maps (pre-read the TL;DRs):</strong> <a href="../tutorials/long-horizon-agents-survey.html">Long-Horizon Agents survey</a> · <a href="../tutorials/self-improvement-survey.html">Self-Improvement survey</a> · <a href="../tutorials/reliable-self-evolving-agents.html">Reliable Self-Evolving Agents</a> · <a href="../tutorials/self-evolving-coding-agents.html">Self-Evolving Coding Agents</a></p>
-<p><strong>Tracked but not yet tutorialized (blog/thread-level sourcing — treat numbers as unverified):</strong> Harness Delta Attribution · Harness Rankings Are Model-Dependent · Model or Harness (arXiv 2607.28802) · DeepSeek Harness (everything-is-a-plugin runtime, MIT) — the last is worth a look as the kind of maximally-editable production harness Thread A's methods presuppose.</p></article>
-<footer>Generated 2026-08-23 16:16 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>D1–D6 describe system design. Evidence quality is tracked separately, because a system can be fully specified on D1–D6 and weakly evidenced.</p>
+<p><strong>Evidence scorecard.</strong> Five checks, each marked ✓ present, ✗ absent or violated, ~ partial, or — where the source does not say: sealed split (evaluation data the optimizer cannot touch) · held-out tasks · matched-budget control · repeated-sampling baseline · contamination addressed.</p>
+<h2>Nine systems in detail</h2>
+<p>The table scans; the blocks below give full cell values, the scorecard, the result, and the stated limit. The evaluation audit follows in its own section.</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>D1 Object</th>
+<th>D2 Editor</th>
+<th>D3 Evidence</th>
+<th>D4 Memory</th>
+<th>D5 Search</th>
+<th>D6 Recursion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../tutorials/darwin-godel-machine.html">DGM</a></td>
+<td>harness code, whole-repo</td>
+<td>agent with tools</td>
+<td>logs + separate-model diagnosis</td>
+<td>archive, broken children discarded</td>
+<td>archive, functionality gate</td>
+<td>partial</td>
+</tr>
+<tr>
+<td><a href="../tutorials/mendel-godel-machine.html">Mendel GM</a></td>
+<td>harness code, free-form</td>
+<td>agent, two records per edit</td>
+<td>paired comparison</td>
+<td>archive + failure pool</td>
+<td>lineage tree, validation gate</td>
+<td>partial</td>
+</tr>
+<tr>
+<td><a href="../tutorials/hyperagents.html">Hyperagents</a></td>
+<td>harness code + meta-procedure</td>
+<td>agent, ~33M tok/run</td>
+<td>archive scores</td>
+<td>archive, agent-invented memory</td>
+<td>archive, compile gate</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><a href="../tutorials/ouroboros-reviewed-core-evolution.html">Ouroboros</a></td>
+<td>own repo incl. review logic</td>
+<td>agent + subagents</td>
+<td>LLM diff-review panel</td>
+<td>Git history + error classes</td>
+<td>agent-directed, review quorum</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><a href="../tutorials/meta-harness.html">Meta-Harness</a></td>
+<td>harness code, single file</td>
+<td>agent with grep, ~10 MTok/iter</td>
+<td>scores + raw traces</td>
+<td>filesystem archive, regressions kept</td>
+<td>agent-directed, smoke-test gate</td>
+<td>no</td>
+</tr>
+<tr>
+<td><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></td>
+<td>skill + code layers, additive</td>
+<td>proposer + verifier agent</td>
+<td>three routed signals, verifier avg@k</td>
+<td>archive never deletes</td>
+<td>population archive, preserve-and-extend</td>
+<td>no</td>
+</tr>
+<tr>
+<td><a href="../tutorials/recursive-harness-self-improvement.html">RHI</a></td>
+<td>prompt-level spec</td>
+<td>single model call</td>
+<td>pairwise LLM-judge preference</td>
+<td>linear preference history</td>
+<td>greedy, no gate</td>
+<td>no</td>
+</tr>
+<tr>
+<td><a href="../tutorials/living-harness.html">Living-Harness</a></td>
+<td>memory + state graph</td>
+<td>reflective call under frozen SOP</td>
+<td>evaluator signals + trajectory</td>
+<td>compiled, rejects discarded</td>
+<td>greedy, five gates</td>
+<td>no</td>
+</tr>
+<tr>
+<td><a href="../tutorials/oeo-self-evolving-skills.html">OEO</a></td>
+<td>skill file</td>
+<td>agent, 34.3% of reference budget</td>
+<td>optimizer-chosen inspection</td>
+<td>linear history + checkpoints</td>
+<td>agent-directed, self-selected</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<h3>DGM — Darwin Gödel Machine</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2505.22954</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>Own Python agent repo: tools, prompts, workflow. Whole-repo agentic edits, one feature per child.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>Agent with tools rewrites its own repo. A separate frozen model (o1) produces the diagnosis. Bandwidth not reported.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>One run's logs, the GitHub issue, the predicted patch, and the private test patch, read by the separate diagnosis model rather than by the editing agent.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Raw archive tree of functioning ancestors. Broken children are discarded; no rejected-edit memory.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Open-ended archive. Parent sampling ∝ sigmoid(score) × 1/(1+children). Admission requires functionality — the child compiles and can still edit code — not a score improvement.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>Partial. The agent edits the code that does the editing; parent selection and the diagnosis model stay frozen.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✗ · held-out ✓ (cross-benchmark, cross-model transfer) · matched-budget ✓ (greedy ablation) · repeated-sampling ✗ · contamination ~ (hard-coding risk flagged, no memorization found on inspection)</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>SWE-bench Verified 20.0% → 50.0%. Ablations: greedy 39.7%, no archive 23.0%, no self-improvement 39.0%. Polyglot search subset 14.0 → 38.0 and full benchmark 14.2 → 30.7, reported separately.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Node 114 scored a perfect 2.0 by deleting the hidden hallucination-detection markers. About $22k and two weeks per run.</td>
+</tr>
+</tbody>
+</table>
+<h3>Mendel GM</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2608.07645</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>Agent source plus scaffolding, treated as a genotype. Free-form self-rewrite; no code splicing between lineages.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>The target agent edits its own code. The comparative operator supplies two (trajectory, outcome) records; a retained clonal-mutation operator uses one, sampled at λ = 0.10.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Paired comparison: the same agent on two tasks, or two lineages on one task. Binary verifier outcomes.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Archive tree storing code and every recorded phenotype, plus a global failure pool that the released configuration neutralises at β_fail = 1.0. Rejected-edit memory not reported.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Lineage tree with clade-level Thompson sampling and a widening rule N^α ≥ |V|. Admits any child passing validation.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>Partial. Search machinery is untouched.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✗ (evolves and reports on the same 60-task subsets) · held-out ✓ (zero-shot cross-benchmark and cross-model) · matched-budget ✓ (budget, seed, backbone) · repeated-sampling ✗ · contamination —</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Polyglot-60 50.8% → 93.2%, against HGM 77.9% at identical budget.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Headline figures are search-set numbers; single run, no error bars. Appendix F.2 reports 61.7% on SWE-bench Verified-60 where Table 1 reports 78.3%.</td>
+</tr>
+</tbody>
+</table>
+<h3>Hyperagents</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2603.19461</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>The whole hyperagent program: task agent, tools, memory, and the meta agent's own modification procedure. Whole-repo edits.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>The system's own meta agent, using bash and file-edit tools. About 33M self-modification tokens per 100-iteration run.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Archive scores and prior per-domain evaluation results.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Archive of hyperagents. Agents introduced their own persistent memory and a PerformanceTracker during runs.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Open-ended archive. Parent sampling ∝ sigmoid(score − top-3 mean) × novelty. Admits if it compiles.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>Yes. The meta-level modification procedure is itself editable; parent selection remains frozen.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✗ · held-out ✓ (validation split, unseen-domain meta-transfer) · matched-budget ✓ (DGM-custom baseline) · repeated-sampling ✗ · contamination —</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Transferred hyperagents reach imp@50 = 0.630 on unseen IMO grading; controls approximately 0. Five runs with bootstrap confidence intervals.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>The advantage over the fair DGM-custom baseline is not statistically significant.</td>
+</tr>
+</tbody>
+</table>
+<h3>Ouroboros</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2608.08311</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>Its own repository: tools, prompts, context assembly, review logic, core code. Whole-repo commits.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>The agent itself plus scout and acting subagents in worktrees; the parent is the sole committer. Bandwidth not reported.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>A blocking LLM diff-review panel, deterministic preflight checks, and fingerprint freshness, plus observed bugs. Self-reviewed.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Durable error classes, Git history, a review-evidence ledger, 227 MB of memory artifacts.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>None. Agent-directed sequential evolution tasks. The gate is a review quorum together with functionality; there is no score-based acceptance.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>Yes, excluding an unmodifiable launcher and supervisor.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✗ · held-out — (benchmarks run from frozen snapshots; withholding from evolution is not established) · matched-budget ✗ · repeated-sampling ✗ · contamination ✓ (SWE-bench Pro leakage filtered; an audit removed a reward-hacked trial)</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Terminal-Bench 2.1 86.74%, audited, on Opus 5. On SWE-bench Pro the result is parity: 58.2% against Codex 59.4%, McNemar p = 0.40.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>No evidence of compounding gains. Baselines self-reported.</td>
+</tr>
+</tbody>
+</table>
+<h3>Meta-Harness</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2603.28052</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>The harness as a single-file executable Python program. The proposer chooses a local edit or a full rewrite.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>A coding agent with grep and cat over the filesystem: about 10 MTok per iteration, median 82 files. The paper reports 0.002–0.026 MTok per iteration for prior text optimizers.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Search-set scores plus the raw execution traces of every prior candidate.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Raw filesystem archive of code, scores, and traces per candidate. Regressions are retained and reasoned over; smoke-test failures are not logged.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Agent-directed. No parent selection or mutation operators; a Pareto frontier is maintained; admission is a cheap interface smoke test, and the proposer never sees test-set results.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>No. The outer loop is deliberately frozen.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✓ (test scored once) · held-out ✓ (OOD tasks and held-out models) · matched-budget ✓ (Best-of-N) · repeated-sampling ✓ · contamination ✓ (regex leakage audit). All five present.</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Full traces 50.0 median / 56.7 best, against LLM summaries 34.9 / 38.7 and scores-only 34.6 / 41.3.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>On TerminalBench-2 the search runs on its own evaluation set, and the population is seeded near state of the art. Transfer margins are smaller than the in-search figures: +2.9 out of distribution over ACE and +1.3 over BM25.</td>
+</tr>
+</tbody>
+</table>
+<h3>DarwinX</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2608.07545</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>A skill layer (prompts, memory) and a code layer (tools, control flow). Additive single edits.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>An LLM proposer plus a reasoning verifier agent. Bandwidth not reported.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Three routed signals — failure diagnosis, teacher demonstrations, self-contrast — scored by the benchmark's own verifier at avg@k without gold labels.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Archive never deletes. Shared cross-generation memory of themes that worked or regressed; losers retained as stepping stones.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Population archive with lineage-gain parent sampling and a merge operator. Preserve-and-extend gate: gain g &gt; 0 and regression R ≤ δ.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>No. Selection machinery is fixed.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✓ in three of four regimes (TerminalWorld evolves on 94 tasks and reports on 41 disjoint; WebArena-Infinity evolves on synthetic intents and never reads the real suites), ✗ on Terminal-Bench 2.1, which evolves on the evaluation set · held-out ✓ · matched-budget ✗ (total evolution compute unreported) · repeated-sampling ✗ · contamination — (a reward-hacking audit found no harness-level cheating; data leakage is not examined)</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Terminal-Bench 2.1 75.5% → 83.2% on a frozen GPT-5.5.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Archive, parent selector, and merge operator are never independently ablated. In the WebArena-Infinity regime every attempted merge was reverted.</td>
+</tr>
+</tbody>
+</table>
+<h3>RHI — Recursive Harness Self-Improvement</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2607.15524</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>A prompt-level harness specification: roles, contracts, hops. Free-form rewrite of the whole loop.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>A single LLM optimizer call that sees the preference history only, never the evaluation prompt. Bandwidth not reported.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Pairwise LLM-judge preference against the immediately previous revision. Self-generated.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Linear preference history over a single lineage.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Greedy single-lineage hill-climb. No acceptance gate; stops when the improvement rate falls below ε.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>No, despite the name. By the paper's update rule H^(i+1) = L(H^(i), D^(i)) the optimizer is a fixed external model; the recursion runs over revision history, not over the editor.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✗ · held-out — · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Inference cost reduced by up to 60% relative to the maximum-reasoning-effort setting, at higher performance. Three seeds, two judges.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>All 30 tasks are synthetic; pairwise self-judging admits Goodharting the judge.</td>
+</tr>
+</tbody>
+</table>
+<h3>Living-Harness</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2607.26598</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>Harness state only: episodic memory and a state graph. Bounded, schema-constrained JSON commits.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>An LLM posterior–extract–commit pipeline running under a frozen, hand-written Evolution-SOP. Sees the full trajectory plus evaluator signals.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>External evaluator signals and trajectories. Not self-generated.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Compiled: memory entries plus state-graph repair edges, portable across model backbones. Rejected candidates are discarded.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Greedy per-episode commit, no population. Five gates: schema, scope, evidence, constraint, merge. No rollback.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>No. The Evolution-SOP is frozen and hand-written.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ~ (score-before-update: an episode's own evidence is never available when that episode is scored) · held-out ✓ (cross-model transfer) · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>τ²-Bench 83.09 average Pass@1, +10.07 points over the strongest interactive baseline; +9.91 on MultiWOZ-2.4.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Removing the eight hand-written per-domain SOPs costs 9.7 points (83.09 → 73.38), the largest single ablation. No regression testing.</td>
+</tr>
+</tbody>
+</table>
+<h3>OEO — Open-Ended Optimization</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2608.09629</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Object</td>
+<td>A skill text artifact. Free-form Revise commits a new version; the harness is frozen.</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>An agent emitting Inspect / RunTarget / Revise / Select / Stop. Uses a median 34.3% of the reference target-interaction token budget.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Optimizer-chosen inspection of data and results, plus RunTarget rollouts scored externally. The sealed split is untouchable.</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td>Linear history plus a checkpoint list; rollback via Select.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td>Agent-directed with no prescribed topology. No external gate: the optimizer commits and self-selects the final checkpoint.</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>No. The improvement process is composed online but is not itself an edit target.</td>
+</tr>
+<tr>
+<td>Scorecard</td>
+<td>sealed split ✓ (scored once) · held-out ✓ · matched-budget ✓ (static one-shot control, frozen-protocol capability ladder) · repeated-sampling ✗ · contamination —</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>7 wins and 1 tie against SkillOpt across 8 benchmark–target settings; 5 of 6 against GEPA. Two of the 14 headline cells are post-hoc OEO-matched checkpoints, excluded from the confirmatory counts.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Capability-dependent: a medium optimizer loses to the prescribed pipeline (+9.68 LiveMath for SkillOpt); a weak optimizer emits no valid actions.</td>
+</tr>
+</tbody>
+</table>
+<h2>The evaluation reference</h2>
+<h3>Rethinking the Evaluation of Harness Evolution</h3>
+<p>An audit, not a system. It runs the matched-budget and repeated-sampling comparisons that the scorecard's third and fourth checks ask for.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>arXiv 2607.12227</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claim tested</td>
+<td>That harness-evolution gains come from better harness design rather than from repeated sampling.</td>
+</tr>
+<tr>
+<td>Method</td>
+<td>Matched budget K = 5 against parallel sampling and sequential refinement; 45 / 10 / 34 train / validation / held-out split.</td>
+</tr>
+<tr>
+<td>Result</td>
+<td>Without unit tests, harness evolution averages 67.4 pass@1 against a 68.2 direct-sampling baseline and 72.3 for parallel sampling. With tests, parallel sampling wins pass@1 86.0 against 75.8. Held-out transfer: +1.2, +0.0, average +0.6.</td>
+</tr>
+<tr>
+<td>Constructive arm</td>
+<td>The paper's own harness-scaling method, per-instance adaptation, is the strongest non-parallel approach without tests: 71.8 and 76.0 on Opus.</td>
+</tr>
+<tr>
+<td>Conclusion stated</td>
+<td>Self-evolving harness loops, as evaluated today, are largely covert test-time scaling; most edits memorize fixes rather than distilling strategies.</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>One benchmark (Terminal-Bench 2.1, limited harness headroom), one method (AHE minus its explore agent), K = 5.</td>
+</tr>
+</tbody>
+</table>
+<h2>Where the remaining systems fall</h2>
+<p>These lists cover systems that modify part of an agent's scaffold. Work in the two final sections is excluded.</p>
+<p><strong>D1 Object.</strong> Prompt-level spec: RHI. Skill file: OEO, HiSME, Evo-Harness, MSCE, SkillHone, Rethinking Self-Evolving Skills, Reason-Wide-Not-Deep. Memory and context: Living-Harness, Argus. Harness code: DGM, Mendel GM, Hyperagents, Ouroboros, Meta-Harness, DarwinX, AIDE² (the inner agent's whole repo), AutoDesign (the design harness itself), CORAL (a shared attempts/notes/skills filesystem plus the coordination structure), Harness-R1 (an executable runtime overlay at four lifecycle hooks), SBCO (prompt plus per-constraint verifier code). Prompts, memory, skills and routing without code edits: HCL (four versioned components), HarnessCompass (seven component types). Environment: EnvHarness, SPADE. Objective or task distribution: SAGA (LLM-authored scoring functions), Task-CoEvolve (which validation tasks score a candidate), Evolving Benchmarks (the active task distribution, never the success criterion, alongside workflow, prompts and tools). Model weights together with a scaffold artifact: EvoHarness-RL (weights plus skill store), SPADE (weights plus environment), Frontis-MA1.</p>
+<p><strong>D2 Editor.</strong> Single model call: RHI. Reflective call under a fixed procedure: Living-Harness, Evo-Harness, HCL, HiSME, Rethinking Self-Evolving Skills. Agent with tools: DGM, Mendel GM, Hyperagents, Ouroboros, Meta-Harness, DarwinX, OEO, AutoDesign, AIDE², EnvHarness, ReASearch, SkillHone, CORAL. Trained editor: Harness-R1 (a 9B engineer model). Gradient update: EvoHarness-RL, SPADE, Frontis-MA1.</p>
+<p>Editor bandwidth is quantified in tokens by three systems: Meta-Harness (about 10 MTok per iteration), Hyperagents (about 33M tokens per run), HiSME (15.37 MTok maintenance). Two more quantify an evidence budget rather than tokens: Mendel GM (two trajectory records per edit) and OEO (34.3% of the reference budget). Elsewhere it is unstated.</p>
+<p><strong>D3 Evidence.</strong> Execution traces: Meta-Harness, Ouroboros, Argus, AIDE², Harness-R1 (a compacted failure packet). Paired comparison: Mendel GM. Verifier or tests: DGM, CORAL, Evolving Benchmarks, DarwinX, Evo-Harness (verifier results, unit tests, tool diagnostics). LLM judge: RHI, AutoDesign, HiSME, Ouroboros. Human: SAGA (2 of 3 autonomy modes), Ouroboros (social feedback).</p>
+<p>Self-generated feedback is a design choice in DGM's diagnosis step, HarnessCompass's blind and hindsight self-reports, MSCE's governance, SPADE's hint-based regret, and EnvHarness's LLM diagnosis. Evo-Harness tested it as an ablation arm and rejected it: self-generated feedback scored 27.96 against 29.54 for no evolution at all on CL-Bench.</p>
+<p><strong>D4 Memory.</strong> None: Harness-R1. Linear history: RHI, OEO. Raw archive: DGM, Mendel GM, Hyperagents, Meta-Harness, DarwinX. Compiled artifacts: Living-Harness, MSCE, HiSME, Evo-Harness, ReASearch, Argus. Shared across agents: CORAL, DarwinX.</p>
+<p>Rejected edits are retained by SkillHone (a persistent decision history whose ablation is worth roughly twice the evaluation firewall), AutoDesign (an optimization record with rollback), DarwinX (losers as stepping stones), SBCO (the strategist sees prior failures), ReASearch (a lessons file recording what failed), and HarnessCompass (R³ salvages beneficial loser edits). They are discarded by DGM, Living-Harness, and HCL. Meta-Harness keeps regressions but not smoke-test failures.</p>
+<p><strong>D5 Search.</strong> Greedy single lineage: RHI, Living-Harness, HCL, Evo-Harness, AutoDesign, Rethinking Self-Evolving Skills. Archive: DGM, Hyperagents. Population archive: DarwinX, Frontis-MA1. Lineage tree: Mendel GM. Pareto frontier: Meta-Harness. Agent-directed: OEO, Ouroboros, ReASearch, CORAL (which removes the evolutionary algorithm entirely, leaving a heartbeat scheduler and git isolation). Prescribed pipeline: SkillHone.</p>
+<p>Admission gates: functionality or compilation — DGM, Hyperagents. Interface smoke test — Meta-Harness. Review quorum with functionality — Ouroboros. Strict improvement — HarnessCompass, HCL, Rethinking Self-Evolving Skills. Preserve-and-extend, meaning positive gain with bounded regression — DarwinX. Validation pass — Mendel GM. Optimizer-chosen — OEO, ReASearch. Peer review — SkillHone.</p>
+<p><strong>D6 Recursion.</strong> Yes: Ouroboros (excluding launcher and supervisor), Hyperagents (the meta-procedure is editable). Partial: DGM and Mendel GM (the agent edits its own editing code while selection machinery stays frozen), AIDE² (Level 1 candidate evidence, Level 2 ignition explicitly not claimed), SPADE (the designer trains on the solver's response), Frontis-MA1, Argus (verifiers and routing are themselves editable). No: RHI, OEO, Meta-Harness (outer loop frozen by design), SBCO (fixing the meta-agent is its thesis), Living-Harness, HCL, Harness-R1, HarnessCompass, AutoDesign, EnvHarness, Evo-Harness, HiSME, MSCE, SkillHone, CORAL, EvoHarness-RL, Task-CoEvolve, Evolving Benchmarks, SAGA.</p>
+<p><strong>Evidence quality across these systems.</strong> All five checks are present in Meta-Harness. A sealed split the optimizer cannot touch is reported by Meta-Harness, OEO, HarnessCompass (a 50-task evolution set against 450 held-out), HiSME (150 train, 50 held-out, skills frozen at test), Rethinking Self-Evolving Skills, Harness-R1 (1,270 unseen tasks), AIDE² (public and private score splits), and DarwinX in three of four regimes; SkillHone's redaction firewall and Living-Harness's score-before-update protocol are structural analogues. Matched-budget controls are reported by DGM, Mendel GM, Hyperagents, Meta-Harness, OEO, EnvHarness, Task-CoEvolve, AIDE², and ReASearch. Explicit repeated-sampling baselines are reported by Meta-Harness, Rethinking Self-Evolving Skills, and the audit itself; CORAL runs a best-of-4 arm that is not token-matched. DGM and Mendel GM evolve and report on the same subsets; DarwinX and Meta-Harness do so within their Terminal-Bench 2.1 and TerminalBench-2 regimes respectively.</p>
+<h2>Related work sharing the machinery</h2>
+<p>Evolutionary search over objects that are not the agent's scaffold. Same operators, different target.</p>
+<table>
+<thead>
+<tr>
+<th>Paper</th>
+<th>Target</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../tutorials/adaexplore.html">AdaExplore</a></td>
+<td>Triton kernel source</td>
+<td>Partial: the Adapt stage evolves 78 persistent validity rules, which is harness state. Runs a repeated-sampling baseline — 3.12× against 2.12× for parallel sampling with the same memory.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/adaevolve.html">AdaEvolve</a></td>
+<td>Mathematical programs</td>
+<td>Partial: it evolves the search procedure's own hyper-policy, which is harness optimization in the operational sense; no harness source is edited. Matched budget of 30 LLM calls per task.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/asi-evolve.html">ASI-Evolve</a></td>
+<td>Training data, architectures, RL objectives</td>
+<td>The circle-packing cognition base in Appendix A contains the target score and the winning method. The architecture gain decomposes into +1.52 on the benchmarks used as fitness signal and +0.25 held out.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/darwinian-evolver.html">Darwinian Evolver</a></td>
+<td>Prompts, regex, SQL, code snippets</td>
+<td>The harness is hand-written and frozen. The evaluator returns a score together with concrete failure cases, which the mutator receives.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/coral-multi-agent-evolution.html">CORAL</a></td>
+<td>Listed above under D1 — it does evolve the harness</td>
+<td>Included here only to note that it removes the evolutionary algorithm rather than refining it.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/saga-goal-evolving.html">SAGA</a></td>
+<td>The objective function itself</td>
+<td>One level above the harness. Human feedback is in the loop for 2 of 3 autonomy modes.</td>
+</tr>
+</tbody>
+</table>
+<h2>Adjacent work that does not modify a harness</h2>
+<table>
+<thead>
+<tr>
+<th>Paper</th>
+<th>What it is</th>
+<th>Why it is not on the grid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../tutorials/pro-long-programmatic-memory.html">PRO-LONG</a></td>
+<td>Append-only log, frozen weights, fixed harness</td>
+<td>Nothing is searched, trained, or admitted. It reports +18.0 points pass@1 over a no-log coding agent on ARC-AGI-3, a benchmark the nine systems above do not use.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/nooa-object-oriented-agents.html">NOOA</a></td>
+<td>Hand-authored harness with typed context APIs</td>
+<td>No search over harness designs. The model manipulates its own context through exposed APIs and curates memory via seven tools, but no loop proposes or admits harness variants. Its 13.3% → 85.1% figure measures a harness effect.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/cordis-spatiotemporal-composability.html">Cordis</a></td>
+<td>Runtime substrate for live plugin swap and revert</td>
+<td>Answers how an edit is applied and undone safely, not which edit. No editor, no evidence signal, no acceptance rule.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/harness-handbook.html">Harness Handbook</a></td>
+<td>Behaviour-to-code index for locating edit sites</td>
+<td>Supplies localization upstream of any loop. It scores plans (S = 0.5·S_Loc + 0.25·S_Scope + 0.25·S_Reason, δ = 3 win threshold) but generates no candidate harnesses and executes no edits.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/agentic-context-management.html">Agentic Context Management</a></td>
+<td>Hand-designed compaction lifecycle</td>
+<td>No search over designs; the only acceptance rule is a validation retry. Its reported numbers (92.0% LongMemEval, 93.2% LoCoMo categories 1–4) are self-run.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/trace-turn-level-rewards.html">TRACE</a>, <a href="../tutorials/agentopsd-recursive-self-distillation.html">AgentOPSD</a></td>
+<td>Turn-level RL credit assignment</td>
+<td>Weights change; the harness is fixed. AgentOPSD's "recursive" refers to a Bayesian belief filter, not to editing an editor.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/training-agents-in-harnesses.html">OpenForgeRL</a></td>
+<td>RL training through a production harness</td>
+<td>Trains through a harness without modifying it. Its finding is that harness choice is a training variable.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/demystifying-agent-skills.html">Demystifying Agent Skills</a></td>
+<td>Measurement study on fixed skills</td>
+<td>No optimization loop. Procedural anchoring accounts for 65.7% of cases where a skill helps, knowledge injection 4.5%.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/skillgate-skill-selection.html">SkillGate</a>, <a href="../tutorials/skillrise-curriculum-skills.html">SkillRise</a>, <a href="../tutorials/skill-self-play.html">Skill-SP</a></td>
+<td>RL over skill selection or generation</td>
+<td>Weights are trained rather than artifacts edited. SkillGate's 16-candidate slate is fixed and read at evaluation; SkillRise's document is deployed at test time but discarded at sequence end; Skill-SP's controller does update a skill library, making it the closest of the three to the grid.</td>
+</tr>
+</tbody>
+</table>
+<h2>Related audits</h2>
+<table>
+<thead>
+<tr>
+<th>Paper</th>
+<th>Finding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../tutorials/harness-generalization.html">No Universally Best Harness</a></td>
+<td>30 budget-matched harnesses across 12 model–problem pairs, 3.1M rollouts. The best fixed harness's cross-pair advantage moves from p = 0.023 to p = 0.678 under Holm correction.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/fragility-self-improving-agents.html">On the Fragility of Self-Improving Agents</a></td>
+<td>Three runs and two shuffled task orders: variance rises in 17 of 24 cases; WebArena drops 54.8 → 49.1, below the no-memory baseline. The default task order acted as an implicit curriculum.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/agent-skills-harmful.html">Agent Skills Can Be Harmful</a></td>
+<td>307 skill-induced failures; 125 functional, of which Task-Implementation Fault accounts for 86. Only 2 of 125 come from an obviously misapplied skill.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/sample-more-reflect-less.html">Sample More, Reflect Less</a></td>
+<td>Of 36 cost-matched comparisons, none beat repeated sampling; 10 are significantly worse.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/session-constraints.html">Lost in Compaction</a></td>
+<td>Compactors retain 17% of standing rules on average, ranging from 0% (truncation, LLMLingua-2) to 98% in one GPT-5.4-mini setting; a constraint-aware extractor recovers 90.3–95.6%.</td>
+</tr>
+<tr>
+<td><a href="../tutorials/harness-if.html">Harness-IF</a></td>
+<td>Against-prior scoring lowers instruction-following accuracy by 3.6–7.4 points across 12 models.</td>
+</tr>
+</tbody>
+</table></article>
+<footer>Generated 2026-08-23 23:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
