@@ -76,6 +76,6 @@ optimize clipped PPO/GRPO loss with token advantage Ã_{turn(t)}
 <li><strong>The teacher is the student with better context</strong>: a training-only retrieved skill turns the policy into its own privileged teacher; skills are never used at inference, and the gains come from the credit construction, not the privileged access.</li>
 <li><strong>Reshaping, not replacing</strong>: GRPO's advantage is modulated per turn by a strictly positive bounded multiplier <span class="arithmatex">\((1-\lambda)+\lambda w_k\)</span> — never reversing the update — and this alone yields 89.1% ALFWorld at 7B and double-digit gains at 3B, with the biggest edge on the longest-horizon tasks.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-23 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-23 16:12 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
