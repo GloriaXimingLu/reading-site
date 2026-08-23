@@ -84,6 +84,6 @@ for task in {8 classification, 10 STS, 9 clustering, 4 pair-cls, 6 retrieval}:
 <li><strong>The parity point costs 1,431×</strong> ($154.14 vs. $0.11 per pass; 338–2,424× across scenarios; 2.5–736× throughput on identical hardware), and 28–81% of the LLM bill is thinking tokens that mostly don't help — reduced reasoning preserved or improved retrieval for 4/6 models. If you deploy LLM retrieval, turn the reasoning budget <em>down</em> first.</li>
 <li><strong>Buy reasoning by the shortlist, not by the corpus</strong>: embedding first stage + LLM listwise rerank gets 35.1 vs. 22.3 nDCG@10 on BRIGHT for $10–30 where corpus-in-context costs $154 — and on semantic retrieval (BEIR) skip the LLM entirely, because the strong embedder alone beats every reranked configuration.</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-23 15:11 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-23 15:38 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
