@@ -84,7 +84,16 @@
   function initAnnotations() {
     const article = document.querySelector('article');
     if (!article) return false;
-    const KEY = 'rt:ann:' + location.pathname;
+    // Key on the last two path segments ("tutorials/foo.html") rather than the
+    // full path, so the same page keys identically whether served from the
+    // deploy root, a project subpath, or a local preview — otherwise a synced
+    // annotation would not find its page. Migrate any full-path key once.
+    const KEY = 'rt:ann:' + location.pathname.split('/').filter(Boolean).slice(-2).join('/');
+    const LEGACY_KEY = 'rt:ann:' + location.pathname;
+    if (LEGACY_KEY !== KEY && LS.getItem(LEGACY_KEY) && !LS.getItem(KEY)) {
+      LS.setItem(KEY, LS.getItem(LEGACY_KEY));
+      LS.removeItem(LEGACY_KEY);
+    }
 
     const load = () => getJSON(KEY, []);
     const save = anns => setJSON(KEY, anns);
@@ -418,8 +427,95 @@
 
   /* ---------------- export / import (all rt:* state) ---------------- */
 
+  /* ---- cross-device transfer via URL fragment ----
+   * localStorage is per-browser, so laptop notes never reach a phone. The
+   * fragment (#...) is never transmitted to the server, so a sync link carries
+   * annotations between your own devices without publishing them on the public
+   * site. */
+  const SYNC_PREFIX = '#rtsync=';
+
+  function encodeState() {
+    const dump = {};
+    for (let i = 0; i < LS.length; i++) {
+      const k = LS.key(i);
+      if (k && k.startsWith('rt:')) dump[k] = getJSON(k, null);
+    }
+    const json = JSON.stringify(dump);
+    // base64url of UTF-8 bytes
+    const bytes = new TextEncoder().encode(json);
+    let bin = '';
+    bytes.forEach(b => { bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function mergeDump(dump) {
+    let added = 0;
+    for (const [k, v] of Object.entries(dump || {})) {
+      if (!k.startsWith('rt:')) continue;
+      if (k === HEARTS_KEY) {
+        const cur = getJSON(k, {});
+        for (const [id, ts] of Object.entries(v || {})) if (!cur[id]) { cur[id] = ts; added++; }
+        setJSON(k, cur);
+      } else if (Array.isArray(v)) {
+        const cur = getJSON(k, []);
+        const ids = new Set(cur.map(a => a && a.id));
+        const fresh = v.filter(a => a && !ids.has(a.id));
+        added += fresh.length;
+        setJSON(k, cur.concat(fresh));
+      }
+    }
+    return added;
+  }
+
+  function flashSynced(added) {
+    const note = el('div', 'ann-flash', Number(added)
+      ? `Synced ${added} item${Number(added) === 1 ? '' : 's'} to this device.`
+      : 'Already up to date on this device.');
+    document.body.appendChild(note);
+    setTimeout(() => note.remove(), 4000);
+  }
+
+  function consumeSyncLink(viaHashChange) {
+    try {
+      const pending = sessionStorage.getItem('rt:synced');
+      if (pending !== null) { sessionStorage.removeItem('rt:synced'); flashSynced(pending); }
+    } catch (e) {}
+    const h = location.hash || '';
+    if (!h.startsWith(SYNC_PREFIX)) return;
+    try {
+      const b64 = h.slice(SYNC_PREFIX.length).replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b64 + '='.repeat((4 - b64.length % 4) % 4));
+      const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+      const added = mergeDump(JSON.parse(new TextDecoder().decode(bytes)));
+      history.replaceState(null, '', location.pathname + location.search);
+      if (viaHashChange) {
+        // Adding only a #fragment is a same-document navigation, so nothing
+        // re-renders. Reload (the payload is already stripped) to draw the
+        // imported annotations, carrying the confirmation across.
+        try { sessionStorage.setItem('rt:synced', String(added)); } catch (e) {}
+        location.reload();
+        return;
+      }
+      flashSynced(added);
+    } catch (e) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+
   function buildTransferRow() {
     const row = el('div', 'ann-transfer');
+    const sync = el('button', null, '⇄ Sync link');
+    sync.title = 'Copy a private link that carries these annotations to another device';
+    sync.addEventListener('click', () => {
+      const url = location.origin + location.pathname + SYNC_PREFIX + encodeState();
+      const done = () => { sync.textContent = '✓ Link copied'; setTimeout(() => { sync.textContent = '⇄ Sync link'; }, 2500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, () => window.prompt('Copy this link:', url));
+      } else {
+        window.prompt('Copy this link:', url);
+      }
+    });
+    row.appendChild(sync);
     const exp = el('button', null, '⇩ Export all');
     exp.addEventListener('click', () => {
       const dump = {};
@@ -477,7 +573,10 @@
     });
   }
 
+  window.addEventListener('hashchange', () => consumeSyncLink(true));
+
   function init() {
+    consumeSyncLink(false);     // must precede rendering so merged items show
     const isIndex = initHearts();
     const isArticle = initAnnotations();
     if (isIndex && !isArticle) initIndexPanel();
