@@ -179,8 +179,19 @@
 
     function hideToolbar() { toolbar.style.display = 'none'; pendingRange = null; }
 
+    // On touch devices the OS draws its own selection callout ("Copy / Look
+    // Up") next to the selection, which overlaps or hides a floating toolbar.
+    // Pin ours to the bottom of the viewport instead: always the same place,
+    // never in a fight with the native UI, and a large tap target.
+    const coarsePointer = window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches;
+
     function placeToolbar(rect) {
       toolbar.style.display = 'flex';
+      if (coarsePointer) {
+        toolbar.classList.add('ann-toolbar-docked');
+        toolbar.style.top = toolbar.style.left = '';
+        return;
+      }
       toolbar.style.visibility = 'hidden';   // measure before positioning
       const tw = toolbar.offsetWidth, th = toolbar.offsetHeight;
       const margin = 8;
@@ -225,20 +236,41 @@
     // adjust the range after the finger lifts (drag handles, word snapping) —
     // so selectionchange is the primary signal, with a delay long enough to
     // settle. Mouse events stay as the fast path on desktop.
-    document.addEventListener('selectionchange', () => scheduleSync(dragging ? 0 : 350));
-    document.addEventListener('mousedown', e => {
+    document.addEventListener('selectionchange', () => scheduleSync(dragging ? 0 : 320));
+
+    // `dragging` suppresses the toolbar mid-drag. It must only ever be set by a
+    // real mouse: iOS emits a synthetic mousedown on long-press with no
+    // matching mouseup, which would latch this true and hide the toolbar
+    // forever. Pointer events give us the input type; touch clears it outright.
+    function endDrag() { dragging = false; }
+    document.addEventListener('pointerdown', e => {
+      if (e.pointerType && e.pointerType !== 'mouse') { dragging = false; return; }
       if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
       dragging = true;
-    });
+    }, true);
+    document.addEventListener('pointerup', endDrag, true);
+    document.addEventListener('pointercancel', endDrag, true);
+    document.addEventListener('touchstart', endDrag, { passive: true, capture: true });
     document.addEventListener('mouseup', e => {
       dragging = false;
       if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
       scheduleSync(0);
     });
     document.addEventListener('touchend', e => {
+      dragging = false;
       if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
-      scheduleSync(300);
+      scheduleSync(280);
     }, { passive: true });
+    // Belt and braces: if a selection exists but nothing has shown the toolbar
+    // (an event sequence we did not anticipate), recover within a second.
+    setInterval(() => {
+      if (toolbar.style.display === 'none' && !dragging) {
+        const s = window.getSelection();
+        if (s && !s.isCollapsed && s.rangeCount &&
+            article.contains(s.getRangeAt(0).commonAncestorContainer) &&
+            s.toString().trim()) syncToolbar();
+      }
+    }, 1000);
     window.addEventListener('resize', () => scheduleSync(150));
 
     function annFromRange(range) {

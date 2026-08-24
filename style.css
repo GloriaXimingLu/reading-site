@@ -335,3 +335,16 @@ article hr { border: 0; border-top: 1px solid var(--border); margin: 30px 0; }
   .heart-btn { padding: 6px 10px; font-size: 1.2rem; }
   .ann-toolbar { gap: 6px; }
 }
+
+/* Touch: dock the selection toolbar to the bottom of the viewport, clear of
+   the OS's own selection callout. */
+.ann-toolbar.ann-toolbar-docked {
+  position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+  border-radius: 14px 14px 0 0; border-bottom: 0;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  justify-content: center; gap: 10px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.18);
+}
+.ann-toolbar.ann-toolbar-docked button {
+  flex: 1 1 0; max-width: 220px; padding: 13px 10px; font-size: 0.95rem; font-weight: 600;
+}
