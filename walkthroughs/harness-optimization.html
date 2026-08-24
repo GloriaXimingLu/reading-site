@@ -13,60 +13,81 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">21 min · 33 papers · 2026-08-23</p><p>An agent is a model plus a harness: prompts, tools, control flow, memory, and the code that binds them. Harness optimization covers systems that modify part of that scaffold automatically, using evidence from the agent's own execution.</p>
-<p>This page defines six dimensions that separate such systems, places nine systems on all six in detail, adds the evaluation audit they are read against, and lists where the remaining systems fall. Two final sections list work that shares the machinery or is frequently grouped with harness optimization but does not modify a harness.</p>
-<p>Where a source is silent, the cell says so rather than inferring a value. Statements below name the systems they cover; no corpus-wide proportions are asserted, because the corpus boundary is itself a judgement.</p>
-<h2>The six dimensions</h2>
-<table>
-<thead>
-<tr>
-<th>#</th>
-<th>Dimension</th>
-<th>Question</th>
-<th>Values</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1</td>
-<td>Object</td>
-<td>What artifact changes on disk?</td>
-<td>prompt-level spec · skill file · memory/context · harness code · environment · objective · model weights</td>
-</tr>
-<tr>
-<td>D2</td>
-<td>Editor</td>
-<td>What performs the edit, and what can it see?</td>
-<td>single model call · reflective call under a fixed procedure · agent with tools · trained editor · gradient update; bandwidth in tokens where stated</td>
-</tr>
-<tr>
-<td>D3</td>
-<td>Evidence</td>
-<td>What is each edit conditioned on?</td>
-<td>scalar score · execution traces · paired comparison · verifier or tests · LLM judge · human; self-generated or external</td>
-</tr>
-<tr>
-<td>D4</td>
-<td>Memory</td>
-<td>What persists across edits?</td>
-<td>none · linear history · raw archive · compiled artifacts · shared across agents; rejected edits kept or discarded</td>
-</tr>
-<tr>
-<td>D5</td>
-<td>Search</td>
-<td>How are candidates produced and admitted?</td>
-<td>none · greedy · archive · population · tree · Pareto · agent-directed; gate: functionality · strict improvement · preserve-and-extend · peer review · optimizer-chosen</td>
-</tr>
-<tr>
-<td>D6</td>
-<td>Recursion</td>
-<td>Is the editor itself in the edit set?</td>
-<td>no · partial · yes</td>
-</tr>
-</tbody>
-</table>
-<p>D1–D6 describe system design. Evidence quality is tracked separately, because a system can be fully specified on D1–D6 and weakly evidenced.</p>
-<p><strong>Evidence scorecard.</strong> Five checks, each marked ✓ present, ✗ absent or violated, ~ partial, or — where the source does not say: sealed split (evaluation data the optimizer cannot touch) · held-out tasks · matched-budget control · repeated-sampling baseline · contamination addressed.</p>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">26 min · 33 papers · 2026-08-23</p><p>Six dimensions separating systems that automatically modify part of an agent's harness — its prompts, tools, control flow, memory, or the code binding them — using evidence from the agent's own execution. Nine systems are placed on all six in detail, followed by the evaluation audit they are read against and the placement of the remaining systems.</p>
+<p>Where a source is silent, the cell says so rather than inferring a value. Statements name the systems they cover; no corpus-wide proportions are asserted, because the corpus boundary is itself a judgement.</p>
+<h2>D1 · Object — what artifact changes on disk?</h2>
+<ul>
+<li><strong>prompt-level spec</strong> — RHI rewrites the text that describes the agent loop: roles, contracts, hops.</li>
+<li><strong>skill file</strong> — OEO commits a new version of a Markdown skill document read into the model's context.</li>
+<li><strong>memory or context</strong> — Living-Harness writes episodic-memory entries and state-graph repair edges.</li>
+<li><strong>harness code</strong> — DGM edits its own Python repository: tools, prompts, control flow.</li>
+<li><strong>environment</strong> — EnvHarness wraps a frozen benchmark with Setup, Rule, and Link components.</li>
+<li><strong>objective</strong> — SAGA compiles new scoring functions and then optimizes against them.</li>
+<li><strong>model weights</strong> — EvoHarness-RL takes gradient steps alongside its skill-store edits.</li>
+</ul>
+<p>Granularity varies independently: bounded patch operators (SkillOpt), structured operations such as revise / select / stop (OEO), free-form rewrite (DarwinX), whole-repo agentic edits (DGM), or a gradient step.</p>
+<h2>D2 · Editor — what performs the edit, and what can it see?</h2>
+<ul>
+<li><strong>single model call</strong> — RHI: one LLM call reads the preference history and emits the next specification.</li>
+<li><strong>reflective call under a fixed procedure</strong> — Living-Harness: an extract-then-commit pipeline runs under a hand-written standard operating procedure the model cannot change.</li>
+<li><strong>agent with tools</strong> — Meta-Harness: a coding agent runs grep and cat over a filesystem holding every prior candidate's code, score, and execution traces.</li>
+<li><strong>trained editor</strong> — Harness-R1: a 9B model trained specifically to emit harness patches.</li>
+<li><strong>gradient update</strong> — SPADE: GRPO updates the weights that generate environments.</li>
+</ul>
+<p>Bandwidth is the amount of evidence reaching the editor per edit. Meta-Harness reports about 10 MTok per iteration against 0.002–0.026 MTok for prior text optimizers, and ablates it: full traces 50.0, LLM summaries 34.9, scores only 34.6.</p>
+<h2>D3 · Evidence — what is each edit conditioned on?</h2>
+<ul>
+<li><strong>scalar score</strong> — AIDE²: one aggregate private score per candidate.</li>
+<li><strong>execution traces</strong> — Meta-Harness: the raw logs of every prior run, searchable.</li>
+<li><strong>paired comparison</strong> — Mendel GM: two runs chosen to differ in exactly one respect, same agent on two tasks or two lineages on one task.</li>
+<li><strong>verifier or tests</strong> — DGM: the benchmark's own private test patch.</li>
+<li><strong>LLM judge</strong> — RHI: a model ranks the new revision against the previous one.</li>
+<li><strong>human</strong> — SAGA: a person intervenes in two of its three autonomy modes.</li>
+</ul>
+<p>Independently of source, feedback is either external or self-generated. Evo-Harness tested a self-generated arm and rejected it: 27.96 against 29.54 for no evolution at all.</p>
+<h2>D4 · Memory — what persists across edits?</h2>
+<ul>
+<li><strong>none</strong> — Harness-R1: every patch starts from the frozen target.</li>
+<li><strong>linear history</strong> — OEO: an ordered list of committed checkpoints it can roll back to.</li>
+<li><strong>raw archive</strong> — DGM: a tree holding the code of every functioning ancestor.</li>
+<li><strong>compiled artifacts</strong> — AdaExplore: 78 distilled validity rules, kept instead of the runs that produced them.</li>
+<li><strong>shared across agents</strong> — CORAL: one attempts / notes / skills filesystem read and written by four concurrent agents.</li>
+</ul>
+<p>Separately, rejected edits are either retained (SkillHone keeps a decision history of what was declined) or discarded (DGM leaves no trace of a broken child).</p>
+<h2>D5 · Search — how are candidates produced and admitted?</h2>
+<p>Topology:</p>
+<ul>
+<li><strong>none</strong> — Ouroboros: sequential evolution tasks, no candidate set.</li>
+<li><strong>greedy</strong> — Living-Harness: one commit per episode, no alternatives generated.</li>
+<li><strong>archive</strong> — DGM: any functioning ancestor can be sampled as the next parent.</li>
+<li><strong>population archive</strong> — DarwinX: parallel branches that can later be merged.</li>
+<li><strong>lineage tree</strong> — Mendel GM: clade-level Thompson sampling over the tree.</li>
+<li><strong>Pareto frontier</strong> — Meta-Harness: candidates retained on a score–cost frontier.</li>
+<li><strong>agent-directed</strong> — OEO: the optimizer itself decides when to branch, roll back, or stop.</li>
+</ul>
+<p>Admission gate:</p>
+<ul>
+<li><strong>functionality</strong> — DGM: the child compiles and can still edit code. No score requirement.</li>
+<li><strong>strict improvement</strong> — HCL: validation score must not decrease.</li>
+<li><strong>preserve-and-extend</strong> — DarwinX: positive gain with regression bounded below a threshold.</li>
+<li><strong>peer review</strong> — SkillHone: an accept / reject / request-changes verdict from a reviewing agent.</li>
+<li><strong>optimizer-chosen</strong> — OEO: no external gate; the optimizer commits and selects its own final checkpoint.</li>
+</ul>
+<h2>D6 · Recursion — is the editor itself in the edit set?</h2>
+<ul>
+<li><strong>no</strong> — Meta-Harness freezes its outer loop by design; only the harness under test changes.</li>
+<li><strong>partial</strong> — DGM edits the repository that does the editing, but parent selection and the diagnosis model stay fixed.</li>
+<li><strong>yes</strong> — Hyperagents makes the meta-level modification procedure itself editable.</li>
+</ul>
+<h2>Evidence scorecard</h2>
+<p>D1–D6 describe design. Evidence quality is tracked separately, because a system can be fully specified on D1–D6 and weakly evidenced. Each check is marked ✓ present, ✗ absent or violated, ~ partial, or — where the source does not say.</p>
+<ul>
+<li><strong>sealed split</strong> — evaluation data the optimizer can never touch. OEO scores its final skill once on such a split.</li>
+<li><strong>held-out tasks</strong> — tasks not used during optimization. DGM measures transfer to benchmarks and models it never evolved against.</li>
+<li><strong>matched-budget control</strong> — the same compute spent a simpler way. DGM's greedy ablation removes the archive at equal budget: 39.7 against 50.0.</li>
+<li><strong>repeated-sampling baseline</strong> — the same budget spent on more attempts instead. Meta-Harness compares against Best-of-N.</li>
+<li><strong>contamination addressed</strong> — leakage between optimization and evaluation data is checked. Ouroboros filters SWE-bench Pro reference leakage.</li>
+</ul>
 <h2>Nine systems in detail</h2>
 <p>The table scans; the blocks below give full cell values, the scorecard, the result, and the stated limit. The evaluation audit follows in its own section.</p>
 <table>
@@ -175,31 +196,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>Own Python agent repo: tools, prompts, workflow. Whole-repo agentic edits, one feature per child.</td>
+<td>D1 Object</td>
+<td><strong>harness code</strong>, whole-repo agentic edits — its own Python repository: tools, prompts, control flow. One feature per child.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>Agent with tools rewrites its own repo. A separate frozen model (o1) produces the diagnosis. Bandwidth not reported.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — the agent rewrites its own repo. Diagnosis comes from a <em>separate frozen model</em> (o1), not the editing agent. Bandwidth not reported.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>One run's logs, the GitHub issue, the predicted patch, and the private test patch, read by the separate diagnosis model rather than by the editing agent.</td>
+<td>D3 Evidence</td>
+<td><strong>verifier or tests</strong>, external — one run's logs, the GitHub issue, the predicted patch, and the benchmark's private test patch, read by the diagnosis model.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Raw archive tree of functioning ancestors. Broken children are discarded; no rejected-edit memory.</td>
+<td>D4 Memory</td>
+<td><strong>raw archive</strong> — a tree of every functioning ancestor's code. Rejected edits <em>discarded</em>: broken children leave no trace.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Open-ended archive. Parent sampling ∝ sigmoid(score) × 1/(1+children). Admission requires functionality — the child compiles and can still edit code — not a score improvement.</td>
+<td>D5 Search</td>
+<td><strong>archive</strong> topology — any functioning ancestor can be sampled as parent, ∝ sigmoid(score) × 1/(1+children). Gate: <strong>functionality</strong> — the child compiles and can still edit code. No score requirement.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>Partial. The agent edits the code that does the editing; parent selection and the diagnosis model stay frozen.</td>
+<td>D6 Recursion</td>
+<td><strong>partial</strong> — the agent edits the code that does the editing, but parent selection and the diagnosis model stay frozen.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✗ · held-out ✓ (cross-benchmark, cross-model transfer) · matched-budget ✓ (greedy ablation) · repeated-sampling ✗ · contamination ~ (hard-coding risk flagged, no memorization found on inspection)</td>
 </tr>
 <tr>
@@ -222,31 +243,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>Agent source plus scaffolding, treated as a genotype. Free-form self-rewrite; no code splicing between lineages.</td>
+<td>D1 Object</td>
+<td><strong>harness code</strong>, free-form self-rewrite — agent source plus scaffolding, treated as a genotype. No code splicing between lineages.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>The target agent edits its own code. The comparative operator supplies two (trajectory, outcome) records; a retained clonal-mutation operator uses one, sampled at λ = 0.10.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — the target agent edits its own code. Evidence budget: two (trajectory, outcome) records per edit; a retained clonal operator uses one, at λ = 0.10.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Paired comparison: the same agent on two tasks, or two lineages on one task. Binary verifier outcomes.</td>
+<td>D3 Evidence</td>
+<td><strong>paired comparison</strong>, external — two runs differing in exactly one respect: same agent on two tasks, or two lineages on one task. Binary verifier outcomes.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Archive tree storing code and every recorded phenotype, plus a global failure pool that the released configuration neutralises at β_fail = 1.0. Rejected-edit memory not reported.</td>
+<td>D4 Memory</td>
+<td><strong>raw archive</strong> — a tree storing code and every recorded phenotype, plus a global failure pool the released configuration neutralises at β_fail = 1.0. Rejected-edit memory not reported.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Lineage tree with clade-level Thompson sampling and a widening rule N^α ≥ |V|. Admits any child passing validation.</td>
+<td>D5 Search</td>
+<td><strong>lineage tree</strong> — clade-level Thompson sampling with a widening rule N^α ≥ |V|. Gate: <strong>validation pass</strong> — admits any child that validates.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>Partial. Search machinery is untouched.</td>
+<td>D6 Recursion</td>
+<td><strong>partial</strong> — the agent rewrites itself; the search machinery is untouched.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✗ (evolves and reports on the same 60-task subsets) · held-out ✓ (zero-shot cross-benchmark and cross-model) · matched-budget ✓ (budget, seed, backbone) · repeated-sampling ✗ · contamination —</td>
 </tr>
 <tr>
@@ -269,31 +290,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>The whole hyperagent program: task agent, tools, memory, and the meta agent's own modification procedure. Whole-repo edits.</td>
+<td>D1 Object</td>
+<td><strong>harness code</strong>, whole-repo — the task agent, its tools and memory, <em>and</em> the meta agent's own modification procedure.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>The system's own meta agent, using bash and file-edit tools. About 33M self-modification tokens per 100-iteration run.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — the system's own meta agent, using bash and file editing. Bandwidth: about 33M self-modification tokens per 100-iteration run.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Archive scores and prior per-domain evaluation results.</td>
+<td>D3 Evidence</td>
+<td><strong>scalar score</strong>, external — archive scores and prior per-domain evaluation results.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Archive of hyperagents. Agents introduced their own persistent memory and a PerformanceTracker during runs.</td>
+<td>D4 Memory</td>
+<td><strong>raw archive</strong> of hyperagents. Agents introduced their own persistent memory and a PerformanceTracker during runs. Rejected-edit memory not reported.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Open-ended archive. Parent sampling ∝ sigmoid(score − top-3 mean) × novelty. Admits if it compiles.</td>
+<td>D5 Search</td>
+<td><strong>archive</strong> topology — parent sampling ∝ sigmoid(score − top-3 mean) × novelty. Gate: <strong>functionality</strong> — admits if it compiles.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>Yes. The meta-level modification procedure is itself editable; parent selection remains frozen.</td>
+<td>D6 Recursion</td>
+<td><strong>yes</strong> — the meta-level modification procedure is itself an edit target. Parent selection remains frozen.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✗ · held-out ✓ (validation split, unseen-domain meta-transfer) · matched-budget ✓ (DGM-custom baseline) · repeated-sampling ✗ · contamination —</td>
 </tr>
 <tr>
@@ -316,31 +337,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>Its own repository: tools, prompts, context assembly, review logic, core code. Whole-repo commits.</td>
+<td>D1 Object</td>
+<td><strong>harness code</strong>, whole-repo commits — its own repository: tools, prompts, context assembly, <em>review logic</em>, core code.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>The agent itself plus scout and acting subagents in worktrees; the parent is the sole committer. Bandwidth not reported.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — the agent itself plus scout and acting subagents in worktrees; the parent is the sole committer. Bandwidth not reported.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>A blocking LLM diff-review panel, deterministic preflight checks, and fingerprint freshness, plus observed bugs. Self-reviewed.</td>
+<td>D3 Evidence</td>
+<td><strong>LLM judge</strong>, self-reviewed — a blocking diff-review panel, deterministic preflight, and fingerprint freshness, plus observed bugs.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Durable error classes, Git history, a review-evidence ledger, 227 MB of memory artifacts.</td>
+<td>D4 Memory</td>
+<td><strong>compiled artifacts</strong> — durable error classes, a review-evidence ledger, Git history, 227 MB of memory artifacts. Rejected-edit memory not reported.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>None. Agent-directed sequential evolution tasks. The gate is a review quorum together with functionality; there is no score-based acceptance.</td>
+<td>D5 Search</td>
+<td><strong>none</strong> — sequential agent-directed evolution tasks, no candidate set. Gate: <strong>peer review</strong> (a blocking quorum) together with functionality; no score-based acceptance.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>Yes, excluding an unmodifiable launcher and supervisor.</td>
+<td>D6 Recursion</td>
+<td><strong>yes</strong> — including the review logic that gates its own edits. Excludes an unmodifiable launcher and supervisor.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✗ · held-out — (benchmarks run from frozen snapshots; withholding from evolution is not established) · matched-budget ✗ · repeated-sampling ✗ · contamination ✓ (SWE-bench Pro leakage filtered; an audit removed a reward-hacked trial)</td>
 </tr>
 <tr>
@@ -363,31 +384,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>The harness as a single-file executable Python program. The proposer chooses a local edit or a full rewrite.</td>
+<td>D1 Object</td>
+<td><strong>harness code</strong> — the harness as a single-file executable Python program. The proposer chooses a local edit or a full rewrite.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>A coding agent with grep and cat over the filesystem: about 10 MTok per iteration, median 82 files. The paper reports 0.002–0.026 MTok per iteration for prior text optimizers.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — a coding agent running grep and cat over the filesystem. Bandwidth: about 10 MTok per iteration, median 82 files, against 0.002–0.026 MTok reported for prior text optimizers.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Search-set scores plus the raw execution traces of every prior candidate.</td>
+<td>D3 Evidence</td>
+<td><strong>execution traces</strong>, external — search-set scores plus the raw traces of every prior candidate, searchable rather than summarised.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Raw filesystem archive of code, scores, and traces per candidate. Regressions are retained and reasoned over; smoke-test failures are not logged.</td>
+<td>D4 Memory</td>
+<td><strong>raw archive</strong> on the filesystem: code, scores, and traces per candidate. Regressions retained and reasoned over; smoke-test failures not logged.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Agent-directed. No parent selection or mutation operators; a Pareto frontier is maintained; admission is a cheap interface smoke test, and the proposer never sees test-set results.</td>
+<td>D5 Search</td>
+<td><strong>Pareto frontier</strong>, agent-directed — no parent selection or mutation operators. Gate: <strong>interface smoke test</strong>; the proposer never sees test-set results.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>No. The outer loop is deliberately frozen.</td>
+<td>D6 Recursion</td>
+<td><strong>no</strong> — the outer loop is deliberately frozen.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✓ (test scored once) · held-out ✓ (OOD tasks and held-out models) · matched-budget ✓ (Best-of-N) · repeated-sampling ✓ · contamination ✓ (regex leakage audit). All five present.</td>
 </tr>
 <tr>
@@ -410,31 +431,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>A skill layer (prompts, memory) and a code layer (tools, control flow). Additive single edits.</td>
+<td>D1 Object</td>
+<td><strong>harness code plus skill file</strong> — a skill layer (prompts, memory) and a code layer (tools, control flow). Additive single edits.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>An LLM proposer plus a reasoning verifier agent. Bandwidth not reported.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — an LLM proposer plus a reasoning verifier agent. Bandwidth not reported.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Three routed signals — failure diagnosis, teacher demonstrations, self-contrast — scored by the benchmark's own verifier at avg@k without gold labels.</td>
+<td>D3 Evidence</td>
+<td><strong>verifier</strong>, three routed signals — failure diagnosis, teacher demonstrations, and self-contrast, scored by the benchmark's own verifier at avg@k without gold labels.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Archive never deletes. Shared cross-generation memory of themes that worked or regressed; losers retained as stepping stones.</td>
+<td>D4 Memory</td>
+<td><strong>raw archive</strong> that never deletes, plus <strong>shared</strong> cross-generation memory of themes that worked or regressed. Rejected edits <em>retained</em> as stepping stones.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Population archive with lineage-gain parent sampling and a merge operator. Preserve-and-extend gate: gain g &gt; 0 and regression R ≤ δ.</td>
+<td>D5 Search</td>
+<td><strong>population archive</strong> — lineage-gain parent sampling with a merge operator. Gate: <strong>preserve-and-extend</strong> — gain g &gt; 0 with regression R ≤ δ.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>No. Selection machinery is fixed.</td>
+<td>D6 Recursion</td>
+<td><strong>no</strong> — selection machinery is fixed.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✓ in three of four regimes (TerminalWorld evolves on 94 tasks and reports on 41 disjoint; WebArena-Infinity evolves on synthetic intents and never reads the real suites), ✗ on Terminal-Bench 2.1, which evolves on the evaluation set · held-out ✓ · matched-budget ✗ (total evolution compute unreported) · repeated-sampling ✗ · contamination — (a reward-hacking audit found no harness-level cheating; data leakage is not examined)</td>
 </tr>
 <tr>
@@ -457,31 +478,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>A prompt-level harness specification: roles, contracts, hops. Free-form rewrite of the whole loop.</td>
+<td>D1 Object</td>
+<td><strong>prompt-level spec</strong> — the text describing the agent loop: roles, contracts, hops. Free-form rewrite of the whole loop.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>A single LLM optimizer call that sees the preference history only, never the evaluation prompt. Bandwidth not reported.</td>
+<td>D2 Editor</td>
+<td><strong>single model call</strong> — one LLM call that sees the preference history only, never the evaluation prompt. Bandwidth not reported.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Pairwise LLM-judge preference against the immediately previous revision. Self-generated.</td>
+<td>D3 Evidence</td>
+<td><strong>LLM judge</strong>, self-generated — pairwise preference against the immediately previous revision.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Linear preference history over a single lineage.</td>
+<td>D4 Memory</td>
+<td><strong>linear history</strong> — the preference record over a single lineage. Rejected-edit memory not reported.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Greedy single-lineage hill-climb. No acceptance gate; stops when the improvement rate falls below ε.</td>
+<td>D5 Search</td>
+<td><strong>greedy</strong> single-lineage hill-climb. Gate: <strong>none</strong> — every revision is kept; the loop stops when the improvement rate falls below ε.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>No, despite the name. By the paper's update rule H^(i+1) = L(H^(i), D^(i)) the optimizer is a fixed external model; the recursion runs over revision history, not over the editor.</td>
+<td>D6 Recursion</td>
+<td><strong>no</strong>, despite the name. By the update rule H^(i+1) = L(H^(i), D^(i)) the optimizer is a fixed external model: the recursion runs over revision history, not over the editor.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✗ · held-out — · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
 </tr>
 <tr>
@@ -504,31 +525,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>Harness state only: episodic memory and a state graph. Bounded, schema-constrained JSON commits.</td>
+<td>D1 Object</td>
+<td><strong>memory and context</strong> — episodic-memory entries and a state graph. Bounded, schema-constrained JSON commits; no code is touched.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>An LLM posterior–extract–commit pipeline running under a frozen, hand-written Evolution-SOP. Sees the full trajectory plus evaluator signals.</td>
+<td>D2 Editor</td>
+<td><strong>reflective call under a fixed procedure</strong> — an extract-then-commit pipeline running under a frozen, hand-written Evolution-SOP. Sees the full trajectory plus evaluator signals.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>External evaluator signals and trajectories. Not self-generated.</td>
+<td>D3 Evidence</td>
+<td><strong>verifier</strong>, external — evaluator signals and trajectories, scored before the update is applied.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Compiled: memory entries plus state-graph repair edges, portable across model backbones. Rejected candidates are discarded.</td>
+<td>D4 Memory</td>
+<td><strong>compiled artifacts</strong> — memory entries plus state-graph repair edges, portable across model backbones. Rejected candidates <em>discarded</em>.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Greedy per-episode commit, no population. Five gates: schema, scope, evidence, constraint, merge. No rollback.</td>
+<td>D5 Search</td>
+<td><strong>greedy</strong> per-episode commit, no population. Gate: <strong>five checks</strong> — schema, scope, evidence, constraint, merge. No rollback.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>No. The Evolution-SOP is frozen and hand-written.</td>
+<td>D6 Recursion</td>
+<td><strong>no</strong> — the Evolution-SOP is frozen and hand-written.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ~ (score-before-update: an episode's own evidence is never available when that episode is scored) · held-out ✓ (cross-model transfer) · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
 </tr>
 <tr>
@@ -551,31 +572,31 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </thead>
 <tbody>
 <tr>
-<td>Object</td>
-<td>A skill text artifact. Free-form Revise commits a new version; the harness is frozen.</td>
+<td>D1 Object</td>
+<td><strong>skill file</strong> — a text artifact; Revise commits a new version. The harness itself is frozen.</td>
 </tr>
 <tr>
-<td>Editor</td>
-<td>An agent emitting Inspect / RunTarget / Revise / Select / Stop. Uses a median 34.3% of the reference target-interaction token budget.</td>
+<td>D2 Editor</td>
+<td><strong>agent with tools</strong> — emits Inspect / RunTarget / Revise / Select / Stop. Bandwidth: a median 34.3% of the reference target-interaction token budget.</td>
 </tr>
 <tr>
-<td>Evidence</td>
-<td>Optimizer-chosen inspection of data and results, plus RunTarget rollouts scored externally. The sealed split is untouchable.</td>
+<td>D3 Evidence</td>
+<td><strong>execution traces plus scalar score</strong>, external — optimizer-chosen inspection of data and results, plus RunTarget rollouts scored outside the loop. The sealed split is untouchable.</td>
 </tr>
 <tr>
-<td>Memory</td>
-<td>Linear history plus a checkpoint list; rollback via Select.</td>
+<td>D4 Memory</td>
+<td><strong>linear history</strong> plus a checkpoint list, with rollback via Select. Rejected-edit memory not reported.</td>
 </tr>
 <tr>
-<td>Search</td>
-<td>Agent-directed with no prescribed topology. No external gate: the optimizer commits and self-selects the final checkpoint.</td>
+<td>D5 Search</td>
+<td><strong>agent-directed</strong>, no prescribed topology. Gate: <strong>optimizer-chosen</strong> — no external gate; it commits and self-selects the final checkpoint.</td>
 </tr>
 <tr>
-<td>Recursion</td>
-<td>No. The improvement process is composed online but is not itself an edit target.</td>
+<td>D6 Recursion</td>
+<td><strong>no</strong> — the improvement process is composed online but is not itself an edit target.</td>
 </tr>
 <tr>
-<td>Scorecard</td>
+<td>Evidence scorecard</td>
 <td>sealed split ✓ (scored once) · held-out ✓ · matched-budget ✓ (static one-shot control, frozen-protocol capability ladder) · repeated-sampling ✗ · contamination —</td>
 </tr>
 <tr>
@@ -773,6 +794,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </tr>
 </tbody>
 </table></article>
-<footer>Generated 2026-08-23 23:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 00:12 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
