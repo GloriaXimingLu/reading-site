@@ -231,8 +231,8 @@ section.dim.paper:hover {
 section.dim.paper h3 {
   margin: 0 0 12px; font-size: 1.04rem; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
 }
-section.dim.paper h3 a { color: var(--fg); text-decoration: none; border-bottom: 2px solid var(--accent); }
-section.dim.paper h3 a:hover { color: var(--accent); }
+section.dim.paper h3 a { color: var(--fg); text-decoration: none; }
+section.dim.paper h3 a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 section.dim.paper h3 small { font-weight: 400; font-size: 0.8rem; color: var(--muted); }
 section.dim.paper dl { grid-template-columns: minmax(112px, 150px) 1fr; }
 section.dim.paper dt { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.02em; }
