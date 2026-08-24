@@ -40,7 +40,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <p><strong>Step 1 — Which harness gets to be edited?</strong>
 Not the highest scorer. Variants are screened on <em>different</em> rotating task subsets, so raw scores are not comparable across the archive; what is comparable is how much a lineage has gained since the root. Most of the time the loop takes the leader by that measure, drawn only from fully confirmed variants; the rest of the time it draws more widely, so losing branches stay reachable.</p>
 <p><strong>Step 2 — What evidence should drive the edit?</strong>
-The branch is assigned a <strong>capability cluster</strong> — a task family such as machine learning and scientific computing, or low-level systems. On Terminal-Bench 2.1 those are exactly where the frozen base has headroom, gaining +14.8 and +13.8 points over the run while already-strong clusters barely move. Every task in the cluster has been attempted <span class="arithmatex">\(k\)</span> times by the parent, and that record of repeated attempts decides what the proposer may look at:</p>
+The branch is assigned a <strong>capability cluster</strong> — a task family such as machine learning and scientific computing, or low-level systems. On Terminal-Bench 2.1 those are exactly where the frozen base has headroom, gaining +14.8 and +13.8 points over the run while already-strong clusters barely move. Every task in the cluster has been attempted several times by the parent, and that record of repeated attempts decides what the proposer may look at:</p>
 <table>
 <thead>
 <tr>
@@ -186,6 +186,6 @@ Final agent ← best confirmed node (or merged variant) at official avg@k
 <li><strong>Two-speed trust</strong>: promote on bounded-downside noisy evidence, but let a variant <em>steer</em> only after full avg@k re-confirmation plus a preservation probe on the solved set — recall during exploration, precision during evaluation.</li>
 <li><strong>The population absorbs proxy overfitting — where it runs at all</strong>: TerminalWorld's in-loop score saturated to 1.000 while held-out was 68.3%, and the <em>merge</em> of four non-best specialists beat every individual. But on WAI every merge was reverted, and the archive, selector and merge operator are never independently ablated, so read "archives beat incumbents" as one 41-task datapoint.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 17:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 17:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
