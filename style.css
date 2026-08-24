@@ -320,3 +320,18 @@ footer { padding: 34px 24px; }
 /* accent bar belongs to category headings only */
 #walkthroughs > h2::before, #latest > h2::before, #favorites > h2::before { display: none; }
 article hr { border: 0; border-top: 1px solid var(--border); margin: 30px 0; }
+
+/* --- annotations on touch / small screens --- */
+.ann-toolbar button { padding: 9px 14px; font-size: 0.9rem; }
+.ann-popover textarea { font-size: 16px; }   /* < 16px makes iOS zoom on focus */
+@media (max-width: 640px) {
+  .ann-popover {
+    width: auto; left: 8px !important; right: 8px;
+    max-width: calc(100vw - 16px); box-sizing: border-box;
+  }
+  .ann-popover button, .ann-panel button, .ann-import { padding: 9px 14px; font-size: 0.9rem; }
+  .ann-panel { right: 8px; left: 8px; width: auto; bottom: 76px; max-height: 55vh; }
+  .ann-fab { right: 14px; bottom: 14px; padding: 12px 16px; font-size: 1rem; }
+  .heart-btn { padding: 6px 10px; font-size: 1.2rem; }
+  .ann-toolbar { gap: 6px; }
+}

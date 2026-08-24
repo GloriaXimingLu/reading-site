@@ -174,24 +174,72 @@
     document.body.appendChild(toolbar);
 
     let pendingRange = null;
+    let dragging = false;
+    let selTimer = null;
 
     function hideToolbar() { toolbar.style.display = 'none'; pendingRange = null; }
 
-    document.addEventListener('mouseup', e => {
+    function placeToolbar(rect) {
+      toolbar.style.display = 'flex';
+      toolbar.style.visibility = 'hidden';   // measure before positioning
+      const tw = toolbar.offsetWidth, th = toolbar.offsetHeight;
+      const margin = 8;
+      // Prefer above the selection; flip below when there is no room (or when a
+      // touch UI is likely occupying that space with its own selection callout).
+      let top = rect.top - th - 10;
+      if (top < margin) top = rect.bottom + 12;
+      const maxTop = window.innerHeight - th - margin;
+      top = Math.min(Math.max(top, margin), Math.max(margin, maxTop));
+      let left = rect.left + rect.width / 2 - tw / 2;
+      left = Math.min(Math.max(left, margin), Math.max(margin, window.innerWidth - tw - margin));
+      toolbar.style.top = (window.scrollY + top) + 'px';
+      toolbar.style.left = (window.scrollX + left) + 'px';
+      toolbar.style.visibility = '';
+    }
+
+    function syncToolbar() {
+      if (dragging) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { hideToolbar(); return; }
+      const range = sel.getRangeAt(0);
+      if (!article.contains(range.commonAncestorContainer)) { hideToolbar(); return; }
+      if (!range.toString().trim()) { hideToolbar(); return; }
+      pendingRange = range.cloneRange();
+      placeToolbar(range.getBoundingClientRect());
+    }
+
+    // Never let a later request postpone an earlier one. selectionchange fires
+    // asynchronously, so on desktop it lands just *after* mouseup — without
+    // this, its longer settle delay would cancel mouseup's immediate sync and
+    // the toolbar would lag ~350ms behind the mouse release.
+    let selDeadline = Infinity;
+    function scheduleSync(delay) {
+      const when = Date.now() + delay;
+      if (selTimer !== null && selDeadline <= when) return;
+      clearTimeout(selTimer);
+      selDeadline = when;
+      selTimer = setTimeout(() => { selTimer = null; selDeadline = Infinity; syncToolbar(); }, delay);
+    }
+
+    // Touch devices do not fire mouseup for text selection, and iOS/Android
+    // adjust the range after the finger lifts (drag handles, word snapping) —
+    // so selectionchange is the primary signal, with a delay long enough to
+    // settle. Mouse events stay as the fast path on desktop.
+    document.addEventListener('selectionchange', () => scheduleSync(dragging ? 0 : 350));
+    document.addEventListener('mousedown', e => {
       if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
-      setTimeout(() => {
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || !sel.rangeCount) { hideToolbar(); return; }
-        const range = sel.getRangeAt(0);
-        if (!article.contains(range.commonAncestorContainer)) { hideToolbar(); return; }
-        if (!range.toString().trim()) { hideToolbar(); return; }
-        pendingRange = range.cloneRange();
-        const r = range.getBoundingClientRect();
-        toolbar.style.display = 'flex';
-        toolbar.style.top = (window.scrollY + r.top - 40) + 'px';
-        toolbar.style.left = Math.max(8, window.scrollX + r.left + r.width / 2 - toolbar.offsetWidth / 2) + 'px';
-      }, 0);
+      dragging = true;
     });
+    document.addEventListener('mouseup', e => {
+      dragging = false;
+      if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
+      scheduleSync(0);
+    });
+    document.addEventListener('touchend', e => {
+      if (e.target instanceof Element && e.target.closest('.ann-ui')) return;
+      scheduleSync(300);
+    }, { passive: true });
+    window.addEventListener('resize', () => scheduleSync(150));
 
     function annFromRange(range) {
       const ctx = fullTextAndOffsets();
@@ -209,8 +257,10 @@
     }
 
     function addAnnotation(withNote) {
-      if (!pendingRange) return;
-      const ann = annFromRange(pendingRange);
+      const range = pendingRange || lockedRange;
+      if (!range) return;
+      const ann = annFromRange(range);
+      lockedRange = null;
       hideToolbar();
       window.getSelection().removeAllRanges();
       if (!ann) return;
@@ -220,6 +270,17 @@
       applyAll();
       if (withNote) openPopover(ann.id);
     }
+    // Touching a button clears the document selection before 'click' fires, and
+    // the resulting selectionchange would null pendingRange. Snapshot the range
+    // as the press begins so the tap still has something to act on. (Not
+    // preventDefault on touchstart — that suppresses the click on iOS.)
+    let lockedRange = null;
+    [hlBtn, cmBtn].forEach(btn => {
+      const lock = () => { if (pendingRange) lockedRange = pendingRange.cloneRange(); };
+      btn.addEventListener('pointerdown', lock);
+      btn.addEventListener('touchstart', lock, { passive: true });
+      btn.addEventListener('mousedown', ev => ev.preventDefault());
+    });
     hlBtn.addEventListener('click', () => addAnnotation(false));
     cmBtn.addEventListener('click', () => addAnnotation(true));
 
@@ -247,10 +308,21 @@
       popText.value = ann.note || '';
       pop.style.display = 'block';
       const anchor = nearEl || document.querySelector('mark[data-ann-id="' + annId + '"]');
-      const r = anchor ? anchor.getBoundingClientRect() : { bottom: 100, left: 100 };
-      pop.style.top = (window.scrollY + r.bottom + 8) + 'px';
-      pop.style.left = Math.max(8, Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - 340)) + 'px';
-      popText.focus();
+      const r = anchor ? anchor.getBoundingClientRect() : { top: 80, bottom: 100, left: 12 };
+      const margin = 8;
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      let top = r.bottom + 8;
+      if (top + ph > window.innerHeight - margin) {
+        // no room below: try above, else pin inside the viewport
+        top = r.top - ph - 8;
+        if (top < margin) top = Math.max(margin, window.innerHeight - ph - margin);
+      }
+      const left = Math.min(Math.max(r.left, margin), Math.max(margin, window.innerWidth - pw - margin));
+      pop.style.top = (window.scrollY + top) + 'px';
+      pop.style.left = (window.scrollX + left) + 'px';
+      // Focusing immediately on touch pops the keyboard over the popover before
+      // it is positioned; let layout settle first.
+      setTimeout(() => popText.focus({ preventScroll: true }), 50);
     }
     function closePopover() { pop.style.display = 'none'; popTarget = null; }
 
