@@ -34,34 +34,75 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <p><em>Figure 1 from the paper: the archive (left) stores each agent's code and per-task outcomes; the loop alternates evaluation and expansion; the three operators (right) differ only in the comparative evidence handed to the editor.</em></p>
 <p>Crucially, both new operators reuse trajectories the archive has <em>already</em> collected, so MGM spends <strong>zero extra evaluations</strong> relative to HGM. Same budget, more information per edit.</p>
 <h2>How it works</h2>
-<p>Start with one concrete generation step, taken from the paper's own case study (Appendix F.1, on the Polyglot task <code>javascript__queen-attack</code>). The archive at this point contains, among others: a lineage descending from node #3 that keeps failing <code>queen-attack</code>, and a lineage #2 → #6 → #8 in which node #6 was the first agent to solve it — it had evolved what the authors summarize as a <em>test-contract skill</em>: read the test file as a strict behavioral contract (exact public APIs, expected values, error messages) <em>before</em> implementing. Node #8 inherited that skill.</p>
-<p>One expansion step then unfolds like this:</p>
-<ol>
-<li><strong>Evaluate or expand?</strong> The controller (inherited unchanged from HGM) expands only when accumulated evaluations justify a new node — the <em>progressive-widening</em> rule <span class="arithmatex">\(N_t^{\alpha}\ge|\mathcal{V}_t|\)</span>, with <span class="arithmatex">\(N_t\)</span> every evaluation ever run across the archive and <span class="arithmatex">\(|\mathcal{V}_t|\)</span> the agents in it. The archive may grow only as a <strong>sublinear power of the evidence backing it</strong>: at <span class="arithmatex">\(\alpha=0.5\)</span>, 100 evaluations justify 10 agents and 400 justify 20 — quadruple the evidence to double the population — so search cannot spray children faster than it can tell them apart. The runs pair 200 evaluations with 24 expansions, i.e. <span class="arithmatex">\(\alpha\approx0.6\)</span> (reconstructed: <span class="arithmatex">\(200^{0.6}\approx24\)</span>; Table 5 lists only <span class="arithmatex">\(\beta_{\mathrm{fail}}\)</span>, the three <span class="arithmatex">\(\lambda\)</span>, and <span class="arithmatex">\(m_{\mathrm{RM}}\)</span>, so <span class="arithmatex">\(\alpha\)</span> and <span class="arithmatex">\(\kappa\)</span> come from HGM unrestated). Say it expands.</li>
-<li><strong>Pick an anchor agent.</strong> Two Beta posteriors, for two different decisions. <em>Evaluations</em> sample the node-level <span class="arithmatex">\(\pi_a\sim\mathrm{Beta}(\kappa(1{+}n_{\mathrm{s}}(a)),\kappa(1{+}n_{\mathrm{f}}(a)))\)</span> — one draw per candidate, highest wins — so evaluation goes to individually strong agents. <em>Expansions</em> sample the <strong>clade-level</strong> <span class="arithmatex">\(\pi^{C}_a\sim\mathrm{Beta}(\kappa(1{+}n^{C}_{\mathrm{s}}(a)),\kappa(1{+}n^{C}_{\mathrm{f}}(a)))\)</span>, summing counts over the whole subtree rooted at <span class="arithmatex">\(a\)</span>. Concretely: an agent whose own record is 1-of-3 but whose descendants have gone 20-of-25 is a <em>strong</em> expansion candidate, because the evidence the branch is fertile lives in the children; a node that scored well once but whose clade has stalled stops attracting edits. <span class="arithmatex">\(\kappa\)</span> scales both parameters — below 1 it flattens toward exploration, above 1 it sharpens toward the empirical rate. Here it lands on the struggling lineage under #3.</li>
-<li><strong>Which operators are eligible?</strong> Clonal mutation is (the agent has failures). Reaction-norm mutation is (it has been evaluated on <span class="arithmatex">\(\ge m_{\mathrm{RM}}=2\)</span> tasks, at least one failed). And hybridization is, because another lineage's node #8 has attempted the <em>same</em> task <code>queen-attack</code> — and solved it. MGM samples among eligible operators with weights <span class="arithmatex">\(\lambda_{\mathrm{CM}}{=}0.10,\lambda_{\mathrm{RM}}{=}0.45,\lambda_{\mathrm{CH}}{=}0.45\)</span>, renormalized over whatever is eligible. Note what <span class="arithmatex">\(\lambda_{\mathrm{CM}}=0.10\)</span> implies: <strong>the legacy single-trajectory operator is retained, not replaced</strong> — roughly one edit in ten still sees only one failed run, and early on, when nothing else is eligible, it runs with probability 1. Comparative evolution is the modal edit, not the exclusive one. Say hybridization wins.</li>
-<li><strong>Build the evidence.</strong> Exactly two phenotype records: the failing agent's trajectory on <code>queen-attack</code>, and #8's successful trajectory on the same task. Because exactly one of the two solved it, the <em>failing</em> agent is the edit target and #8 is the donor (if both had failed, the higher-utility lineage would lead and the other would supply contrast).</li>
-<li><strong>The edit.</strong> The target agent reads both trajectories and is asked what transferable behavior explains the difference. Here that is the test-contract skill — which it re-implements in its own codebase, in its own way. No files are copied from #8.</li>
-<li><strong>Attach and test.</strong> The child (node #15 in the paper's Figure 8) attaches to the failing lineage, passes validation, and in later evaluation steps solves <code>queen-attack</code> — the skill has crossed lineages.</li>
-</ol>
+<p><strong>The loop in one sentence.</strong> At every step MGM does exactly one of two things: <strong>evaluate</strong> an existing agent on one more task, or <strong>expand</strong> — pick an agent and let it write an improved copy of itself. Everything else is detail about how those two choices are made.</p>
+<h3>One expansion, start to finish</h3>
+<p>The setup, from the paper's own case study (Appendix F.1, Polyglot task <code>javascript__queen-attack</code>). Two lineages matter. One keeps failing that task. The other solved it, because somewhere along the way an ancestor picked up a habit the authors call the <strong>test-contract skill</strong>: read the test file as a strict behavioral contract — exact public APIs, expected values, error messages — <em>before</em> writing any implementation.</p>
+<p>The question this expansion answers: can the failing lineage acquire that habit without anyone copying code?</p>
+<p><strong>Step 1 — Evaluate, or expand?</strong>
+The controller checks whether the archive has earned another agent. It may only grow as a <em>sublinear</em> function of the evidence behind it, so the population cannot outrun the evaluations needed to tell agents apart. Here it decides to expand.</p>
+<p><strong>Step 2 — Choose which agent will edit itself.</strong>
+Not the best-scoring agent — the one whose <em>branch</em> looks most promising. An agent that scored 1-of-3 itself but whose descendants have gone 20-of-25 is a strong choice, because the evidence its branch is fertile lives in its children. It lands on the struggling lineage.</p>
+<p><strong>Step 3 — Choose how it will edit itself.</strong>
+Three operators, and eligibility depends on what evidence exists:</p>
+<table>
+<thead>
+<tr>
+<th>Operator</th>
+<th>Needs</th>
+<th>Evidence it produces</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Clonal mutation</td>
+<td>one failed run</td>
+<td>that single failure</td>
+</tr>
+<tr>
+<td>Reaction-norm mutation</td>
+<td>the same agent evaluated on ≥ 2 tasks, ≥ 1 failed</td>
+<td>that agent on two <em>different</em> tasks</td>
+</tr>
+<tr>
+<td>Cross-lineage hybridization</td>
+<td>another agent attempted the <em>same</em> task</td>
+<td>two <em>different</em> agents on one task</td>
+</tr>
+</tbody>
+</table>
+<p>All three are eligible here, because the other lineage attempted <code>queen-attack</code> too — and solved it. MGM samples among them (weights 0.10 / 0.45 / 0.45, renormalized over whatever is eligible). Hybridization wins.</p>
+<p><strong>Step 4 — Assemble the evidence: exactly two records.</strong>
+The failing agent's trajectory on <code>queen-attack</code>, and the successful agent's trajectory on the same task. Because exactly one of the two solved it, the failing agent is the one that edits itself and the other is the donor. Two runs, differing in one respect — that controlled pair is the whole idea of the paper.</p>
+<p><strong>Step 5 — Make the edit.</strong>
+The failing agent reads both trajectories and is asked a single question: <em>what transferable behavior explains the difference?</em> The answer here is the test-contract skill, which it then re-implements in its own codebase, in its own way. <strong>No files are copied</strong> — nothing is spliced between lineages, which is what separates this from ordinary crossover.</p>
+<p><strong>Step 6 — Attach and verify.</strong>
+The child joins the failing lineage, passes validation, and in a later evaluation step solves <code>queen-attack</code>. The skill has crossed lineages without any code changing hands.</p>
 <p><img alt="Lineage tree colored by outcome on the shared task javascript__queen-attack: red nodes fail, green solve; a skill emerges at node 6, is preserved at node 8, and a hybridization edge transfers it to node 15 in a previously failing lineage" src="assets/mendel-godel-machine/fig3.png" /></p>
-<p><em>Figure 8 from the paper: the worked example. A test-contract skill emerges in one lineage (node 6), persists (node 8), and hybridization transfers it to a failing lineage's child (node 15).</em></p>
-<p>One more mechanism is <em>designed</em> to make step 3 fire often: every failed task enters a <strong>global failure pool</strong> <span class="arithmatex">\(\mathcal{P}_t\)</span>, and when the loop picks a new task for any agent, pool tasks get sampling weight <span class="arithmatex">\(\beta_{\mathrm{fail}}\)</span> against 1 for everything else — steering lineages onto the <em>same</em> hard tasks and manufacturing the overlap hybridization needs, without extra budget. <strong>In the released configuration this is switched off</strong>: Table 5 sets <span class="arithmatex">\(\beta_{\mathrm{fail}}=1.0\)</span>, so pool and fresh tasks are weighted identically and sampling is uniform. Every hybridization in the reported runs therefore found its shared task by chance — making the operator's measured contribution a <em>lower</em> bound, and leaving the pool an untested knob rather than a working part.</p>
-<p>Only two equations are worth carrying around. First, the evidence set for reaction-norm mutation (hybridization has the same two-record shape, with the second record from a different agent on the same task):</p>
+<p><em>Figure 8 from the paper: the worked example. The skill emerges at node 6, persists at node 8, and hybridization carries it into a failing lineage's child, node 15.</em></p>
+<h3>The machinery behind steps 1–3</h3>
+<p>Three decisions above were stated plainly; here is what actually governs them.</p>
+<p><strong>Step 1, the growth rule.</strong> Expansion is allowed only when <span class="arithmatex">\(N_t^{\alpha}\ge|\mathcal{V}_t|\)</span>, where <span class="arithmatex">\(N_t\)</span> counts every evaluation ever run and <span class="arithmatex">\(|\mathcal{V}_t|\)</span> the agents in the archive. At <span class="arithmatex">\(\alpha=0.5\)</span>: 100 evaluations justify 10 agents, 400 justify 20 — quadruple the evidence to double the population. The reported runs pair 200 evaluations with 24 expansions, implying <span class="arithmatex">\(\alpha\approx0.6\)</span> <em>(reconstructed: <span class="arithmatex">\(200^{0.6}\approx24\)</span>; Table 5 lists only <span class="arithmatex">\(\beta_{\mathrm{fail}}\)</span>, the three <span class="arithmatex">\(\lambda\)</span>, and <span class="arithmatex">\(m_{\mathrm{RM}}\)</span>, so <span class="arithmatex">\(\alpha\)</span> and <span class="arithmatex">\(\kappa\)</span> are inherited from HGM and never restated).</em></p>
+<p><strong>Step 2, two different posteriors for two different decisions.</strong> Evaluations sample a <strong>node-level</strong> Beta posterior <span class="arithmatex">\(\pi_a\sim\mathrm{Beta}(\kappa(1{+}n_{\mathrm{s}}(a)),\kappa(1{+}n_{\mathrm{f}}(a)))\)</span> — one draw per candidate, highest wins — so evaluation goes to individually strong agents. Expansions sample a <strong>clade-level</strong> posterior that sums successes and failures over the agent's entire subtree. That is what makes the 1-of-3 agent with a 20-of-25 subtree attractive to edit, while a node that scored well once but whose branch has stalled stops drawing edits. <span class="arithmatex">\(\kappa\)</span> tunes the whole thing: below 1 it flattens toward exploration, above 1 it sharpens toward observed rates.</p>
+<p><strong>Step 3, what the operator weights imply.</strong> <span class="arithmatex">\(\lambda_{\mathrm{CM}}=0.10\)</span> means the legacy single-failure operator is <strong>retained, not replaced</strong> — roughly one edit in ten still sees only one run, and early on, when nothing else is eligible, it fires with probability 1. Comparative evolution is the modal edit, not the exclusive one.</p>
+<h3>Why a pair should beat a single failure</h3>
+<p>Two equations are worth carrying. The first is just the evidence set, and its shape is the point:</p>
 <div class="arithmatex">\[E_{\mathrm{RM}}(a_{i},\tau_{\mathrm{t}},\tau_{\mathrm{r}})=\big\{(\varphi(a_{i},\tau_{\mathrm{t}}),r(a_{i},\tau_{\mathrm{t}})),\,(\varphi(a_{i},\tau_{\mathrm{r}}),r(a_{i},\tau_{\mathrm{r}}))\big\}\]</div>
-<p>In words: the editor's entire diagnostic input is two (trajectory, outcome) pairs — target task <span class="arithmatex">\(\tau_{\mathrm{t}}\)</span> and reference task <span class="arithmatex">\(\tau_{\mathrm{r}}\)</span> — nothing archive-wide, just one controlled pair.</p>
-<p>Second, why pairs should beat singletons. Model the agent as a string of hidden components ("loci"), of which set <span class="arithmatex">\(M(a)\)</span> is defective; a task fails if it touches a defect. From evidence <span class="arithmatex">\(E\)</span>, the editor forms a candidate set <span class="arithmatex">\(C_{\sigma}(E)\)</span> of suspect components and repairs a truly defective one with probability <span class="arithmatex">\(s\)</span>. The <strong>effective fix probability</strong> of operator <span class="arithmatex">\(\sigma\)</span> is</p>
-<div class="arithmatex">\[p_{f}^{\sigma}=s\cdot\Pr_{\ell\sim C_{\sigma}(E)}[\ell\in M(a)],\qquad\text{and Prop. 1: }\;p_{f}^{\mathrm{RM}}&gt;p_{f}^{\mathrm{CM}},\;\;p_{f}^{\mathrm{CH}}&gt;p_{f}^{\mathrm{CM}}.\]</div>
-<p>In words: the chance an edit fixes something real is (chance the editor points at a genuinely broken part) × (chance the rewrite works) — and comparison raises the first factor without touching the second, because two failures <em>intersect</em> the suspect list and a success/failure contrast <em>filters</em> it. The paper calls this diagnostic compression; Monte Carlo simulations sweeping initial defect counts <span class="arithmatex">\(d_0\in\{10,20,40,80\}\)</span> and the advantage ratio <span class="arithmatex">\(\rho=p_f^{\mathrm{RM}}/p_f^{\mathrm{CM}}\)</span> show MGM dominating DGM/HGM-style baselines whenever <span class="arithmatex">\(\rho&gt;1\)</span>, and collapsing to HGM behavior at <span class="arithmatex">\(\rho=1\)</span>.</p>
+<p>The editor's entire diagnostic input is two (trajectory, outcome) pairs — a target task and a reference task. Nothing archive-wide; one controlled pair. Hybridization has the identical shape, with the second record coming from a different agent on the same task.</p>
+<p>The second explains why that helps. Model the agent as a string of hidden components, of which set <span class="arithmatex">\(M(a)\)</span> is defective; a task fails when it touches a defect. From evidence <span class="arithmatex">\(E\)</span> the editor forms a suspect set <span class="arithmatex">\(C_{\sigma}(E)\)</span> and successfully repairs a genuinely defective component with probability <span class="arithmatex">\(s\)</span>:</p>
+<div class="arithmatex">\[p_{f}^{\sigma}=s\cdot\Pr_{\ell\sim C_{\sigma}(E)}[\ell\in M(a)],\qquad\text{Prop. 1: }\;p_{f}^{\mathrm{RM}}&gt;p_{f}^{\mathrm{CM}},\;\;p_{f}^{\mathrm{CH}}&gt;p_{f}^{\mathrm{CM}}\]</div>
+<p>In words: the chance an edit fixes something real is (chance the editor points at a genuinely broken part) × (chance the rewrite succeeds). Comparison raises the <strong>first</strong> factor and leaves the second alone — two failures <em>intersect</em> the suspect list, and a success-versus-failure contrast <em>filters</em> it. The paper calls this diagnostic compression. Monte Carlo sweeps over initial defect counts <span class="arithmatex">\(d_0\in\{10,20,40,80\}\)</span> and the advantage ratio <span class="arithmatex">\(\rho=p_f^{\mathrm{RM}}/p_f^{\mathrm{CM}}\)</span> show MGM dominating DGM/HGM-style baselines whenever <span class="arithmatex">\(\rho&gt;1\)</span>, and collapsing to HGM behaviour at <span class="arithmatex">\(\rho=1\)</span>.</p>
+<h3>One designed mechanism that is switched off</h3>
+<p>Hybridization needs two lineages to have attempted the <em>same</em> task, which will not happen often by accident. The paper's answer is a <strong>global failure pool</strong>: every failed task is remembered, and when the loop picks a task for any agent, pool tasks get sampling weight <span class="arithmatex">\(\beta_{\mathrm{fail}}\)</span> against 1 for everything else — deliberately steering lineages onto the same hard tasks, at no extra budget.</p>
+<p><strong>In the released configuration this is disabled.</strong> Table 5 sets <span class="arithmatex">\(\beta_{\mathrm{fail}}=1.0\)</span>, so pool and fresh tasks are weighted identically. Every hybridization in the reported runs therefore found its shared task by chance, which makes the operator's measured contribution a <em>lower</em> bound — and leaves the pool an untested knob rather than a working part.</p>
 <pre><code class="language-text"># MGM loop (Algorithm 1), annotated with the worked example
 archive A &lt;- {a0 evaluated on benchmark}; failure pool P &lt;- {}
 for t = 1..T:                                    # real runs: 200 evals + 24 expansions
     if N_t^alpha &gt;= |A|:                         # EXPAND (self-edit)
-        anchor &lt;- ThompsonSample(clade posteriors)      # e.g. lineage under #3
-        Omega  &lt;- eligible operators for anchor         # CM / RM / CH availability checks
-        sigma  &lt;- sample(Omega; 0.10, 0.45, 0.45)       # e.g. CH
-        E &lt;- two records:                               # queen-attack: anchor's failure
-             CM: one failed run | RM: two own tasks     #   + node #8's success
+        anchor &lt;- ThompsonSample(clade posteriors)      # the struggling lineage
+        Omega  &lt;- eligible operators for anchor         # CM / RM / CH availability
+        sigma  &lt;- sample(Omega; 0.10, 0.45, 0.45)       # -&gt; hybridization
+        E &lt;- two records:                               # anchor's failure on queen-attack
+             CM: one failed run | RM: two own tasks     #   + the donor's success on it
              CH: two agents, one shared task
         target &lt;- failing agent if one solved it        # child joins the failing lineage
         child  &lt;- target edits own code given E         # re-implement the trait; no splicing
@@ -70,10 +111,10 @@ for t = 1..T:                                    # real runs: 200 evals + 24 exp
         a   &lt;- ThompsonSample(node posteriors)
         tau &lt;- unattempted task, pool tasks weighted by beta_fail
         run a on tau; record (trajectory, outcome) in A
-        if failed: P &lt;- P + {tau}                # keeps lineages colliding on hard tasks
+        if failed: P &lt;- P + {tau}                # would keep lineages colliding (see above)
 return best-belief agent                         # utility backed by enough evaluations
 </code></pre>
-<p>Selection at the end is sanity-checked, not greedy: on Polyglot the raw utility-1.0 nodes had 15 and 4 evaluations; the reported agent is node #16 with utility 0.91 over 35 evaluations.</p>
+<p>Final selection is sanity-checked rather than greedy: on Polyglot the raw utility-1.0 nodes had only 15 and 4 evaluations, so the reported agent is node #16 — utility 0.91 over 35 evaluations.</p>
 <h2>Results</h2>
 <ul>
 <li><strong>Matched budget, same seed, same backbone</strong> (Qwen3.6-35B-A3B, 200 evaluations + 24 expansions): SWE-bench Verified-60 <strong>78.3%</strong> vs HGM 73.3% (seed 68.3%); Polyglot-60 <strong>93.2%</strong> vs 77.9% (seed 50.8%). Average relative improvement +44.0% vs HGM's +26.8%. Wall-clock is comparable (Polyglot 40.1h vs 44.2h; SWE-bench 96.1h vs 93.0h on 8×H100) and per-operator token costs are the same order — the gap is not extra compute.</li>
@@ -100,6 +141,6 @@ return best-belief agent                         # utility backed by enough eval
 <li><strong>Comparison is diagnostic compression</strong>: <span class="arithmatex">\(p_f^{\sigma}=s\cdot\Pr[\text{suspect is truly defective}]\)</span> — two failures intersect the suspect list, a success/failure contrast filters it; the editor doesn't get smarter, its target list gets cleaner.</li>
 <li><strong>Transfer separates the methods</strong>: single-trajectory HGM <em>loses</em> 3.4pp moving to SWE-bench Pro; MGM gains 10.0pp, averages 70.8% across swapped backbones, and its evolved skills cluster into one reusable contract-extraction workflow — evidence of general engineering rather than benchmark memorization.</li>
 </ol><div class="qa-box">💬 <a href="../qa/mendel-godel-machine.html">Q&A notes for this paper</a></div></article>
-<footer>Generated 2026-08-24 14:42 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 15:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
