@@ -25,7 +25,54 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li>A prompt template lives in a <code>.py</code> file, so it is literally source code while functionally being scaffolding. When an agent adds <code>num_candidates=3</code> plus a ranking step, that is simultaneously new control flow and a new tool contract.</li>
 <li>The paper is drawing a <em>different</em> line, and it is the one that carries weight: <strong>scaffold versus backbone</strong>. The Qwen3.6-35B weights never change. Everything in the genotype is code and text around a frozen model — hence the abstract's "purely through evolving the agent scaffold," and hence an evolved scaffold can be lifted onto DeepSeek-V4-Pro and still perform (96.9%).</li>
 </ul>
-<p>For reading purposes, treat "source code plus scaffolding" as <strong>one thing — the agent's whole editable repository</strong> — and keep the contrast that does real work: the repository evolves, the model weights do not. The same framing governs <a href="../tutorials/darwin-godel-machine.html">DGM</a>, where the frozen-FM constraint is what makes the archive cheap to keep.</p></article>
-<footer>Generated 2026-08-24 15:18 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>For reading purposes, treat "source code plus scaffolding" as <strong>one thing — the agent's whole editable repository</strong> — and keep the contrast that does real work: the repository evolves, the model weights do not. The same framing governs <a href="../tutorials/darwin-godel-machine.html">DGM</a>, where the frozen-FM constraint is what makes the archive cheap to keep.</p>
+<hr />
+<p><strong>Q: The node-level Beta posterior equation — what do the symbols mean?</strong></p>
+<p><strong>A:</strong> The equation is</p>
+<div class="arithmatex">\[\pi_a\sim\mathrm{Beta}\big(\kappa(1+n_{\mathrm{s}}(a)),\;\kappa(1+n_{\mathrm{f}}(a))\big)\]</div>
+<p>and it encodes a belief about a single number: <em>what is agent <span class="arithmatex">\(a\)</span>'s true success rate?</em></p>
+<table>
+<thead>
+<tr>
+<th>Symbol</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(n_{\mathrm{s}}(a)\)</span></td>
+<td>how many tasks agent <span class="arithmatex">\(a\)</span> has solved</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(n_{\mathrm{f}}(a)\)</span></td>
+<td>how many it has failed</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\mathrm{Beta}(\cdot,\cdot)\)</span></td>
+<td>the standard belief distribution over a rate, given a count of wins and losses</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\pi_a\)</span></td>
+<td>one random <strong>draw</strong> from that belief — a guess at the agent's true rate</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(\kappa\)</span></td>
+<td>scales how confident the belief is</td>
+</tr>
+<tr>
+<td>the <span class="arithmatex">\(1+\)</span></td>
+<td>a uniform prior, so an agent with no record could be anything from 0 to 1</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Mechanically:</strong> every candidate draws one <span class="arithmatex">\(\pi_a\)</span>, and the highest draw is selected. That is Thompson sampling, and the <em>width</em> of each belief does the exploring — there is no separate exploration parameter.</p>
+<ul>
+<li>Evaluated twice, one success → broad belief → draws swing wildly → it keeps getting picked despite a mediocre record, because its uncertainty is worth resolving.</li>
+<li>Evaluated forty times, twenty successes → same 50% rate, narrow belief → draws cluster near 0.5 → it stops absorbing evaluations.</li>
+</ul>
+<p><strong>What <span class="arithmatex">\(\kappa\)</span> does:</strong> it multiplies both counts, changing confidence without changing the implied rate. Below 1 it pretends there is less evidence than there is, widening the belief toward exploration; above 1 it sharpens toward the observed rate. The paper never states its value — inherited from HGM and unrestated, the same gap as <span class="arithmatex">\(\alpha\)</span>.</p>
+<p><strong>The clade-level version</strong> is the identical formula with counts summed over the agent's whole subtree rather than the agent alone. That single substitution is what makes a 1-of-3 agent with 20-of-25 descendants an attractive parent to expand: its own record is weak, but the evidence its branch is fertile lives in its children.</p>
+<p>The tutorial's "How it works" section has been updated to define these symbols in place.</p></article>
+<footer>Generated 2026-08-24 15:40 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
