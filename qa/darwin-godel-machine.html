@@ -34,7 +34,21 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li>The implementation hint is explicitly biased toward modifying an existing tool over inventing a new one, and the prompt ships a repo map (<code>coding_agent.py</code>, its <code>forward()</code> entry point, the <code>tools/</code> contract) plus guardrails — tools must generalize across repositories, do not force tool usage, no <code>while True</code> loops.</li>
 <li>The private test patch sits <em>inside</em> the diagnosis prompt. The authors flag the hard-coding risk and report no memorization on inspection, but this is why DGM earns only a partial mark on contamination.</li>
 </ul>
-<p>The division of labour is therefore: parent agent as <strong>editor</strong>, frozen o1 as <strong>diagnostician</strong>, and neither is modifiable. That is precisely why DGM is <em>partial</em> rather than <em>yes</em> on recursion — and it is the step <a href="../tutorials/hyperagents.html">Hyperagents</a> deletes, replacing the whole diagnosis stage with a one-line "modify any part of the codebase" instruction so the agent must invent its own analysis function, which it does.</p></article>
-<footer>Generated 2026-08-24 15:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>The division of labour is therefore: parent agent as <strong>editor</strong>, frozen o1 as <strong>diagnostician</strong>, and neither is modifiable. That is precisely why DGM is <em>partial</em> rather than <em>yes</em> on recursion — and it is the step <a href="../tutorials/hyperagents.html">Hyperagents</a> deletes, replacing the whole diagnosis stage with a one-line "modify any part of the codebase" instruction so the agent must invent its own analysis function, which it does.</p>
+<hr />
+<p><strong>Q: Reading MGM, it says DGM edits the harness based on one trajectory at a time. Is that right?</strong></p>
+<p><strong>A:</strong> Yes — and DGM's own prompt template settles it, so this is not just a rival paper's framing of its baseline.</p>
+<p>The self-improvement prompt (Appendix C.3 in the source) is built around <strong>one single failed task</strong>. Its placeholders are all singular:</p>
+<ul>
+<li><code>{md_log}</code> — "the log for the coding agent trying to solve the GitHub issue but failed"</li>
+<li><code>{github_issue}</code> — the issue that agent was attempting</li>
+<li><code>{predicted_patch}</code> — the patch it produced</li>
+<li><code>{test_patch}</code> and <code>{eval_log}</code> — SWE-bench's private tests for <em>that</em> issue, and their results</li>
+</ul>
+<p>So the diagnostician sees the agent's code plus <strong>one failed attempt at one task</strong>, described from four angles: what the agent did, what was asked, what it produced, and why it failed. Four artifacts, one trajectory. It is then told to "identify ONE detailed plan that would improve the agent's coding ability" that is "not specific to any particular GitHub issue or repository" — generalize from a single instance.</p>
+<p>That is exactly the weakness <a href="../tutorials/mendel-godel-machine.html">Mendel GM</a> targets. Its argument: with one failure the suspect set stays wide, because nothing in the evidence discriminates between candidate causes. A controlled pair narrows it — two failures <em>intersect</em> the suspects, and a success-versus-failure contrast <em>filters</em> them. Formally that is the <span class="arithmatex">\(p_f^{\sigma}=s\cdot\Pr[\ell\in M(a)]\)</span> decomposition: comparison raises the probability the editor points at a genuinely broken component, without changing the probability the rewrite itself succeeds.</p>
+<p>One nuance. DGM's main text says a parent "analyzes its own benchmark evaluation logs," which reads plural and loose. The prompt template is what disambiguates it, and it is singular. MGM's characterization of its predecessor is accurate, not a strawman.</p>
+<p>Worth noting what does <em>not</em> change between them: both editors are shown evidence about failures and asked for one generalizable improvement, and in both the model weights stay frozen. The only moving part is how much discriminating evidence accompanies the request.</p></article>
+<footer>Generated 2026-08-24 15:18 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
