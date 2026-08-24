@@ -72,7 +72,52 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </ul>
 <p><strong>What <span class="arithmatex">\(\kappa\)</span> does:</strong> it multiplies both counts, changing confidence without changing the implied rate. Below 1 it pretends there is less evidence than there is, widening the belief toward exploration; above 1 it sharpens toward the observed rate. The paper never states its value — inherited from HGM and unrestated, the same gap as <span class="arithmatex">\(\alpha\)</span>.</p>
 <p><strong>The clade-level version</strong> is the identical formula with counts summed over the agent's whole subtree rather than the agent alone. That single substitution is what makes a 1-of-3 agent with 20-of-25 descendants an attractive parent to expand: its own record is weak, but the evidence its branch is fertile lives in its children.</p>
-<p>The tutorial's "How it works" section has been updated to define these symbols in place.</p></article>
-<footer>Generated 2026-08-24 15:40 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>The tutorial's "How it works" section has been updated to define these symbols in place.</p>
+<hr />
+<p><strong>Q: How does MGM decide whether to evaluate or expand at the current step?</strong></p>
+<p><strong>A:</strong> A single deterministic check, not a random choice. At every step it tests</p>
+<div class="arithmatex">\[N_t^{\alpha}\ge|\mathcal{V}_t|\;\Rightarrow\;\textbf{expand};\qquad\text{otherwise}\;\textbf{evaluate}\]</div>
+<p>where <span class="arithmatex">\(N_t\)</span> is every evaluation ever run across the whole archive and <span class="arithmatex">\(|\mathcal{V}_t|\)</span> is how many agents the archive currently holds. Because <span class="arithmatex">\(\alpha&lt;1\)</span>, the right to add agents grows <em>sublinearly</em> in the evidence behind them.</p>
+<p><strong>Read it as a budget.</strong> The archive may only hold as many agents as the evidence can distinguish. Each evaluation nudges <span class="arithmatex">\(N_t^{\alpha}\)</span> up slightly; when it crosses the current agent count, one new agent has been earned. Adding it increments <span class="arithmatex">\(|\mathcal{V}_t|\)</span>, which immediately puts the run back below the line — so it must evaluate again before the next expansion.</p>
+<p><strong>Expansions therefore become rarer as the run proceeds.</strong> At the run's <span class="arithmatex">\(\alpha\approx0.6\)</span>, the evaluations needed to justify the <span class="arithmatex">\(k\)</span>-th agent are <span class="arithmatex">\(k^{1/\alpha}\)</span>:</p>
+<table>
+<thead>
+<tr>
+<th>Agents in archive</th>
+<th>Total evaluations needed</th>
+<th>Evaluations since previous expansion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3</td>
+<td>~6</td>
+<td>~3</td>
+</tr>
+<tr>
+<td>10</td>
+<td>~46</td>
+<td>~8</td>
+</tr>
+<tr>
+<td>20</td>
+<td>~147</td>
+<td>~13</td>
+</tr>
+<tr>
+<td>24</td>
+<td>~200</td>
+<td>~14</td>
+</tr>
+</tbody>
+</table>
+<p>Early on a couple of evaluations buys a new agent; by the end it takes roughly fourteen. That is the mechanism's purpose: search cannot spray children faster than it can tell them apart. Without it the archive fills with agents each backed by one or two noisy runs, and Thompson sampling ends up choosing between beliefs that are almost entirely prior.</p>
+<p><strong>What each branch does then:</strong></p>
+<ul>
+<li><strong>Evaluate</strong> — pick an agent by its <em>node-level</em> posterior, pick an unattempted task, run it, record the (trajectory, outcome) pair.</li>
+<li><strong>Expand</strong> — pick an anchor by its <em>clade-level</em> posterior, sample an eligible operator, assemble the evidence, and let the agent rewrite itself.</li>
+</ul>
+<p>Two caveats. The rule is <strong>inherited from HGM unchanged</strong> — standard progressive widening from MCTS, not an MGM contribution. And <span class="arithmatex">\(\alpha\)</span> is never stated in the paper; the ≈0.6 is reconstructed from the reported pairing of 200 evaluations with 24 expansions (<span class="arithmatex">\(200^{0.6}\approx24\)</span>).</p></article>
+<footer>Generated 2026-08-24 15:48 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
