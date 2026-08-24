@@ -353,3 +353,16 @@ article hr { border: 0; border-top: 1px solid var(--border); margin: 30px 0; }
   background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px;
   font-size: 0.88rem; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
+.ann-syncrow {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 9px 0; border-top: 1px solid var(--border); margin-top: 8px;
+}
+.ann-sync-label { font-size: 0.88rem; font-weight: 600; }
+.ann-sync-status { font-size: 0.82rem; color: var(--muted); margin-right: auto; }
+.ann-sync-status.ok { color: #137333; }
+.ann-sync-status.error { color: #b3261e; }
+@media (prefers-color-scheme: dark) {
+  .ann-sync-status.ok { color: #7fd99a; }
+  .ann-sync-status.error { color: #ff8f8f; }
+}
+.ann-transfer button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }

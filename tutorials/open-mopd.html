@@ -81,6 +81,6 @@ for each training step:
 <li>Teacher conflict is measurably <em>not</em> the bottleneck at this scale (0.126 nat mean disagreement; removing conflicted tokens hurts); budget imbalance is — and fixing it lifts headroom recovery from <strong>35.6% to 83.4%</strong> on a fully open 8×A100 recipe.</li>
 <li>The three fixes act at three time scales: <strong>per-batch</strong> (weight loss by <span class="arithmatex">\(g_d^\star/s_d^{\mathrm{tok}}\)</span>), <strong>across training</strong> (follow the remaining gap <span class="arithmatex">\(m_d\)</span>, never inverse-normalize — that feedback loop crashes runs), and <strong>within a rollout</strong> (refresh the student half of the dense reward every inner update; the teacher prefill is cacheable).</li>
 </ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 13:21 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 13:43 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

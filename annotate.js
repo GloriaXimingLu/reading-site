@@ -7,8 +7,20 @@
   try { LS = window.localStorage; LS.getItem('rt:probe'); } catch (e) { return; }
 
   const HEARTS_KEY = 'rt:hearts';
+  const HEARTS_OFF_KEY = 'rt:hearts_off';   // un-hearted, with timestamps
+  const TOMB_KEY = 'rt:tombstones';         // deleted annotation ids -> timestamp
   const getJSON = (k, d) => { try { return JSON.parse(LS.getItem(k)) || d; } catch (e) { return d; } };
   const setJSON = (k, v) => LS.setItem(k, JSON.stringify(v));
+  const rerenderHooks = [];
+  function rerenderAll() { rerenderHooks.forEach(fn => { try { fn(); } catch (e) {} }); }
+
+  function tombstone(id) {
+    if (!id) return;
+    const t = getJSON(TOMB_KEY, {});
+    t[id] = Date.now();
+    setJSON(TOMB_KEY, t);
+  }
+
   const el = (tag, cls, text) => {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -67,7 +79,10 @@
         card.classList.toggle('hearted-card', on);
       };
       btn.addEventListener('click', () => {
-        if (hearts[key]) delete hearts[key]; else hearts[key] = Date.now();
+        const off = getJSON(HEARTS_OFF_KEY, {});
+        if (hearts[key]) { delete hearts[key]; off[key] = Date.now(); }
+        else { hearts[key] = Date.now(); delete off[key]; }
+        setJSON(HEARTS_OFF_KEY, off);
         setJSON(HEARTS_KEY, hearts);
         sync();
         renderFavs();
@@ -76,6 +91,18 @@
       (card.querySelector('.card-head') || card).appendChild(btn);
     });
     renderFavs();
+    rerenderHooks.push(() => {
+      const fresh = getJSON(HEARTS_KEY, {});
+      Object.keys(hearts).forEach(k => delete hearts[k]);
+      Object.assign(hearts, fresh);
+      document.querySelectorAll('.card[data-key]').forEach(card => {
+        const on = !!hearts[card.dataset.key];
+        const btn = card.querySelector('.heart-btn');
+        if (btn) { btn.textContent = on ? '❤' : '♡'; btn.classList.toggle('hearted', on); }
+        card.classList.toggle('hearted-card', on);
+      });
+      renderFavs();
+    });
     return true;
   }
 
@@ -370,10 +397,11 @@
     popSave.addEventListener('click', () => {
       const anns = load();
       const ann = anns.find(a => a.id === popTarget);
-      if (ann) { ann.note = popText.value.trim(); save(anns); applyAll(); }
+      if (ann) { ann.note = popText.value.trim(); ann.ts = new Date().toISOString(); save(anns); applyAll(); }
       closePopover();
     });
     popDel.addEventListener('click', () => {
+      tombstone(popTarget);
       save(load().filter(a => a.id !== popTarget));
       applyAll();
       closePopover();
@@ -402,6 +430,10 @@
       const anns = load();
       panel.innerHTML = '';
       panel.appendChild(el('h3', null, 'Annotations on this page'));
+      // Transfer actions go first: with a long annotation list they would
+      // otherwise sit below the fold inside the scrolling panel.
+      panel.appendChild(buildSyncRow());
+      panel.appendChild(buildTransferRow());
       if (!anns.length) panel.appendChild(el('p', 'ann-empty', 'Select text to highlight or comment.'));
       anns.forEach(ann => {
         const row = el('div', 'ann-row' + (ann._orphan ? ' orphan' : ''));
@@ -422,6 +454,10 @@
     });
 
     applyAll();
+    rerenderHooks.push(() => {
+      applyAll();
+      if (panel.style.display === 'block') renderPanel();
+    });
     return true;
   }
 
@@ -500,6 +536,28 @@
     } catch (e) {
       history.replaceState(null, '', location.pathname + location.search);
     }
+  }
+
+  function buildSyncRow() {
+    const row = el('div', 'ann-syncrow');
+    const label = el('span', 'ann-sync-label', 'Auto-sync');
+    statusEl = el('span', 'ann-sync-status');
+    row.append(label, statusEl);
+    if (syncOn()) {
+      const off = el('button', null, 'Turn off');
+      off.addEventListener('click', () => {
+        if (!confirm('Stop syncing on this device? Your notes stay here and in the gist.')) return;
+        cfg.token = ''; cfg.gist = ''; location.reload();
+      });
+      row.appendChild(off);
+      setSyncStatus(LS.getItem(SEEN_KEY) ? 'ok' : 'syncing');
+    } else {
+      const on = el('button', 'primary', 'Turn on');
+      on.addEventListener('click', setupSync);
+      row.appendChild(on);
+      setSyncStatus('off');
+    }
+    return row;
   }
 
   function buildTransferRow() {
@@ -584,7 +642,8 @@
     const panel = el('div', 'ann-panel ann-ui');
     panel.style.display = 'none';
     panel.appendChild(el('h3', null, 'Your reading data'));
-    panel.appendChild(el('p', 'ann-empty', 'Hearts and page annotations are stored in this browser. Export to back up or move devices.'));
+    panel.appendChild(el('p', 'ann-empty', 'Hearts and page annotations live in this browser. Turn on auto-sync to share them across your devices.'));
+    panel.appendChild(buildSyncRow());
     panel.appendChild(buildTransferRow());
     document.body.appendChild(panel);
     fab.addEventListener('click', () => {
@@ -594,8 +653,201 @@
 
   window.addEventListener('hashchange', () => consumeSyncLink(true));
 
+
+  /* ---------------- automatic sync via a private GitHub gist ----------------
+   * localStorage is per-browser, so devices need a shared store. A private
+   * gist is one the user already owns, costs nothing, and keeps the notes off
+   * the public site. The token is held only in this browser and is never
+   * written into the synced payload. */
+  const TOKEN_KEY = 'rt:sync:token', GIST_KEY = 'rt:sync:gist', SEEN_KEY = 'rt:sync:seen';
+  const GIST_FILE = 'reading-annotations.json';
+  const cfg = {
+    get token() { return LS.getItem(TOKEN_KEY) || ''; },
+    set token(v) { v ? LS.setItem(TOKEN_KEY, v) : LS.removeItem(TOKEN_KEY); },
+    get gist() { return LS.getItem(GIST_KEY) || ''; },
+    set gist(v) { v ? LS.setItem(GIST_KEY, v) : LS.removeItem(GIST_KEY); },
+  };
+  const syncOn = () => !!(cfg.token && cfg.gist);
+
+  // Everything under rt: except the sync config itself — the token must never
+  // travel into the shared document.
+  function snapshot() {
+    const out = {};
+    for (let i = 0; i < LS.length; i++) {
+      const k = LS.key(i);
+      if (k && k.startsWith('rt:') && !k.startsWith('rt:sync:')) out[k] = getJSON(k, null);
+    }
+    return out;
+  }
+
+  function mergeSnapshots(a, b) {
+    const out = {};
+    const tombs = Object.assign({}, a[TOMB_KEY] || {}, b[TOMB_KEY] || {});
+    for (const [id, ts] of Object.entries((a[TOMB_KEY] || {}))) {
+      const other = (b[TOMB_KEY] || {})[id];
+      tombs[id] = other ? Math.max(ts, other) : ts;
+    }
+    const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+    for (const k of keys) {
+      if (k === TOMB_KEY) continue;
+      const av = a[k], bv = b[k];
+      if (k === HEARTS_KEY || k === HEARTS_OFF_KEY) continue;   // handled together below
+      if (Array.isArray(av) || Array.isArray(bv)) {
+        const byId = new Map();
+        for (const item of [...(av || []), ...(bv || [])]) {
+          if (!item || !item.id || tombs[item.id]) continue;     // deleted anywhere -> gone
+          const prev = byId.get(item.id);
+          if (!prev || String(item.ts || '') > String(prev.ts || '')) byId.set(item.id, item);
+        }
+        const arr = [...byId.values()];
+        if (arr.length) out[k] = arr;
+      } else if (av !== undefined || bv !== undefined) {
+        out[k] = bv !== undefined ? bv : av;
+      }
+    }
+    // hearts: an on-timestamp and an off-timestamp compete; latest action wins
+    const on = Object.assign({}, a[HEARTS_KEY] || {}, b[HEARTS_KEY] || {});
+    const off = Object.assign({}, a[HEARTS_OFF_KEY] || {}, b[HEARTS_OFF_KEY] || {});
+    for (const k of Object.keys(on)) {
+      const onTs = Math.max((a[HEARTS_KEY] || {})[k] || 0, (b[HEARTS_KEY] || {})[k] || 0);
+      const offTs = Math.max((a[HEARTS_OFF_KEY] || {})[k] || 0, (b[HEARTS_OFF_KEY] || {})[k] || 0);
+      if (offTs > onTs) delete on[k]; else on[k] = onTs;
+    }
+    if (Object.keys(on).length) out[HEARTS_KEY] = on;
+    if (Object.keys(off).length) out[HEARTS_OFF_KEY] = off;
+    if (Object.keys(tombs).length) out[TOMB_KEY] = tombs;
+    return out;
+  }
+
+  function applySnapshot(snap) {
+    const before = JSON.stringify(snapshot());
+    for (let i = LS.length - 1; i >= 0; i--) {
+      const k = LS.key(i);
+      if (k && k.startsWith('rt:') && !k.startsWith('rt:sync:') && !(k in snap)) LS.removeItem(k);
+    }
+    for (const [k, v] of Object.entries(snap)) setJSON(k, v);
+    return before !== JSON.stringify(snapshot());
+  }
+
+  async function gh(path, opts) {
+    const r = await fetch('https://api.github.com' + path, Object.assign({
+      headers: {
+        Authorization: 'Bearer ' + cfg.token,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    }, opts || {}));
+    if (!r.ok) throw new Error('GitHub ' + r.status + ' ' + (await r.text()).slice(0, 140));
+    return r.json();
+  }
+
+  let syncing = false, pushTimer = null;
+
+  async function syncNow(reason) {
+    if (!syncOn() || syncing) return false;
+    syncing = true;
+    setSyncStatus('syncing');
+    try {
+      const remoteGist = await gh('/gists/' + cfg.gist);
+      const file = remoteGist.files && remoteGist.files[GIST_FILE];
+      let remote = {};
+      if (file) {
+        const raw = file.truncated ? await (await fetch(file.raw_url)).text() : file.content;
+        remote = JSON.parse(raw || '{}');
+      }
+      const local = snapshot();
+      const merged = mergeSnapshots(remote, local);
+      const changedLocally = applySnapshot(merged);
+      const mergedStr = JSON.stringify(merged);
+      if (mergedStr !== JSON.stringify(remote)) {
+        await gh('/gists/' + cfg.gist, {
+          method: 'PATCH',
+          body: JSON.stringify({ files: { [GIST_FILE]: { content: mergedStr } } }),
+        });
+      }
+      LS.setItem(SEEN_KEY, String(Date.now()));
+      setSyncStatus('ok');
+      // Redraw in place rather than reloading: a pull usually completes after
+      // first paint, and a reload on every cold load would be jarring.
+      if (changedLocally) rerenderAll();
+      return changedLocally;
+    } catch (e) {
+      setSyncStatus('error', e.message);
+      return false;
+    } finally {
+      syncing = false;
+    }
+  }
+
+  function queuePush() {
+    if (!syncOn()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => syncNow('change'), 1500);
+  }
+
+  let statusEl = null;
+  function setSyncStatus(state, detail) {
+    if (!statusEl) return;
+    const map = { syncing: '⟳ syncing…', ok: '✓ synced', error: '⚠ sync failed', off: 'not set up' };
+    statusEl.textContent = map[state] || '';
+    statusEl.className = 'ann-sync-status ' + state;
+    statusEl.title = detail || '';
+  }
+
+  async function setupSync() {
+    const token = window.prompt(
+      'Paste a GitHub token with ONLY the "gist" permission.\n\n' +
+      'github.com/settings/tokens?type=beta → Generate new token →\n' +
+      'Permissions → Account permissions → Gists: Read and write.\n\n' +
+      'It is stored only in this browser and never written into the synced notes.');
+    if (!token) return;
+    cfg.token = token.trim();
+    try {
+      // reuse an existing sync gist if one is already there
+      const list = await gh('/gists?per_page=100');
+      const found = list.find(g => g.files && g.files[GIST_FILE]);
+      if (found) cfg.gist = found.id;
+      else {
+        const created = await gh('/gists', {
+          method: 'POST',
+          body: JSON.stringify({
+            description: 'Reading tracker annotations (private sync)',
+            public: false,
+            files: { [GIST_FILE]: { content: JSON.stringify(snapshot()) } },
+          }),
+        });
+        cfg.gist = created.id;
+      }
+      await syncNow('setup');
+      alert('Auto-sync is on for this device.');
+      location.reload();
+    } catch (e) {
+      cfg.token = '';
+      alert('Could not set up sync: ' + e.message);
+    }
+  }
+
+  function initSync() {
+    if (!syncOn()) return;
+    syncNow('boot');
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow('focus'); });
+    setInterval(() => { if (!document.hidden) syncNow('poll'); }, 60000);
+    // any write to rt:* schedules a push
+    const origSet = LS.setItem.bind(LS);
+    ['setItem', 'removeItem'].forEach(fn => {
+      const orig = LS[fn].bind(LS);
+      LS[fn] = function (k) {
+        const r = orig.apply(null, arguments);
+        if (typeof k === 'string' && k.startsWith('rt:') && !k.startsWith('rt:sync:')) queuePush();
+        return r;
+      };
+    });
+    void origSet;
+  }
+
   function init() {
-    consumeSyncLink(false);     // must precede rendering so merged items show
+    consumeSyncLink(false);
+    initSync();     // must precede rendering so merged items show
     const isIndex = initHearts();
     const isArticle = initAnnotations();
     if (isIndex && !isArticle) initIndexPanel();
