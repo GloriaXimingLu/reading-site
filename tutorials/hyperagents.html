@@ -121,7 +121,29 @@ return best agent by validation score (training score if no validation split)
 <li><strong>Ablations:</strong> freeze the meta agent (DGM-H w/o self-improve, ≈ ADAS) and test scores fall to 0.0 / 0.213; remove the archive (w/o open-ended exploration) and they fall to 0.0 / 0.116 — both significantly below DGM-H. Metacognition <em>and</em> population-based stepping stones are both necessary.</li>
 <li><strong>Improving the ability to improve (the key table):</strong> every arm is held-out IMO grading with the meta agent <em>frozen</em>, so only agent-generation skill is under test. The initial meta agent scores imp@50 = <strong>0.0</strong> (CI 0.0–0.0) under DGM w/o self-improve and <strong>0.0</strong> (CI 0.0–0.130) under DGM-H w/o self-improve — the generation algorithm is not the missing ingredient. Transferred DGM-custom meta agents start at 0.0 (CI 0.0–0.010), finish at 0.0 (CI 0.0–0.020), imp@50 <strong>0.0</strong> (CI 0.0–0.010): their source-domain gains were domain customization, not improver skill. Transferred DGM-H hyperagents also start at 0.0 (CI 0.0–0.0) — the domain shift wipes their task ability out entirely — and reach <strong>0.630</strong> (CI 0.540–0.630), p &lt; 0.05.</li>
 <li><strong>What the hyperagents actually built</strong> (Appendix E.3; none of it requested): eval-context injection into the modification prompt; compute-aware planning branching on <code>iterations_left</code> (&gt;5 → architecture, &gt;2 → refinement, else conservative edits only); bias detection on label distributions at a 0.8-ratio threshold, which in one run caught a 99% accept rate scoring 49% accuracy and corrected it to 63%; a <code>PerformanceTracker</code> with <code>record_generation</code>, <code>get_improvement_trend</code> (5-window moving average) and <code>get_statistics</code>; reusable <code>PromptTemplate</code> classes and an <code>IMPROVEMENTS.md</code> of root-cause write-ups; and a <code>MemoryTool</code> writing timestamped <code>memory.json</code> entries — synthesized insights ("Gen55 has best accuracy but is too harsh"), causal hypotheses ("gen65 changes over-corrected") and plans ("combine gen55's critical reasoning with gen64's balance").</li>
-<li><strong>Compounding across runs:</strong> continuing DGM-H for 200 iterations on math grading from transfer hyperagents reaches 0.640 vs 0.610 from scratch (higher median, not significant). Seeding with the ProofAutoGrader baseline plus a transferred meta agent yields <strong>0.700</strong> vs the baseline's 0.670; on the <em>full</em> IMO-GradingBench the improved grader ("BetterGrader") lifts accuracy 0.561 → 0.601 by pulling intermediate solutions out of the extreme labels (Almost recall +18.52, Partial +10.50).</li>
+<li>
+<p><strong>Compounding across runs — the test that matters most, and the one that comes back inconclusive.</strong> Everything above shows improvement working <em>within</em> a run. Compounding asks the harder question: does a run go further when it starts from improvers that already evolved somewhere else? Two 200-iteration runs on math grading, differing only in their starting point:</p>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th>Final score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hyperagents transferred from another domain</td>
+<td><strong>0.640</strong></td>
+</tr>
+<tr>
+<td>The plain seed agent, from scratch</td>
+<td>0.610</td>
+</tr>
+</tbody>
+</table>
+<p>A higher median, but <strong>not statistically significant</strong> — with five runs on a heavy-tailed distribution that is consistent with no effect. This is the paper's own attempt to show the curve bending upward, and it does not land.
+- <strong>A separate experiment, often confused with the one above:</strong> seeding with the ProofAutoGrader <em>domain</em> baseline plus a transferred meta agent yields <strong>0.700</strong> against the baseline's 0.670; on the full IMO-GradingBench the improved grader ("BetterGrader") lifts accuracy 0.561 → 0.601 by pulling intermediate solutions out of the extreme labels (Almost recall +18.52, Partial +10.50). That is starting from a strong task-specific system, not evidence that improvement compounds.</p>
+</li>
 </ul>
 <h2>How it connects</h2>
 <ul>
@@ -139,7 +161,7 @@ return best agent by validation score (training score if no validation split)
 <li><strong>The DGM's recursion was a domain coincidence</strong> — self-modification is coding, so coding gains fed back. Hyperagents remove the crutch by making the meta agent part of the editable program: paper review 0.0 → 0.710 and reward design 0.060 → 0.372 where vanilla DGM scores 0.0.</li>
 <li><strong>Measure improver skill directly</strong>: imp@50 with a frozen meta agent separates "got better at the task" from "got better at improving." Transferred hyperagents score 0.630 on unseen IMO grading; initial and DGM-custom meta agents score ≈0 — the cleanest evidence yet that learned self-improvement ability is portable.</li>
 <li><strong>What transfers is meta-infrastructure</strong> — persistent memory, performance tracking, prompt templates — invented unprompted under selection pressure. The recursion stays one level deep and fair-baseline margins aren't significant: the mechanism is demonstrated, the acceleration is not.</li>
-</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 17:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</ol><div class="qa-box">💬 <a href="../qa/hyperagents.html">Q&A notes for this paper</a></div></article>
+<footer>Generated 2026-08-24 18:54 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
