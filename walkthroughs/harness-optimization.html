@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">17 min · 33 papers · 2026-08-23</p><nav class="dimnav"><a href="#d1">D1 Object</a><a href="#d2">D2 Editor</a><a href="#d3">D3 Evidence</a><a href="#d4">D4 Memory</a><a href="#d5">D5 Search</a><a href="#d6">D6 Recursion</a><a href="#quality">Evidence quality</a><a href="#systems">Ten systems</a></nav>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">10 min · 33 papers · 2026-08-23</p><nav class="dimnav"><a href="#d1">D1 Object</a><a href="#d2">D2 Editor</a><a href="#d3">D3 Evidence</a><a href="#d4">D4 Memory</a><a href="#d5">D5 Search</a><a href="#d6">D6 Recursion</a><a href="#systems">Systems</a></nav>
 
 <section class="dim" id="d1">
 <h2><span class="dtag">D1</span> Object <small>What artifact changes on disk?</small></h2>
@@ -95,594 +95,125 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </dl>
 </section>
 
-<section class="dim" id="quality">
-<h2><span class="dtag">EQ</span> Evidence quality <small>Marked ✓ present · ✗ absent or violated · ~ partial · — not stated</small></h2>
+<section class="dim paper" id="systems">
+<h3><a href="../tutorials/darwin-godel-machine.html">DGM — Darwin Gödel Machine</a> <small>arXiv 2505.22954</small></h3>
 <dl>
-<dt>sealed split</dt><dd>Data the optimizer can never touch. <em>OEO</em> scores its final skill on one, once.</dd>
-<dt>held-out tasks</dt><dd>Tasks absent from optimization. <em>DGM</em> measures transfer to benchmarks and models it never evolved against.</dd>
-<dt>matched-budget control</dt><dd>The same compute spent more simply. <em>DGM</em>'s greedy ablation drops the archive at equal budget: 39.7 against 50.0.</dd>
-<dt>repeated-sampling baseline</dt><dd>The same budget spent on more attempts. <em>Meta-Harness</em> runs Best-of-N.</dd>
-<dt>contamination addressed</dt><dd>Leakage between optimization and evaluation checked. <em>Ouroboros</em> filters SWE-bench Pro reference leakage.</dd>
+<dt>D1 Object</dt><dd><strong>harness code</strong>, whole-repo agentic edits — its own Python repository: tools, prompts, control flow. One feature per child.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — the agent rewrites its own repo. Diagnosis comes from a <em>separate frozen model</em> (o1), not the editing agent. Bandwidth not reported.</dd>
+<dt>D3 Evidence</dt><dd><strong>verifier or tests</strong>, external — one run's logs, the GitHub issue, the predicted patch, and the benchmark's private test patch, read by the diagnosis model.</dd>
+<dt>D4 Memory</dt><dd><strong>raw archive</strong> — a tree of every functioning ancestor's code. Rejected edits <em>discarded</em>: broken children leave no trace.</dd>
+<dt>D5 Search</dt><dd><strong>archive</strong> topology — any functioning ancestor can be sampled as parent, ∝ sigmoid(score) × 1/(1 + children). Gate: <strong>functionality</strong> — the child compiles and can still edit code. No score requirement.</dd>
+<dt>D6 Recursion</dt><dd><strong>partial</strong> — the agent edits the code that does the editing, but parent selection and the diagnosis model stay frozen.</dd>
 </dl>
 </section>
 
-<h2 id="systems">Ten systems</h2>
+<section class="dim paper">
+<h3><a href="../tutorials/mendel-godel-machine.html">Mendel GM</a> <small>arXiv 2608.07645</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code</strong>, free-form self-rewrite — agent source plus scaffolding, treated as a genotype. No code splicing between lineages.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — the target agent edits its own code. Evidence budget: two (trajectory, outcome) records per edit; a retained clonal operator uses one, at λ = 0.10.</dd>
+<dt>D3 Evidence</dt><dd><strong>paired comparison</strong>, external — two runs differing in exactly one respect: same agent on two tasks, or two lineages on one task. Binary verifier outcomes.</dd>
+<dt>D4 Memory</dt><dd><strong>raw archive</strong> — a tree storing code and every recorded phenotype, plus a global failure pool the released configuration neutralises at β<sub>fail</sub> = 1.0. Rejected-edit memory not reported.</dd>
+<dt>D5 Search</dt><dd><strong>lineage tree</strong> — clade-level Thompson sampling with a widening rule N<sup>α</sup> ≥ |V|. Gate: <strong>validation pass</strong> — admits any child that validates.</dd>
+<dt>D6 Recursion</dt><dd><strong>partial</strong> — the agent rewrites itself; the search machinery is untouched.</dd>
+</dl>
+</section>
 
-<table>
-<thead>
-<tr>
-<th>System</th>
-<th>D1 Object</th>
-<th>D2 Editor</th>
-<th>D3 Evidence</th>
-<th>D4 Memory</th>
-<th>D5 Search</th>
-<th>D6 Recursion</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="../tutorials/darwin-godel-machine.html">DGM</a></td>
-<td>harness code</td>
-<td>agent + tools</td>
-<td>verifier/tests</td>
-<td>raw archive</td>
-<td>archive · functionality</td>
-<td>partial</td>
-</tr>
-<tr>
-<td><a href="../tutorials/mendel-godel-machine.html">Mendel GM</a></td>
-<td>harness code</td>
-<td>agent + tools</td>
-<td>paired comparison</td>
-<td>raw archive</td>
-<td>lineage tree · validation</td>
-<td>partial</td>
-</tr>
-<tr>
-<td><a href="../tutorials/hyperagents.html">Hyperagents</a></td>
-<td>harness code + meta</td>
-<td>agent + tools</td>
-<td>scalar score</td>
-<td>raw archive</td>
-<td>archive · functionality</td>
-<td>yes</td>
-</tr>
-<tr>
-<td><a href="../tutorials/ouroboros-reviewed-core-evolution.html">Ouroboros</a></td>
-<td>harness code</td>
-<td>agent + subagents</td>
-<td>LLM judge</td>
-<td>compiled</td>
-<td>none · peer review</td>
-<td>yes</td>
-</tr>
-<tr>
-<td><a href="../tutorials/meta-harness.html">Meta-Harness</a></td>
-<td>harness code</td>
-<td>agent + tools</td>
-<td>execution traces</td>
-<td>raw archive</td>
-<td>Pareto · smoke test</td>
-<td>no</td>
-</tr>
-<tr>
-<td><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></td>
-<td>harness code + skill</td>
-<td>agent + verifier</td>
-<td>verifier (3 signals)</td>
-<td>archive + shared</td>
-<td>population · preserve-extend</td>
-<td>no</td>
-</tr>
-<tr>
-<td><a href="../tutorials/recursive-harness-self-improvement.html">RHI</a></td>
-<td>prompt-level spec</td>
-<td>single model call</td>
-<td>LLM judge (self)</td>
-<td>linear history</td>
-<td>greedy · no gate</td>
-<td>no</td>
-</tr>
-<tr>
-<td><a href="../tutorials/living-harness.html">Living-Harness</a></td>
-<td>memory + context</td>
-<td>reflective, fixed SOP</td>
-<td>verifier</td>
-<td>compiled</td>
-<td>greedy · five gates</td>
-<td>no</td>
-</tr>
-<tr>
-<td><a href="../tutorials/oeo-self-evolving-skills.html">OEO</a></td>
-<td>skill file</td>
-<td>agent + tools</td>
-<td>traces + score</td>
-<td>linear history</td>
-<td>agent-directed · self-selected</td>
-<td>no</td>
-</tr>
-<tr>
-<td><a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a></td>
-<td>harness code (overlay)</td>
-<td>trained 9B editor</td>
-<td>success delta</td>
-<td>none</td>
-<td>K=8 · validity gate</td>
-<td>no</td>
-</tr>
-</tbody>
-</table>
-<h3>DGM — Darwin Gödel Machine</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2505.22954</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong>, whole-repo agentic edits — its own Python repository: tools, prompts, control flow. One feature per child.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — the agent rewrites its own repo. Diagnosis comes from a <em>separate frozen model</em> (o1), not the editing agent. Bandwidth not reported.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>verifier or tests</strong>, external — one run's logs, the GitHub issue, the predicted patch, and the benchmark's private test patch, read by the diagnosis model.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>raw archive</strong> — a tree of every functioning ancestor's code. Rejected edits <em>discarded</em>: broken children leave no trace.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>archive</strong> topology — any functioning ancestor can be sampled as parent, ∝ sigmoid(score) × 1/(1+children). Gate: <strong>functionality</strong> — the child compiles and can still edit code. No score requirement.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>partial</strong> — the agent edits the code that does the editing, but parent selection and the diagnosis model stay frozen.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✗ · held-out ✓ (cross-benchmark, cross-model transfer) · matched-budget ✓ (greedy ablation) · repeated-sampling ✗ · contamination ~ (hard-coding risk flagged, no memorization found on inspection)</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>SWE-bench Verified 20.0% → 50.0%. Ablations: greedy 39.7%, no archive 23.0%, no self-improvement 39.0%. Polyglot search subset 14.0 → 38.0 and full benchmark 14.2 → 30.7, reported separately.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>Node 114 scored a perfect 2.0 by deleting the hidden hallucination-detection markers. About $22k and two weeks per run.</td>
-</tr>
-</tbody>
-</table>
-<h3>Mendel GM</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2608.07645</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong>, free-form self-rewrite — agent source plus scaffolding, treated as a genotype. No code splicing between lineages.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — the target agent edits its own code. Evidence budget: two (trajectory, outcome) records per edit; a retained clonal operator uses one, at λ = 0.10.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>paired comparison</strong>, external — two runs differing in exactly one respect: same agent on two tasks, or two lineages on one task. Binary verifier outcomes.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>raw archive</strong> — a tree storing code and every recorded phenotype, plus a global failure pool the released configuration neutralises at β_fail = 1.0. Rejected-edit memory not reported.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>lineage tree</strong> — clade-level Thompson sampling with a widening rule N^α ≥ |V|. Gate: <strong>validation pass</strong> — admits any child that validates.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>partial</strong> — the agent rewrites itself; the search machinery is untouched.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✗ (evolves and reports on the same 60-task subsets) · held-out ✓ (zero-shot cross-benchmark and cross-model) · matched-budget ✓ (budget, seed, backbone) · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Polyglot-60 50.8% → 93.2%, against HGM 77.9% at identical budget.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>Headline figures are search-set numbers; single run, no error bars. Appendix F.2 reports 61.7% on SWE-bench Verified-60 where Table 1 reports 78.3%.</td>
-</tr>
-</tbody>
-</table>
-<h3>Hyperagents</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2603.19461</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong>, whole-repo — the task agent, its tools and memory, <em>and</em> the meta agent's own modification procedure.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — the system's own meta agent, using bash and file editing. Bandwidth: about 33M self-modification tokens per 100-iteration run.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>scalar score</strong>, external — archive scores and prior per-domain evaluation results.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>raw archive</strong> of hyperagents. Agents introduced their own persistent memory and a PerformanceTracker during runs. Rejected-edit memory not reported.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>archive</strong> topology — parent sampling ∝ sigmoid(score − top-3 mean) × novelty. Gate: <strong>functionality</strong> — admits if it compiles.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>yes</strong> — the meta-level modification procedure is itself an edit target. Parent selection remains frozen.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✗ · held-out ✓ (validation split, unseen-domain meta-transfer) · matched-budget ✓ (DGM-custom baseline) · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Transferred hyperagents reach imp@50 = 0.630 on unseen IMO grading; controls approximately 0. Five runs with bootstrap confidence intervals.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>The advantage over the fair DGM-custom baseline is not statistically significant.</td>
-</tr>
-</tbody>
-</table>
-<h3>Ouroboros</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2608.08311</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong>, whole-repo commits — its own repository: tools, prompts, context assembly, <em>review logic</em>, core code.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — the agent itself plus scout and acting subagents in worktrees; the parent is the sole committer. Bandwidth not reported.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>LLM judge</strong>, self-reviewed — a blocking diff-review panel, deterministic preflight, and fingerprint freshness, plus observed bugs.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>compiled artifacts</strong> — durable error classes, a review-evidence ledger, Git history, 227 MB of memory artifacts. Rejected-edit memory not reported.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>none</strong> — sequential agent-directed evolution tasks, no candidate set. Gate: <strong>peer review</strong> (a blocking quorum) together with functionality; no score-based acceptance.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>yes</strong> — including the review logic that gates its own edits. Excludes an unmodifiable launcher and supervisor.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✗ · held-out — (benchmarks run from frozen snapshots; withholding from evolution is not established) · matched-budget ✗ · repeated-sampling ✗ · contamination ✓ (SWE-bench Pro leakage filtered; an audit removed a reward-hacked trial)</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Terminal-Bench 2.1 86.74%, audited, on Opus 5. On SWE-bench Pro the result is parity: 58.2% against Codex 59.4%, McNemar p = 0.40.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>No evidence of compounding gains. Baselines self-reported.</td>
-</tr>
-</tbody>
-</table>
-<h3>Meta-Harness</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2603.28052</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong> — the harness as a single-file executable Python program. The proposer chooses a local edit or a full rewrite.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — a coding agent running grep and cat over the filesystem. Bandwidth: about 10 MTok per iteration, median 82 files, against 0.002–0.026 MTok reported for prior text optimizers.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>execution traces</strong>, external — search-set scores plus the raw traces of every prior candidate, searchable rather than summarised.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>raw archive</strong> on the filesystem: code, scores, and traces per candidate. Regressions retained and reasoned over; smoke-test failures not logged.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>Pareto frontier</strong>, agent-directed — no parent selection or mutation operators. Gate: <strong>interface smoke test</strong>; the proposer never sees test-set results.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong> — the outer loop is deliberately frozen.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✓ (test scored once) · held-out ✓ (OOD tasks and held-out models) · matched-budget ✓ (Best-of-N) · repeated-sampling ✓ · contamination ✓ (regex leakage audit). All five present.</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Full traces 50.0 median / 56.7 best, against LLM summaries 34.9 / 38.7 and scores-only 34.6 / 41.3.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>On TerminalBench-2 the search runs on its own evaluation set, and the population is seeded near state of the art. Transfer margins are smaller than the in-search figures: +2.9 out of distribution over ACE and +1.3 over BM25.</td>
-</tr>
-</tbody>
-</table>
-<h3>DarwinX</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2608.07545</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code plus skill file</strong> — a skill layer (prompts, memory) and a code layer (tools, control flow). Additive single edits.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — an LLM proposer plus a reasoning verifier agent. Bandwidth not reported.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>verifier</strong>, three routed signals — failure diagnosis, teacher demonstrations, and self-contrast, scored by the benchmark's own verifier at avg@k without gold labels.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>raw archive</strong> that never deletes, plus <strong>shared</strong> cross-generation memory of themes that worked or regressed. Rejected edits <em>retained</em> as stepping stones.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>population archive</strong> — lineage-gain parent sampling with a merge operator. Gate: <strong>preserve-and-extend</strong> — gain g &gt; 0 with regression R ≤ δ.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong> — selection machinery is fixed.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✓ in three of four regimes (TerminalWorld evolves on 94 tasks and reports on 41 disjoint; WebArena-Infinity evolves on synthetic intents and never reads the real suites), ✗ on Terminal-Bench 2.1, which evolves on the evaluation set · held-out ✓ · matched-budget ✗ (total evolution compute unreported) · repeated-sampling ✗ · contamination — (a reward-hacking audit found no harness-level cheating; data leakage is not examined)</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Terminal-Bench 2.1 75.5% → 83.2% on a frozen GPT-5.5.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>Archive, parent selector, and merge operator are never independently ablated. In the WebArena-Infinity regime every attempted merge was reverted.</td>
-</tr>
-</tbody>
-</table>
-<h3>RHI — Recursive Harness Self-Improvement</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2607.15524</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>prompt-level spec</strong> — the text describing the agent loop: roles, contracts, hops. Free-form rewrite of the whole loop.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>single model call</strong> — one LLM call that sees the preference history only, never the evaluation prompt. Bandwidth not reported.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>LLM judge</strong>, self-generated — pairwise preference against the immediately previous revision.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>linear history</strong> — the preference record over a single lineage. Rejected-edit memory not reported.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>greedy</strong> single-lineage hill-climb. Gate: <strong>none</strong> — every revision is kept; the loop stops when the improvement rate falls below ε.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong>, despite the name. By the update rule H^(i+1) = L(H^(i), D^(i)) the optimizer is a fixed external model: the recursion runs over revision history, not over the editor.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✗ · held-out — · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Inference cost reduced by up to 60% relative to the maximum-reasoning-effort setting, at higher performance. Three seeds, two judges.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>All 30 tasks are synthetic; pairwise self-judging admits Goodharting the judge.</td>
-</tr>
-</tbody>
-</table>
-<h3>Living-Harness</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2607.26598</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>memory and context</strong> — episodic-memory entries and a state graph. Bounded, schema-constrained JSON commits; no code is touched.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>reflective call under a fixed procedure</strong> — an extract-then-commit pipeline running under a frozen, hand-written Evolution-SOP. Sees the full trajectory plus evaluator signals.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>verifier</strong>, external — evaluator signals and trajectories, scored before the update is applied.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>compiled artifacts</strong> — memory entries plus state-graph repair edges, portable across model backbones. Rejected candidates <em>discarded</em>.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>greedy</strong> per-episode commit, no population. Gate: <strong>five checks</strong> — schema, scope, evidence, constraint, merge. No rollback.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong> — the Evolution-SOP is frozen and hand-written.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ~ (score-before-update: an episode's own evidence is never available when that episode is scored) · held-out ✓ (cross-model transfer) · matched-budget ✗ · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>τ²-Bench 83.09 average Pass@1, +10.07 points over the strongest interactive baseline; +9.91 on MultiWOZ-2.4.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>Removing the eight hand-written per-domain SOPs costs 9.7 points (83.09 → 73.38), the largest single ablation. No regression testing.</td>
-</tr>
-</tbody>
-</table>
-<h3>OEO — Open-Ended Optimization</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2608.09629</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>skill file</strong> — a text artifact; Revise commits a new version. The harness itself is frozen.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>agent with tools</strong> — emits Inspect / RunTarget / Revise / Select / Stop. Bandwidth: a median 34.3% of the reference target-interaction token budget.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>execution traces plus scalar score</strong>, external — optimizer-chosen inspection of data and results, plus RunTarget rollouts scored outside the loop. The sealed split is untouchable.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>linear history</strong> plus a checkpoint list, with rollback via Select. Rejected-edit memory not reported.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>agent-directed</strong>, no prescribed topology. Gate: <strong>optimizer-chosen</strong> — no external gate; it commits and self-selects the final checkpoint.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong> — the improvement process is composed online but is not itself an edit target.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✓ (scored once) · held-out ✓ · matched-budget ✓ (static one-shot control, frozen-protocol capability ladder) · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>7 wins and 1 tie against SkillOpt across 8 benchmark–target settings; 5 of 6 against GEPA. Two of the 14 headline cells are post-hoc OEO-matched checkpoints, excluded from the confirmatory counts.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>Capability-dependent: a medium optimizer loses to the prescribed pipeline (+9.68 LiveMath for SkillOpt); a weak optimizer emits no valid actions.</td>
-</tr>
-</tbody>
-</table>
-<h3>Harness-R1</h3>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>arXiv 2608.02276</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>D1 Object</td>
-<td><strong>harness code</strong> as an executable runtime overlay at four lifecycle hooks. Bounded, validated patch; the target agent itself is frozen.</td>
-</tr>
-<tr>
-<td>D2 Editor</td>
-<td><strong>trained editor</strong> — a 9B engineer model trained with GRPO to emit patches, one generation per patch. It reads a compacted failure packet, not raw traces.</td>
-</tr>
-<tr>
-<td>D3 Evidence</td>
-<td><strong>scalar score</strong>, external — the realized success delta from rerunning the frozen target on the same task batch.</td>
-</tr>
-<tr>
-<td>D4 Memory</td>
-<td><strong>none</strong> — no patch memory persists across batches; only the engineer's weights carry forward. Invalid patches are not stored.</td>
-</tr>
-<tr>
-<td>D5 Search</td>
-<td><strong>no topology</strong> — GRPO samples K = 8 candidate patches per step. Gate: <strong>validity</strong> — invalid patches score zero.</td>
-</tr>
-<tr>
-<td>D6 Recursion</td>
-<td><strong>no</strong> — the engineer is a separate model from the frozen target it patches.</td>
-</tr>
-<tr>
-<td>Evidence scorecard</td>
-<td>sealed split ✓ (one patch applied to 1,270 unseen tasks) · held-out ✓ (20 unseen targets) · matched-budget ✓ (matched editor protocol) · repeated-sampling ✗ · contamination —</td>
-</tr>
-<tr>
-<td>Result</td>
-<td>Average success 44.3% → 53.6%, +9.3 points; +8.9 ± 1.5 on the held-out task set, positive on every seed.</td>
-</tr>
-<tr>
-<td>Limit</td>
-<td>The reward is transductive — computed by rerunning the same batch the patch was written for — on three small resettable academic environments.</td>
-</tr>
-</tbody>
-</table></article>
-<footer>Generated 2026-08-24 00:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<section class="dim paper">
+<h3><a href="../tutorials/hyperagents.html">Hyperagents</a> <small>arXiv 2603.19461</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code</strong>, whole-repo — the task agent, its tools and memory, <em>and</em> the meta agent's own modification procedure.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — the system's own meta agent, using bash and file editing. Bandwidth: about 33M self-modification tokens per 100-iteration run.</dd>
+<dt>D3 Evidence</dt><dd><strong>scalar score</strong>, external — archive scores and prior per-domain evaluation results.</dd>
+<dt>D4 Memory</dt><dd><strong>raw archive</strong> of hyperagents. Agents introduced their own persistent memory and a PerformanceTracker during runs. Rejected-edit memory not reported.</dd>
+<dt>D5 Search</dt><dd><strong>archive</strong> topology — parent sampling ∝ sigmoid(score − top-3 mean) × novelty. Gate: <strong>functionality</strong> — admits if it compiles.</dd>
+<dt>D6 Recursion</dt><dd><strong>yes</strong> — the meta-level modification procedure is itself an edit target. Parent selection remains frozen.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/ouroboros-reviewed-core-evolution.html">Ouroboros</a> <small>arXiv 2608.08311</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code</strong>, whole-repo commits — its own repository: tools, prompts, context assembly, <em>review logic</em>, core code.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — the agent itself plus scout and acting subagents in worktrees; the parent is the sole committer. Bandwidth not reported.</dd>
+<dt>D3 Evidence</dt><dd><strong>LLM judge</strong>, self-reviewed — a blocking diff-review panel, deterministic preflight, and fingerprint freshness, plus observed bugs.</dd>
+<dt>D4 Memory</dt><dd><strong>compiled artifacts</strong> — durable error classes, a review-evidence ledger, Git history, 227 MB of memory artifacts. Rejected-edit memory not reported.</dd>
+<dt>D5 Search</dt><dd><strong>none</strong> — sequential agent-directed evolution tasks, no candidate set. Gate: <strong>peer review</strong> (a blocking quorum) together with functionality; no score-based acceptance.</dd>
+<dt>D6 Recursion</dt><dd><strong>yes</strong> — including the review logic that gates its own edits. Excludes an unmodifiable launcher and supervisor.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/meta-harness.html">Meta-Harness</a> <small>arXiv 2603.28052</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code</strong> — the harness as a single-file executable Python program. The proposer chooses a local edit or a full rewrite.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — a coding agent running grep and cat over the filesystem. Bandwidth: about 10 MTok per iteration, median 82 files, against 0.002–0.026 MTok reported for prior text optimizers.</dd>
+<dt>D3 Evidence</dt><dd><strong>execution traces</strong>, external — search-set scores plus the raw traces of every prior candidate, searchable rather than summarised.</dd>
+<dt>D4 Memory</dt><dd><strong>raw archive</strong> on the filesystem: code, scores, and traces per candidate. Regressions retained and reasoned over; smoke-test failures not logged.</dd>
+<dt>D5 Search</dt><dd><strong>Pareto frontier</strong>, agent-directed — no parent selection or mutation operators. Gate: <strong>interface smoke test</strong>; the proposer never sees test-set results.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong> — the outer loop is deliberately frozen.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a> <small>arXiv 2608.07545</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code plus skill file</strong> — a skill layer (prompts, memory) and a code layer (tools, control flow). Additive single edits.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — an LLM proposer plus a reasoning verifier agent. Bandwidth not reported.</dd>
+<dt>D3 Evidence</dt><dd><strong>verifier</strong>, three routed signals — failure diagnosis, teacher demonstrations, and self-contrast, scored by the benchmark's own verifier at avg@k without gold labels.</dd>
+<dt>D4 Memory</dt><dd><strong>raw archive</strong> that never deletes, plus <strong>shared</strong> cross-generation memory of themes that worked or regressed. Rejected edits <em>retained</em> as stepping stones.</dd>
+<dt>D5 Search</dt><dd><strong>population archive</strong> — lineage-gain parent sampling with a merge operator. Gate: <strong>preserve-and-extend</strong> — gain g > 0 with regression R ≤ δ.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong> — selection machinery is fixed.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/recursive-harness-self-improvement.html">RHI — Recursive Harness Self-Improvement</a> <small>arXiv 2607.15524</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>prompt-level spec</strong> — the text describing the agent loop: roles, contracts, hops. Free-form rewrite of the whole loop.</dd>
+<dt>D2 Editor</dt><dd><strong>single model call</strong> — one LLM call that sees the preference history only, never the evaluation prompt. Bandwidth not reported.</dd>
+<dt>D3 Evidence</dt><dd><strong>LLM judge</strong>, self-generated — pairwise preference against the immediately previous revision.</dd>
+<dt>D4 Memory</dt><dd><strong>linear history</strong> — the preference record over a single lineage. Rejected-edit memory not reported.</dd>
+<dt>D5 Search</dt><dd><strong>greedy</strong> single-lineage hill-climb. Gate: <strong>none</strong> — every revision is kept; the loop stops when the improvement rate falls below ε.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong>, despite the name. By the update rule H<sup>(i+1)</sup> = L(H<sup>(i)</sup>, D<sup>(i)</sup>) the optimizer is a fixed external model: the recursion runs over revision history, not over the editor.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/living-harness.html">Living-Harness</a> <small>arXiv 2607.26598</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>memory and context</strong> — episodic-memory entries and a state graph. Bounded, schema-constrained JSON commits; no code is touched.</dd>
+<dt>D2 Editor</dt><dd><strong>reflective call under a fixed procedure</strong> — an extract-then-commit pipeline running under a frozen, hand-written Evolution-SOP. Sees the full trajectory plus evaluator signals.</dd>
+<dt>D3 Evidence</dt><dd><strong>verifier</strong>, external — evaluator signals and trajectories, scored before the update is applied.</dd>
+<dt>D4 Memory</dt><dd><strong>compiled artifacts</strong> — memory entries plus state-graph repair edges, portable across model backbones. Rejected candidates <em>discarded</em>.</dd>
+<dt>D5 Search</dt><dd><strong>greedy</strong> per-episode commit, no population. Gate: <strong>five checks</strong> — schema, scope, evidence, constraint, merge. No rollback.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong> — the Evolution-SOP is frozen and hand-written.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/oeo-self-evolving-skills.html">OEO — Open-Ended Optimization</a> <small>arXiv 2608.09629</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>skill file</strong> — a text artifact; Revise commits a new version. The harness itself is frozen.</dd>
+<dt>D2 Editor</dt><dd><strong>agent with tools</strong> — emits Inspect / RunTarget / Revise / Select / Stop. Bandwidth: a median 34.3% of the reference target-interaction token budget.</dd>
+<dt>D3 Evidence</dt><dd><strong>execution traces plus scalar score</strong>, external — optimizer-chosen inspection of data and results, plus RunTarget rollouts scored outside the loop. The sealed split is untouchable.</dd>
+<dt>D4 Memory</dt><dd><strong>linear history</strong> plus a checkpoint list, with rollback via Select. Rejected-edit memory not reported.</dd>
+<dt>D5 Search</dt><dd><strong>agent-directed</strong>, no prescribed topology. Gate: <strong>optimizer-chosen</strong> — no external gate; it commits and self-selects the final checkpoint.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong> — the improvement process is composed online but is not itself an edit target.</dd>
+</dl>
+</section>
+
+<section class="dim paper">
+<h3><a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a> <small>arXiv 2608.02276</small></h3>
+<dl>
+<dt>D1 Object</dt><dd><strong>harness code</strong> as an executable runtime overlay at four lifecycle hooks. Bounded, validated patch; the target agent itself is frozen.</dd>
+<dt>D2 Editor</dt><dd><strong>trained editor</strong> — a 9B engineer model trained with GRPO to emit patches, one generation per patch. It reads a compacted failure packet, not raw traces.</dd>
+<dt>D3 Evidence</dt><dd><strong>scalar score</strong>, external — the realized success delta from rerunning the frozen target on the same task batch.</dd>
+<dt>D4 Memory</dt><dd><strong>none</strong> — no patch memory persists across batches; only the engineer's weights carry forward. Invalid patches are not stored.</dd>
+<dt>D5 Search</dt><dd><strong>no topology</strong> — GRPO samples K = 8 candidate patches per step. Gate: <strong>validity</strong> — invalid patches score zero.</dd>
+<dt>D6 Recursion</dt><dd><strong>no</strong> — the engineer is a separate model from the frozen target it patches.</dd>
+</dl>
+</section></article>
+<footer>Generated 2026-08-24 00:29 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
