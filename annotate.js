@@ -504,18 +504,37 @@
 
   function buildTransferRow() {
     const row = el('div', 'ann-transfer');
-    const sync = el('button', null, '⇄ Sync link');
-    sync.title = 'Copy a private link that carries these annotations to another device';
+    const sync = el('button', 'primary', '⇄ Send to my other device');
+    sync.title = 'Share a private link carrying these annotations. The data rides in the URL fragment, so it never reaches a server.';
     sync.addEventListener('click', () => {
       const url = location.origin + location.pathname + SYNC_PREFIX + encodeState();
-      const done = () => { sync.textContent = '✓ Link copied'; setTimeout(() => { sync.textContent = '⇄ Sync link'; }, 2500); };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(done, () => window.prompt('Copy this link:', url));
+      const label = sync.textContent;
+      const done = txt => { sync.textContent = txt; setTimeout(() => { sync.textContent = label; }, 2500); };
+      // On a phone the share sheet is the natural route (AirDrop, Messages,
+      // Notes); on a laptop fall back to the clipboard.
+      if (navigator.share) {
+        navigator.share({ title: 'Reading annotations', url })
+          .then(() => done('✓ Sent'))
+          .catch(() => { /* user dismissed the sheet */ });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => done('✓ Link copied'),
+          () => window.prompt('Copy this link:', url));
       } else {
         window.prompt('Copy this link:', url);
       }
     });
     row.appendChild(sync);
+
+    const paste = el('button', null, '⇤ Receive');
+    paste.title = 'Paste a sync link sent from another device';
+    paste.addEventListener('click', () => {
+      const pasted = window.prompt('Paste the sync link from your other device:');
+      if (!pasted) return;
+      const i = pasted.indexOf(SYNC_PREFIX);
+      if (i < 0) { alert('That does not look like a sync link.'); return; }
+      location.hash = pasted.slice(i);   // hashchange handler imports and reloads
+    });
+    row.appendChild(paste);
     const exp = el('button', null, '⇩ Export all');
     exp.addEventListener('click', () => {
       const dump = {};

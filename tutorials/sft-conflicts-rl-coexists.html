@@ -71,6 +71,6 @@ for task i in {math, science, logic, code}   # fully parallel, no shared state
 <li><strong>Advantage normalization is the mechanism.</strong> GRPO's zero-sum advantages subtract the dense common-mode gradient, leaving only small on-policy residuals; interference is thus <strong>norm-limited for SFT</strong> (<span class="arithmatex">\(M_iM_j\)</span>) but <strong>variance-limited for RL</strong> (<span class="arithmatex">\(V_iV_j\)</span>), and <span class="arithmatex">\(V_i\)</span> is minuscule and shrinks as training converges.</li>
 <li><strong>Orthogonality buys parallelism.</strong> If task updates don't interfere, you can train each task's RL independently and merge the deltas — Parallel-RL keeps 95–102.8% of single-task performance, and an "Adapted" merge with 5% extra samples beats task-specific models, turning sequential curriculum RL into an embarrassingly-parallel fan-out.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 13:15 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 13:21 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
