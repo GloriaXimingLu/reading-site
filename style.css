@@ -91,7 +91,14 @@ article th, article td { border: 1px solid var(--border); padding: 6px 10px; fon
 footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 24px; }
 
 article img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; margin: 8px 0 2px; background: #fff; }
-article img + em, article p > em:only-child { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+/* Figure captions only: an italic line in the paragraph directly after an
+   image. The old selector (any em that is its only child) also caught a
+   single emphasised word that markdown placed in its own paragraph, and
+   rendered it as a grey block on its own line. */
+article p:has(> img) + p > em:only-child,   /* caption in its own paragraph */
+article p > img + em {                     /* caption on the line after the image */
+  display: block; font-size: 0.85rem; color: var(--muted); margin-top: 2px;
+}
 .badge.feed { background: var(--accent-soft); color: var(--accent); }
 mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 .latest-row { margin: 4px 0; font-size: 0.9rem; }
