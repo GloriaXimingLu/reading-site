@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AVO: Agentic Variation Operators for Autonomous Evolutionary Search</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AVO: Agentic Variation Operators for Autonomous Evolutionary Search</h1><p class="meta">14 min read · <a href="https://arxiv.org/abs/2603.24517">arXiv:2603.24517</a> · <a href="https://arxiv.org/abs/2603.24517">arXiv</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2603.24517 (v1, Mar 25 2026), by Terry Chen, Zhifan Ye, Bing Xu, Zihao Ye, Timmy Liu, Ali Hassani, Tianqi Chen, Andrew Kerr, Haicheng Wu, Ming-Yu Liu, Vinod Grover, Luis Ceze, John Tran, Humphrey Shi et al. The paper lists a single NVIDIA affiliation, though several authors hold CMU and UW appointments. Grounded in the full arXiv HTML including Appendix A.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li><strong>AVO replaces the variation operator of evolutionary search — mutation, crossover, and the hand-designed sampling heuristics around them — with an autonomous coding agent.</strong> Where FunSearch, AlphaEvolve, and LoongFlow confine the LLM to a single <code>Generate</code> call inside a fixed pipeline, AVO collapses <code>Sample</code>, <code>Generate</code>, and evaluation into one self-directed session that decides what to read, what to edit, and when to test.</li>
+<li>Attention kernels on NVIDIA Blackwell B200: <strong>7 days of continuous unattended evolution, 40 committed versions, 500+ optimization directions explored internally</strong>, reaching <strong>1668 TFLOPS</strong> BF16 and beating cuDNN by up to <strong>3.5%</strong> and FlashAttention-4 by up to <strong>10.5%</strong> on causal MHA. Porting to grouped-query attention took <strong>30 minutes</strong> and yielded up to <strong>7.0%</strong> and <strong>9.3%</strong> respectively.</li>
+<li>The discovered edits are genuine micro-architectural reasoning, not code shuffling — branchless accumulator rescaling that unlocks a lighter memory fence (+8.1% non-causal), correction/MMA pipeline overlap, a 192/80/48 → 184/88/56 register redistribution across warp groups. The load-bearing caveat: <strong>no matched-budget control</strong>, no run of the same agent for the same week without the lineage, knowledge base, and supervisor.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This list has accumulated a decade's worth of "LLM inside an evolutionary loop" in about eighteen months, and nearly all of it shares one structure: a fixed framework calls an LLM for a candidate, then takes back control. AlphaEvolve maintains a MAP-Elites-style island database with a prompt sampler picking parents by predefined fitness and diversity heuristics. LoongFlow uses MAP-Elites with Boltzmann selection and forces <code>Generate</code> through a fixed Plan–Execute–Summarize pipeline. TTT-Discover goes further, updating the LLM's weights at test time — and still hands parent selection to a PUCT rule. In every case the sampling strategy, evaluation protocol, population management, and <em>order of operations</em> belong to the framework.</p>
+<p>AVO's diagnosis is that this caps the ceiling. A single-turn generator "produces one output per invocation, with no ability to proactively consult reference materials, test its changes, interpret feedback, or revise its approach before committing a candidate." Where the remaining headroom requires deep iterative engineering — reading the PTX ISA to check whether a fence can be weakened, profiling to find a warp group spilling registers — one shot per invocation is the wrong unit of work.</p>
+<p>The target makes the argument hard to dismiss. Attention on Blackwell is possibly the most aggressively optimized kernel on Earth: cuDNN and FA4 each represent months of manual work by people who designed the hardware or the algorithm. Beating them by single-digit percentages is the regime where "the agent got lucky" stops being plausible — and unlike KernelBench-style results, the baselines are not naive PyTorch.</p>
+<h2>The core idea</h2>
+<p>Classically, evolutionary search maintains a population of solution–score pairs <span class="arithmatex">\(\mathcal{P}=\{(x_i,\mathbf{f}(x_i))\}\)</span> and iterates:</p>
+<div class="arithmatex">\[\mathcal{P}_{t+1}=\texttt{Update}\big(\mathcal{P}_{t},\,(x_{t+1},\mathbf{f}(x_{t+1}))\big),\qquad x_{t+1}=\texttt{Vary}(\mathcal{P}_{t})\]</div>
+<p>where <span class="arithmatex">\(\texttt{Update}\)</span> admits the candidate and possibly prunes, and <span class="arithmatex">\(\texttt{Vary}\)</span> — the <strong>variation operator</strong> — produces new candidates from old. Every LLM-augmented method in the lineage decomposes it identically:</p>
+<div class="arithmatex">\[\texttt{Vary}(\mathcal{P}_{t})=\texttt{Generate}\big(\texttt{Sample}(\mathcal{P}_{t})\big)\]</div>
+<p><span class="arithmatex">\(\texttt{Sample}\)</span> picks parents by score and diversity heuristics; <span class="arithmatex">\(\texttt{Generate}\)</span> is the LLM prompted with them. AVO's single move is to delete the decomposition:</p>
+<div class="arithmatex">\[\texttt{Vary}(\mathcal{P}_{t})=\texttt{Agent}(\mathcal{P}_{t},\mathcal{K},\mathbf{f})\]</div>
+<p><span class="arithmatex">\(\mathcal{P}_t\)</span> is the <strong>full lineage</strong> of prior solutions with scores, <span class="arithmatex">\(\mathcal{K}\)</span> a <strong>domain-specific knowledge base</strong>, and <span class="arithmatex">\(\mathbf{f}\)</span> the <strong>scoring function handed to the agent as a callable tool</strong>. That third argument is the quietly radical one: in every prior system, evaluation is something the framework does <em>to</em> a candidate once the LLM is finished. Here the agent invokes <span class="arithmatex">\(\mathbf{f}\)</span> whenever it likes, mid-step.</p>
+<p><img alt="Left: classical evolutionary search, where a fixed pipeline runs sampling, a single-turn LLM generate step, and evaluation. Right: AVO, where an autonomous AI agent with tools and memory sits between previous solutions and the evaluation utility, looping through planning, implementing, testing and debugging" src="assets/avo-agentic-variation-operators/fig1.png" /></p>
+<p><em>Figure 1 from the paper: the contribution in one picture. EVO threads the LLM through a fixed pipeline as one step; AVO makes the agent the operator, with bidirectional access to prior solutions and the evaluator.</em></p>
+<p>The scoring function is vector-valued and correctness-gated:</p>
+<div class="arithmatex">\[\mathbf{f}(x_i)=\big(f_1(x_i),\ldots,f_n(x_i)\big),\qquad f_j(x_i)=0 \;\;\text{for all }j\;\;\text{if } x_i \text{ fails the reference check}\]</div>
+<p>where <span class="arithmatex">\(f_j\)</span> is throughput in TFLOPS on test configuration <span class="arithmatex">\(j\)</span> (four sequence lengths × masking mode) and correctness is elementwise agreement with a reference implementation. A kernel that is fast and wrong scores zero everywhere, which lets "maximize this" stand in for a separately policed correctness constraint.</p>
+<p>Note what AVO is <em>not</em> doing: it never edits its own harness. The agent is a stock internal coding agent with "no task-specific modifications". The evolving object is the artifact — a CUDA kernel with inline PTX. AVO makes the <em>operator</em> agentic while leaving both the agent and the population structure alone.</p>
+<h2>How it works</h2>
+<p><strong>A single variation step is an entire agent session.</strong> To produce <span class="arithmatex">\(x_{t+1}\)</span>, the agent typically reads several prior implementations and compares their profiling characteristics to localize a bottleneck, consults <span class="arithmatex">\(\mathcal{K}\)</span> for the relevant hardware constraint, implements a candidate, calls <span class="arithmatex">\(\mathbf{f}\)</span>, and — when the result fails correctness or fails to improve — diagnoses and revises, repeating until it has something worth committing. The strategy shifts over the run: early steps make structural changes informed by reference implementations in <span class="arithmatex">\(\mathcal{K}\)</span>, later steps do micro-architectural tuning guided by profiler feedback and lineage patterns.</p>
+<p><img alt="AVO system diagram: inputs are the population of scored solutions, a knowledge base of CUDA/PTX documents and reference GPU kernel codebases, and a scoring function combining a correctness check with throughput measurement. These feed the main agent loop of planning, implementation, evaluation, and bug-fixing. A separate AVO Supervisor Agent monitors stagnation and issues conditional interventions" src="assets/avo-agentic-variation-operators/fig2.png" /></p>
+<p><em>Figure 2 from the paper: the operator's anatomy. <span class="arithmatex">\(\mathcal{K}\)</span> holds CUDA guides, the PTX ISA, Blackwell specs, and the FlashAttention-4 source; a separate supervisor agent watches for stagnation and intervenes conditionally.</em></p>
+<p><strong><span class="arithmatex">\(\mathcal{K}\)</span> is a library the agent browses, not retrieved context.</strong> Nothing is pre-selected or summarized into the prompt; the agent decides what to open.</p>
+<p><strong>Commit policy and the supervisor.</strong> A version is persisted — as a git commit with its score — only if it passes correctness <em>and</em> matches or improves the best committed score so far. Everything else stays in the agent's internal trajectory and never enters <span class="arithmatex">\(\mathcal{P}_t\)</span>, so the lineage is a monotone chain and the 500+ explored directions are invisible to it. Two failure modes threaten a multi-day run: exhausting a line of exploration and stalling, or looping through edits that never improve. AVO adds a <strong>self-supervision mechanism</strong> — a separate supervisor agent in Figure 2 — that detects both, reviews the trajectory, and steers toward candidate directions. Trigger conditions and prompts are not given.</p>
+<pre><code class="language-text"># AVO: one variation step, inside a continuous multi-day loop
+P &lt;- [(x0, f(x0))]                        # single lineage, seeded
+loop until stopped by wall clock:
+    # ---- one call to Vary = one autonomous agent session ----
+    plan &lt;- agent.plan(read(P), read(K), profile_of(best(P)))
+    repeat:
+        edit   &lt;- agent.implement(plan)             # CUDA + inline PTX
+        ok, tp &lt;- f(edit)                           # correctness, then TFLOPS
+        if not ok:
+            plan &lt;- agent.diagnose(edit, error)     # repair, don't discard
+        elif tp &lt;= score(best(P)):
+            plan &lt;- agent.revise(plan, profile(edit))  # critique and retry
+    until ok and tp &gt; score(best(P))
+    P &lt;- P + [(edit, tp)]                 # git commit; monotone lineage only
+    # ---- supervisor runs alongside, not inside, the step ----
+    if supervisor.detects(stall or unproductive_cycle):
+        agent.receive(supervisor.propose_directions(history(P)))
+</code></pre>
+<p><strong>Setup.</strong> B200 GPUs, CUDA 13.1, PyTorch 2.10.0, following FA4's own setup. Baselines: cuDNN 9.19.1 (closed-source, Blackwell-tuned) and FlashAttention-4 at commit <code>71bf77c</code>. Forward prefill throughput, head dimension 128, BF16, sequence lengths <span class="arithmatex">\(\{4096,8192,16384,32768\}\)</span> with batch size adjusted to hold total tokens at 32768. MHA uses 16 heads, causal and non-causal; GQA uses 32 query heads with 4 or 8 KV heads (matching Qwen3-30B-A3B and Qwen3-8B). Timing uses FA4's benchmark script, 10 repetitions for mean and std. The same setup serves evolution and final benchmarking.</p>
+<h2>Results</h2>
+<p><strong>Multi-head attention.</strong> On causal attention AVO beats both baselines at every configuration: <strong>+0.4% to +3.5% over cuDNN</strong>, <strong>+5.0% to +10.5% over FA4</strong>, peaking at 1668 TFLOPS. Non-causal is far more modest — <strong>+1.8% to +2.4% over cuDNN</strong> above sequence length 16384, and <em>within measurement noise of both baselines at shorter sequences</em>.</p>
+<p><strong>Grouped-query attention.</strong> Prompted to adapt the evolved MHA kernel to GQA, the agent did so autonomously in <strong>~30 minutes</strong>. Causal GQA reaches <strong>+7.0% over cuDNN</strong> and <strong>+9.3% over FA4</strong>; non-causal +6.0% and +4.5%. This is the strongest evidence that the optimizations are real rather than fitted to the evolution configurations — GQA has distinct compute and memory-access patterns, and the gains got <em>larger</em>.</p>
+<p><strong>The trajectory.</strong> Throughput improves in discrete jumps separated by plateaus. Five inflection points carry most of it: QK–PV interleaving with bitmask causal masking (v8), a restructured single-pass softmax (v13), branchless accumulator rescaling with a lighter fence (v20), correction/MMA pipeline overlap (v30), register rebalancing (v33). v1–v20 deliver the largest absolute gains; v21–v40 compound cycle-level refinements — kernel work's familiar shape, compressed into a week.</p>
+<p><strong>Three optimizations, with measured ablations</strong> (geomean over all configurations, version immediately before vs. after):</p>
+<table>
+<thead>
+<tr>
+<th>Optimization</th>
+<th>Versions</th>
+<th>Non-causal</th>
+<th>Causal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Branchless accumulator rescaling</td>
+<td>v19 → v20</td>
+<td><strong>+8.1%</strong></td>
+<td>+1.6%</td>
+</tr>
+<tr>
+<td>Correction/MMA pipeline overlap</td>
+<td>v29 → v30</td>
+<td>+1.1%</td>
+<td>+0.4%</td>
+</tr>
+<tr>
+<td>Register rebalancing across warp groups</td>
+<td>v32 → v33</td>
+<td>+2.1%</td>
+<td>~0%</td>
+</tr>
+</tbody>
+</table>
+<p>The first is the most instructive. Online softmax must rescale the output accumulator when the running row-maximum changes; v19 guarded this with a branch skipping the work when the max was unchanged. The agent's insight in v20: the branch costs more than the work it saves — it forces warp synchronization on every key-block iteration, <em>and</em> its divergent control flow blocks a lighter memory fence. So it computed the rescale factor unconditionally with a predicated select substituting 1.0 when unneeded, then — because all threads now follow the same path and reconverge — replaced the blocking fence with a non-blocking ordering fence. Two-hop reasoning across control flow and the memory model, and the table's asymmetry falls out of it: the branchless path applies only to fully unmasked iterations, so causal attention (which keeps branched logic for masked blocks) sees far less of it.</p>
+<p>Register rebalancing is similarly specific. Blackwell partitions 2048 warp-registers per SM; v32 inherited FA4's 192/80/48 split across 8 softmax warps, 4 correction warps, and 4 others. Profiling showed the correction group spilling to local memory at 80 registers while softmax had headroom, so v33 moved 8 registers from softmax to each of the others — 184/88/56. Viable only because AVO's own softmax uses packed arithmetic on score fragments and has low peak register usage; <em>worth</em> it only because the pipeline-overlap change had just put the correction warp on the critical path. The agent is reasoning about the interaction of its own two previous edits.</p>
+<p><strong>Robustness check.</strong> Because absolute TFLOPS drift with drivers, clocks, and thermals, Appendix A re-runs the comparison against cuDNN and FA4 numbers <em>as published in the FA4 paper</em>: non-causal +1.4–3.4% over cuDNN and +2.3–3.9% over FA4; causal +3.6–7.5% and +3.7–8.8% — consistent, with the causal FA4 margin somewhat smaller than in-house.</p>
+<h2>How it connects</h2>
+<p>AVO is the clearest instance yet of a trend this tracker has followed piecemeal: the <em>variation operator itself</em> becoming agentic. Neighbours make the axis visible.</p>
+<ul>
+<li><strong><a href="../tutorials/darwin-godel-machine.html">Darwin Gödel Machine</a></strong> — agentic <em>edit</em>, fixed <em>selection</em>. DGM has an agent rewrite its own code, but the archive, parent sampling, and validation loop are fixed machinery it cannot touch (an admitted limitation). AVO inverts the emphasis: the agent absorbs sampling and evaluation into its own loop, while the edited object is an artifact rather than the agent. Together they outline the missing quadrant — an agent that picks its own parents <em>and</em> rewrites the picker.</li>
+<li><strong><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></strong> — the opposite bet, at the population level. DarwinX adds machinery <em>around</em> the edit: an archive of lineages, a preserve-and-extend admission contract, a cross-lineage merge operator, all fixed rules; its headline evidence is that a population absorbs overfitting a greedy single lineage would suffer. AVO runs a <strong>single lineage with a monotone commit policy</strong> — exactly what DarwinX argues against — and claims the operator carries it. Both cannot be the general lesson, and neither ran the other's control.</li>
+<li><strong><a href="../tutorials/adaexplore.html">AdaExplore</a></strong> — the closest neighbour and the most useful contrast. Same domain, same two ingredients, opposite treatment of both. AdaExplore's <em>Adapt</em> distils 1,178 execution failures into 78 recurring validity rules pinned in the system prompt; AVO's <span class="arithmatex">\(\mathcal{K}\)</span> is undistilled primary source the agent browses per step. AdaExplore's <em>Explore</em> is an MCTS controller with two fixed mutation kinds; AVO deletes the controller. Crucially, AdaExplore's own ablation found the memory worth far more than the tree (2.65× → 2.48× without MCTS, versus 22% → 54% from the memory alone) — independent evidence for AVO's bet that the fixed search controller is the dispensable half.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> — the same move applied to harnesses instead of artifacts: agent-directed search with <strong>no mutation operators at all</strong>, the proposer handed a filesystem of every prior candidate's code, scores, and raw traces and told to <code>grep</code>. Both argue operators exist only because raw feedback wouldn't fit in a prompt. Meta-Harness has the sharper evidence (full traces 50.0 vs scores-only 34.6); AVO has the harder target.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> — the matched-budget critique, and the experiment AVO does not run. Nothing tells us what the <em>same agent</em> would achieve given the same 7 days, the same <span class="arithmatex">\(\mathcal{K}\)</span>, and no lineage or supervisor. The win over cuDNN and FA4 is real; attributing it to <em>evolutionary search</em> rather than to <em>a good agent with a week and the right documentation</em> is not established.</li>
+</ul>
+<p>Also adjacent: the same group's <strong>VibeTensor</strong> (deep-learning system software fully generated by AI agents), cited as motivation, and <strong>AlphaEvolve</strong> / <strong>FunSearch</strong> as the lineage AVO argues against.</p>
+<h2>Critical take</h2>
+<p><strong>No ablation of the method against itself.</strong> Every comparison is AVO versus expert-engineered baselines. No run with <span class="arithmatex">\(\mathcal{K}\)</span> removed, none with the supervisor disabled, none with <span class="arithmatex">\(\mathcal{P}_t\)</span> hidden, no "just let the agent iterate for a week" control. The paper's thesis — that elevating the agent to variation operator unlocks the result — is the one claim it does not test.</p>
+<p><strong>n = 1.</strong> One 7-day run, one kernel family, one GPU. Final benchmarking is repeated 10× with standard deviations, so the <em>measurements</em> are sound; the <em>result</em> has no replicates. Since gains arrive as discrete jumps at five specific versions, run-to-run variance in whether those insights arrive at all is exactly what one wants to know.</p>
+<p><strong>A population of one, defended by assertion.</strong> §2.1 calls AVO "orthogonal to the choice of population structure", with single-lineage chosen "to isolate the effect of the operator itself" — but isolation would require running the same operator inside an archive and seeing no difference. Meanwhile the commit policy makes the lineage strictly monotone, i.e. textbook greedy hill-climbing; the diminishing returns over v21–v40 are consistent with premature convergence, and nothing escapes it beyond the supervisor's nudges. That supervisor is itself a human-designed intervention policy with undisclosed triggers, so "without human intervention" is doing some work.</p>
+<p><strong>The margins are narrower than the headline</strong>, and the two headline numbers do not share a cause: 3.5%/10.5% is causal best-case, non-causal against cuDNN is 1.8–2.4% at long sequences and inside noise at short ones, Appendix A trims the causal FA4 margin to 3.7–8.8%, and the largest single ablation (+8.1%) is non-causal while contributing only +1.6% causal.</p>
+<p><strong>It is targeted improvement, not independent discovery.</strong> FA4's source sits in the knowledge base and FA4's script is the measurement harness. Appropriate — a human would do the same — but AVO started from a readable state-of-the-art design and improved it, a different claim from discovering a competitive one.</p>
+<p><strong>Reproducibility.</strong> The agent is "an internally-developed general-purpose coding agent powered by frontier LLMs", unnamed. No model, no code, no cost accounting for seven days of frontier-agent time across 500+ compile-test-profile cycles. Presumably cheap against months of expert engineering, but nobody outside NVIDIA can run this.</p>
+<p>None of which undercuts the artifact: a kernel that beats cuDNN and FlashAttention-4 on Blackwell exists, and an agent wrote it. The open question is which part of AVO deserves the credit.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The operator is the thing.</strong> Classical LLM-evolution is <span class="arithmatex">\(\texttt{Vary}=\texttt{Generate}(\texttt{Sample}(\mathcal{P}))\)</span>, with the framework owning <code>Sample</code>, evaluation, and the order of operations. AVO is <span class="arithmatex">\(\texttt{Vary}=\texttt{Agent}(\mathcal{P},\mathcal{K},\mathbf{f})\)</span> — one autonomous session absorbing all three, including the right to call the evaluator mid-step.</li>
+<li><strong>The evidence is an artifact, not a curve.</strong> 7 days, 40 committed versions, 500+ directions, 1668 TFLOPS, +3.5%/+10.5% over cuDNN/FA4 on causal MHA, and a 30-minute autonomous port to GQA at +7.0%/+9.3%. The edits — branchless rescaling unlocking a weaker fence, correction/MMA overlap, a 184/88/56 register split that pays only because of the previous edit — are multi-hop hardware reasoning.</li>
+<li><strong>What is missing is the control.</strong> No matched-budget baseline, no ablation of <span class="arithmatex">\(\mathcal{K}\)</span> or the supervisor, single run, single monotone lineage. Read AVO as an existence proof that a coding agent can do expert-level kernel work over week-long horizons — not yet as evidence that the <em>evolutionary</em> framing is what made it work.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-24 00:34 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
