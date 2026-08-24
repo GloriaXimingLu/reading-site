@@ -27,7 +27,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <p><img alt="Overview of the Task-CoEvolve procedure: variance-weighted task selection produces a subset for each iteration, candidate harnesses are evaluated only on that subset, task statistics are updated, and full-set scores are estimated with sampling-aware estimators" src="assets/task-coevolve/fig1.png" />
 <em>Figure 2 from the paper: the co-evolution loop — select an informative subset via variance weighting, evaluate the candidate harness on it, update per-task statistics, and estimate the full-set score with sampling-aware estimators.</em></p>
 <h2>The core idea</h2>
-<p>The quantity you actually care about is a candidate harness <span class="arithmatex">\(h\)</span>'s true full-set performance over validation tasks <span class="arithmatex">\(\mathcal{T}\)</span>, <span class="arithmatex">\(|\mathcal{T}| = N\)</span>:</p>
+<p>The quantity you actually care about is a candidate harness $h$'s true full-set performance over validation tasks $\mathcal{T}$, $|\mathcal{T}| = N$:</p>
 <div class="arithmatex">\[S(h) = \frac{1}{N}\sum_{t \in \mathcal{T}} x_t(h)\]</div>
 <p>where <span class="arithmatex">\(x_t(h) \in \{0,1\}\)</span> is the outcome of harness <span class="arithmatex">\(h\)</span> on task <span class="arithmatex">\(t\)</span>. Full-set search computes this exactly, at cost <span class="arithmatex">\(N\)</span> per candidate. Task-CoEvolve replaces it with two components.</p>
 <p><strong>1. Variance-weighted task selection.</strong> Each task gets a sampling weight built from its outcome history across previously evaluated candidates:</p>
@@ -84,6 +84,6 @@ Phase 4 — Final selection:
 <li>Different iterations evaluating different subsets is only sound with inclusion-probability-weighted estimators (Hájek / anchored-difference); skipping that correction is why naive subsampling loses 3+ points.</li>
 <li>20% of the evaluations buys ~100% of the final performance: 49.3% vs 48.6% (text classification, above full search) and 51.7% vs 52.8% (Terminal-Bench 2.1), with 67–80% token savings and ~1.9× faster wall-clock.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 02:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 03:26 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

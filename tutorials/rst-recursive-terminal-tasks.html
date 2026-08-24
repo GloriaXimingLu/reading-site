@@ -16,7 +16,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <article><a class="crumb" href="../index.html">← all papers</a><h1>RST: Recursive Synthesis for Long-Horizon Terminal Tasks</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.05466">arXiv:2608.05466</a> · <a href="https://arxiv.org/abs/2608.05466">arXiv</a> · <a href="https://x.com/Yucheng__Shi/status/2085571304539742703">X post</a> · <a href="https://alphaxiv.org/abs/2608.05466">alphaxiv.org</a> · <a href="../index.html#data">Data &amp; Datasets</a></p><h2>TL;DR</h2>
 <ul>
 <li>"Recursive Synthesis for Long-Horizon Terminal Tasks" (arXiv 2608.05466; Zhongzhi Li, Yucheng Shi, Zongxia Li, Ruhan Wang, and 7 further authors) inverts the usual task-authoring order for terminal agents: instead of writing a task and hoping it's solvable, RST grows a <em>reference solution</em> and its runtime environment first, then fits the verifier and instruction to what already runs — so every task is solvable by construction and carries its own reward signal.</li>
-<li>Starting from 639 verified seeds, fifteen recursive rounds produce <strong>37,484 verified long-horizon terminal tasks at ~$0.05 each</strong>, with difficulty compounding as accepted children become the next round's seeds: DeepSeek-V4-Pro pass@4 falls from 90% at <span class="arithmatex">\(R_1\)</span> to 2.5% at <span class="arithmatex">\(R_{15}\)</span>, while synthesis yield and domain diversity stay flat — no ceiling observed.</li>
+<li>Starting from 639 verified seeds, fifteen recursive rounds produce <strong>37,484 verified long-horizon terminal tasks at ~$0.05 each</strong>, with difficulty compounding as accepted children become the next round's seeds: DeepSeek-V4-Pro pass@4 falls from 90% at $R_1$ to 2.5% at $R_{15}$, while synthesis yield and domain diversity stay flat — no ceiling observed.</li>
 <li>The data trains real agents: SFT on rejection-sampled Qwen3.5 trajectories lifts Qwen3.5-27B on Terminal-Bench 2 from 41.2% to 47.9% (122B-A10B: 43.8% → 49.4%), and agentic PPO on the full pool takes Qwen3.5-27B to 49.44% TB2 / 32.00% TB-Hard — a +41% relative gain on the out-of-distribution hard split.</li>
 </ul>
 <h2>Why this matters</h2>
@@ -73,6 +73,6 @@ train: SFT on rejection-sampled successful rollouts;
 <li><strong>Recursion is the difficulty engine</strong>: accepted children reseed the factory, compounding executable complexity (67 → 374 median solution lines) while diversity caps keep the pool from collapsing — 37,484 tasks at ~$0.05 each, frontier pass@4 driven from 90% to 2.5%.</li>
 <li><strong>The data actually trains agents</strong>: +6–10 points SFT on Terminal-Bench 2 and +41% relative via PPO on the out-of-distribution hard split — synthetic task factories are now a viable substitute for hand-built RL environments in the terminal domain.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 02:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 03:26 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

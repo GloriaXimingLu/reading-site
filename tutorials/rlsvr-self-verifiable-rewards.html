@@ -66,7 +66,7 @@ for t in 1..T:
 <p><img alt="Suspicion votes received vs GPT-4o quality rank on WritingPrompts and GovReport: players receiving more votes consistently produce lower-quality outputs" src="assets/rlsvr-self-verifiable-rewards/fig2.png" /></p>
 <p><em>Figure 4 from the paper: across 100 games, the number of suspicion votes a player receives rises with its (worse) GPT-4o quality rank — confirming the vote-based reward aligns with actual output quality with no external verifier.</em>
 - <strong>Human eval</strong>: 10 PhD students, 400 prompts — SpyRL beats base/R-Zero/Absolute Zero at 80.0% / 78.5% / 74.0% overall on WritingPrompts, confirming the LLM-judged gains.
-- <strong>Cost vs rubric judges</strong>: SpyRL beats a Qwen3.5-27B rubric-as-reward baseline (~<span class="arithmatex">\(200 verifier cost) across all dimensions and stays competitive with a GPT-4o rubric judge (~\)</span>900) — while spending $0 on verification.
+- <strong>Cost vs rubric judges</strong>: SpyRL beats a Qwen3.5-27B rubric-as-reward baseline (~$200 verifier cost) across all dimensions and stays competitive with a GPT-4o rubric judge (~$900) — while spending $0 on verification.
 - <strong>Ablations</strong>: full two-stage coupling reaches Math500 79.5 vs 72.3 "only performing," 69.2 "only detection," 71.6 "without spy" (no asymmetry) — the coupled game, not any single piece, drives the gain. Group size sweet spot is <span class="arithmatex">\(n=5\)</span> (mean gain 5.5→9.3 from n=3→5, diminishing after). Summarization↔writing transfer positively; math doesn't transfer to writing.</p>
 <h2>How it connects</h2>
 <ul>
@@ -84,6 +84,6 @@ for t in 1..T:
 <li><strong>The mechanism</strong>: information asymmetry (spy sees a degraded input) + identity voting converts "which output is best?" (unverifiable) into "who is the spy?" (exactly checkable, since the environment assigned it), with a zero-sum reward that makes quality a <em>relative</em> target among peers.</li>
 <li><strong>The surprise</strong>: a reward designed for summarization and creative writing also improves verifiable math and science reasoning (AIME25 6.7→20.0, GPQA-D 26.3→41.3), and matches a $900 GPT-4o rubric judge at zero verifier cost — evidence the group-competition signal generalizes beyond open-ended domains.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 02:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 03:26 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
