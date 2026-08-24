@@ -23,6 +23,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>It bounds what "self-improvement" can mean here.</strong> DGM can discover that it should validate patches before submitting, or generate three candidates and rank them. It cannot become a better reasoner. The paper files "rewrite your own training script" as future work, which is roughly the boundary between harness optimization and the recursive self-improvement that Hyperagents and AIDE² probe.</li>
 </ul>
 <p>One DGM-specific wrinkle: the diagnosis step calls a <strong>separate</strong> frozen FM (OpenAI o1), not the agent's own model. It is fed the agent's code, run logs, the GitHub issue, the predicted patch, and SWE-bench's private test patch, and returns a structured ticket. So "the agent diagnoses its own failure" is slightly generous — an external model reads the evidence and writes the instruction the agent then implements.</p>
+<hr />
 <p><strong>Q: "Analyzes its own benchmark evaluation logs, gets a proposed feature" — where do the logs and the proposed feature come from? Another analyzer model?</strong></p>
 <p><strong>A:</strong> Two different sources, and yes, a second model is involved.</p>
 <p>The <strong>logs are the agent's own</strong>, already on hand: every archived agent has been run against the benchmark to be scored, and that run produced trajectory logs, the patch it generated, and test results. Nothing extra is executed to obtain them.</p>
@@ -34,6 +35,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li>The private test patch sits <em>inside</em> the diagnosis prompt. The authors flag the hard-coding risk and report no memorization on inspection, but this is why DGM earns only a partial mark on contamination.</li>
 </ul>
 <p>The division of labour is therefore: parent agent as <strong>editor</strong>, frozen o1 as <strong>diagnostician</strong>, and neither is modifiable. That is precisely why DGM is <em>partial</em> rather than <em>yes</em> on recursion — and it is the step <a href="../tutorials/hyperagents.html">Hyperagents</a> deletes, replacing the whole diagnosis stage with a one-line "modify any part of the codebase" instruction so the agent must invent its own analysis function, which it does.</p></article>
-<footer>Generated 2026-08-24 02:52 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 02:56 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

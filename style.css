@@ -319,3 +319,4 @@ nav a { padding: 5px 13px; transition: border-color .15s ease, color .15s ease; 
 footer { padding: 34px 24px; }
 /* accent bar belongs to category headings only */
 #walkthroughs > h2::before, #latest > h2::before, #favorites > h2::before { display: none; }
+article hr { border: 0; border-top: 1px solid var(--border); margin: 30px 0; }
