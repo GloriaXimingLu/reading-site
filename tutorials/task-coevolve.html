@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Task-CoEvolve: Stop Grading Every Harness on Every Task</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.20169">arXiv:2608.20169</a> · <a href="https://arxiv.org/abs/2608.20169">arXiv</a> · <a href="https://github.com/Agent4Science-UTokyo/Task-CoEvolve">GitHub</a> · <a href="https://x.com/AtsuMiyaiAM/status/2091033626683244806">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.20169 (v1, Aug 20 2026), by Atsuyuki Miyai, Kiyoharu Aizawa, Toshihiko Yamasaki — University of Tokyo (inferred from the authors' affiliations and the Agent4Science-UTokyo GitHub org — verify in the paper). Code: github.com/Agent4Science-UTokyo/Task-CoEvolve. Grounded in the arXiv abstract and HTML full text.</em></p>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Task-CoEvolve: Stop Grading Every Harness on Every Task</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.20169">arXiv:2608.20169</a> · <a href="https://arxiv.org/abs/2608.20169">arXiv</a> · <a href="https://github.com/Agent4Science-UTokyo/Task-CoEvolve">GitHub</a> · <a href="https://x.com/AtsuMiyaiAM/status/2091033626683244806">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.20169v1">alphaxiv.org</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.20169 (v1, Aug 20 2026), by Atsuyuki Miyai, Kiyoharu Aizawa, Toshihiko Yamasaki — University of Tokyo (inferred from the authors' affiliations and the Agent4Science-UTokyo GitHub org — verify in the paper). Code: github.com/Agent4Science-UTokyo/Task-CoEvolve. Grounded in the arXiv abstract and HTML full text.</em></p>
 <h2>TL;DR</h2>
 <ul>
 <li>Harness optimization (Meta-Harness-style iterative rewriting of harness code) spends most of its budget not on <em>search</em> but on <em>evaluation</em>: every candidate is scored on the full validation set every iteration, including tasks that every candidate passes or every candidate fails — which tell you nothing about which candidate is better. Task-CoEvolve's estimate is that these non-discriminative tasks are the majority of the set, and their share grows as the harness improves.</li>
@@ -84,6 +84,6 @@ Phase 4 — Final selection:
 <li>Different iterations evaluating different subsets is only sound with inclusion-probability-weighted estimators (Hájek / anchored-difference); skipping that correction is why naive subsampling loses 3+ points.</li>
 <li>20% of the evaluations buys ~100% of the final performance: 49.3% vs 48.6% (text classification, above full search) and 51.7% vs 52.8% (Terminal-Bench 2.1), with 67–80% token savings and ~1.9× faster wall-clock.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-24 15:48 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
