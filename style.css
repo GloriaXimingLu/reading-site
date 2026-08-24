@@ -161,3 +161,39 @@ article table th { background: var(--card); font-weight: 600; text-align: left; 
 article table td:first-child { color: var(--muted); }
 article table td, article table th { vertical-align: top; }
 article h3 { margin-top: 28px; font-size: 1.02rem; }
+
+/* --- dimension reference pages --- */
+.dimnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 28px; }
+.dimnav a {
+  background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 11px; font-size: 0.8rem; color: var(--fg); text-decoration: none;
+}
+.dimnav a:hover { border-color: var(--accent); color: var(--accent); }
+section.dim { margin: 0 0 26px; padding: 16px 18px 6px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+section.dim h2 { margin: 0 0 12px; padding: 0; border: 0; font-size: 1.06rem; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+section.dim h2 small { font-weight: 400; font-size: 0.88rem; color: var(--muted); }
+.dtag {
+  display: inline-block; background: var(--accent); color: #fff; border-radius: 5px;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; padding: 2px 7px; line-height: 1.4;
+}
+section.dim dl { margin: 0; display: grid; grid-template-columns: minmax(120px, 210px) 1fr; gap: 2px 18px; }
+section.dim dt {
+  font-weight: 600; font-size: 0.9rem; padding: 6px 0; color: var(--fg);
+  border-top: 1px solid var(--border);
+}
+section.dim dd {
+  margin: 0; padding: 6px 0; font-size: 0.93rem; color: var(--muted);
+  border-top: 1px solid var(--border); line-height: 1.55;
+}
+section.dim dd em { font-style: normal; font-weight: 600; color: var(--fg); }
+section.dim dt:first-of-type, section.dim dl:first-of-type dt:first-child { border-top: 0; }
+section.dim dl:first-of-type dd:first-of-type { border-top: 0; }
+.dimsub { margin: 14px 0 4px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+.dimnote { margin: 12px 0 8px; font-size: 0.88rem; color: var(--muted); }
+.dimnote em { font-style: normal; font-weight: 600; color: var(--fg); }
+@media (max-width: 620px) { section.dim dl { grid-template-columns: 1fr; gap: 0; } section.dim dd { border-top: 0; padding-top: 0; } }
+
+/* matrix + profile tables on reference pages */
+article table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--card) 55%, transparent); }
+article table td, article table th { padding: 7px 10px; font-size: 0.89rem; }
+article.wide { max-width: 900px; }

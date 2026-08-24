@@ -13,83 +13,101 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">18 min · 33 papers · 2026-08-23</p><p>Six dimensions separating systems that automatically modify part of an agent's harness — its prompts, tools, control flow, memory, or the code binding them — using evidence from the agent's own execution. Ten systems are then placed on all six.</p>
-<p>Where a source is silent, the cell says so rather than inferring a value. Statements name the systems they cover; no corpus-wide proportions are asserted, because the corpus boundary is itself a judgement.</p>
-<h2>D1 · Object — what artifact changes on disk?</h2>
-<ul>
-<li><strong>prompt-level spec</strong> — RHI rewrites the text that describes the agent loop: roles, contracts, hops.</li>
-<li><strong>skill file</strong> — OEO commits a new version of a Markdown skill document read into the model's context.</li>
-<li><strong>memory or context</strong> — Living-Harness writes episodic-memory entries and state-graph repair edges.</li>
-<li><strong>harness code</strong> — DGM edits its own Python repository: tools, prompts, control flow.</li>
-<li><strong>environment</strong> — EnvHarness wraps a frozen benchmark with Setup, Rule, and Link components.</li>
-<li><strong>objective</strong> — SAGA compiles new scoring functions and then optimizes against them.</li>
-<li><strong>model weights</strong> — EvoHarness-RL takes gradient steps alongside its skill-store edits.</li>
-</ul>
-<p>Granularity varies independently: bounded patch operators (SkillOpt), structured operations such as revise / select / stop (OEO), free-form rewrite (DarwinX), whole-repo agentic edits (DGM), or a gradient step.</p>
-<h2>D2 · Editor — what performs the edit, and what can it see?</h2>
-<ul>
-<li><strong>single model call</strong> — RHI: one LLM call reads the preference history and emits the next specification.</li>
-<li><strong>reflective call under a fixed procedure</strong> — Living-Harness: an extract-then-commit pipeline runs under a hand-written standard operating procedure the model cannot change.</li>
-<li><strong>agent with tools</strong> — Meta-Harness: a coding agent runs grep and cat over a filesystem holding every prior candidate's code, score, and execution traces.</li>
-<li><strong>trained editor</strong> — Harness-R1: a 9B model trained specifically to emit harness patches.</li>
-<li><strong>gradient update</strong> — SPADE: GRPO updates the weights that generate environments.</li>
-</ul>
-<p>Bandwidth is the amount of evidence reaching the editor per edit. Meta-Harness reports about 10 MTok per iteration against 0.002–0.026 MTok for prior text optimizers, and ablates it: full traces 50.0, LLM summaries 34.9, scores only 34.6.</p>
-<h2>D3 · Evidence — what is each edit conditioned on?</h2>
-<ul>
-<li><strong>scalar score</strong> — AIDE²: one aggregate private score per candidate.</li>
-<li><strong>execution traces</strong> — Meta-Harness: the raw logs of every prior run, searchable.</li>
-<li><strong>paired comparison</strong> — Mendel GM: two runs chosen to differ in exactly one respect, same agent on two tasks or two lineages on one task.</li>
-<li><strong>verifier or tests</strong> — DGM: the benchmark's own private test patch.</li>
-<li><strong>LLM judge</strong> — RHI: a model ranks the new revision against the previous one.</li>
-<li><strong>human</strong> — SAGA: a person intervenes in two of its three autonomy modes.</li>
-</ul>
-<p>Independently of source, feedback is either external or self-generated. Evo-Harness tested a self-generated arm and rejected it: 27.96 against 29.54 for no evolution at all.</p>
-<h2>D4 · Memory — what persists across edits?</h2>
-<ul>
-<li><strong>none</strong> — Harness-R1: every patch starts from the frozen target.</li>
-<li><strong>linear history</strong> — OEO: an ordered list of committed checkpoints it can roll back to.</li>
-<li><strong>raw archive</strong> — DGM: a tree holding the code of every functioning ancestor.</li>
-<li><strong>compiled artifacts</strong> — AdaExplore: 78 distilled validity rules, kept instead of the runs that produced them.</li>
-<li><strong>shared across agents</strong> — CORAL: one attempts / notes / skills filesystem read and written by four concurrent agents.</li>
-</ul>
-<p>Separately, rejected edits are either retained (SkillHone keeps a decision history of what was declined) or discarded (DGM leaves no trace of a broken child).</p>
-<h2>D5 · Search — how are candidates produced and admitted?</h2>
-<p>Topology:</p>
-<ul>
-<li><strong>none</strong> — Ouroboros: sequential evolution tasks, no candidate set.</li>
-<li><strong>greedy</strong> — Living-Harness: one commit per episode, no alternatives generated.</li>
-<li><strong>archive</strong> — DGM: any functioning ancestor can be sampled as the next parent.</li>
-<li><strong>population archive</strong> — DarwinX: parallel branches that can later be merged.</li>
-<li><strong>lineage tree</strong> — Mendel GM: clade-level Thompson sampling over the tree.</li>
-<li><strong>Pareto frontier</strong> — Meta-Harness: candidates retained on a score–cost frontier.</li>
-<li><strong>agent-directed</strong> — OEO: the optimizer itself decides when to branch, roll back, or stop.</li>
-</ul>
-<p>Admission gate:</p>
-<ul>
-<li><strong>functionality</strong> — DGM: the child compiles and can still edit code. No score requirement.</li>
-<li><strong>strict improvement</strong> — HCL: validation score must not decrease.</li>
-<li><strong>preserve-and-extend</strong> — DarwinX: positive gain with regression bounded below a threshold.</li>
-<li><strong>peer review</strong> — SkillHone: an accept / reject / request-changes verdict from a reviewing agent.</li>
-<li><strong>optimizer-chosen</strong> — OEO: no external gate; the optimizer commits and selects its own final checkpoint.</li>
-</ul>
-<h2>D6 · Recursion — is the editor itself in the edit set?</h2>
-<ul>
-<li><strong>no</strong> — Meta-Harness freezes its outer loop by design; only the harness under test changes.</li>
-<li><strong>partial</strong> — DGM edits the repository that does the editing, but parent selection and the diagnosis model stay fixed.</li>
-<li><strong>yes</strong> — Hyperagents makes the meta-level modification procedure itself editable.</li>
-</ul>
-<h2>Evidence scorecard</h2>
-<p>D1–D6 describe design. Evidence quality is tracked separately, because a system can be fully specified on D1–D6 and weakly evidenced. Each check is marked ✓ present, ✗ absent or violated, ~ partial, or — where the source does not say.</p>
-<ul>
-<li><strong>sealed split</strong> — evaluation data the optimizer can never touch. OEO scores its final skill once on such a split.</li>
-<li><strong>held-out tasks</strong> — tasks not used during optimization. DGM measures transfer to benchmarks and models it never evolved against.</li>
-<li><strong>matched-budget control</strong> — the same compute spent a simpler way. DGM's greedy ablation removes the archive at equal budget: 39.7 against 50.0.</li>
-<li><strong>repeated-sampling baseline</strong> — the same budget spent on more attempts instead. Meta-Harness compares against Best-of-N.</li>
-<li><strong>contamination addressed</strong> — leakage between optimization and evaluation data is checked. Ouroboros filters SWE-bench Pro reference leakage.</li>
-</ul>
-<h2>Ten systems</h2>
-<p>The matrix scans. Each block below gives the full cell values, evidence scorecard, result, and stated limit; the system name links to its tutorial.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Harness Optimization</h1><p class="meta">17 min · 33 papers · 2026-08-23</p><nav class="dimnav"><a href="#d1">D1 Object</a><a href="#d2">D2 Editor</a><a href="#d3">D3 Evidence</a><a href="#d4">D4 Memory</a><a href="#d5">D5 Search</a><a href="#d6">D6 Recursion</a><a href="#quality">Evidence quality</a><a href="#systems">Ten systems</a></nav>
+
+<section class="dim" id="d1">
+<h2><span class="dtag">D1</span> Object <small>What artifact changes on disk?</small></h2>
+<dl>
+<dt>prompt-level spec</dt><dd>The text describing the agent loop — roles, contracts, hops. <em>RHI</em> rewrites it wholesale.</dd>
+<dt>skill file</dt><dd>A Markdown document loaded into the model's context. <em>OEO</em> commits a new version each round.</dd>
+<dt>memory or context</dt><dd>What the agent carries between episodes. <em>Living-Harness</em> writes memory entries and state-graph repair edges.</dd>
+<dt>harness code</dt><dd>The program itself — tools, prompts, control flow. <em>DGM</em> edits its own Python repository.</dd>
+<dt>environment</dt><dd>The world the agent acts in. <em>EnvHarness</em> wraps a frozen benchmark in Setup, Rule, and Link components.</dd>
+<dt>objective</dt><dd>The definition of success. <em>SAGA</em> writes new scoring functions, then optimizes against them.</dd>
+<dt>model weights</dt><dd>The policy itself. <em>EvoHarness-RL</em> takes gradient steps alongside its skill-store edits.</dd>
+</dl>
+</section>
+
+<section class="dim" id="d2">
+<h2><span class="dtag">D2</span> Editor <small>What performs the edit, and how much can it see?</small></h2>
+<dl>
+<dt>single model call</dt><dd>One prompt in, one revision out. <em>RHI</em> passes only the preference history.</dd>
+<dt>reflective call, fixed procedure</dt><dd>The model fills slots in a pipeline it cannot change. <em>Living-Harness</em> runs extract-then-commit under a hand-written SOP.</dd>
+<dt>agent with tools</dt><dd>The editor can go looking. <em>Meta-Harness</em> greps a filesystem holding every prior candidate's code, score, and traces — about 10 MTok per iteration, against 0.002–0.026 MTok for prior text optimizers.</dd>
+<dt>trained editor</dt><dd>A model trained for the job. <em>Harness-R1</em> uses a 9B engineer that emits patches.</dd>
+<dt>gradient update</dt><dd>No text edit at all. <em>SPADE</em> moves weights with GRPO.</dd>
+</dl>
+</section>
+
+<section class="dim" id="d3">
+<h2><span class="dtag">D3</span> Evidence <small>What is each edit conditioned on?</small></h2>
+<dl>
+<dt>scalar score</dt><dd>One number per candidate. <em>AIDE²</em> uses an aggregate private score.</dd>
+<dt>execution traces</dt><dd>The raw logs of what happened. <em>Meta-Harness</em> keeps them searchable rather than summarised.</dd>
+<dt>paired comparison</dt><dd>Two runs differing in exactly one respect. <em>Mendel GM</em> pairs one agent on two tasks, or two lineages on one task.</dd>
+<dt>verifier or tests</dt><dd>A ground-truth check. <em>DGM</em> reads the benchmark's private test patch.</dd>
+<dt>LLM judge</dt><dd>A model rates the change. <em>RHI</em> ranks each revision against the one before it.</dd>
+<dt>human</dt><dd>A person intervenes. <em>SAGA</em> does so in two of its three autonomy modes.</dd>
+</dl>
+<p class="dimnote">Cutting across all six: the signal is <strong>external</strong> or <strong>self-generated</strong>. <em>Evo-Harness</em> tried a self-generated arm and dropped it — 27.96 against 29.54 for no evolution at all.</p>
+</section>
+
+<section class="dim" id="d4">
+<h2><span class="dtag">D4</span> Memory <small>What persists from one edit to the next?</small></h2>
+<dl>
+<dt>none</dt><dd>Every edit starts fresh. <em>Harness-R1</em> patches the frozen target with no record of past patches.</dd>
+<dt>linear history</dt><dd>An ordered list, with rollback. <em>OEO</em> keeps committed checkpoints it can return to.</dd>
+<dt>raw archive</dt><dd>Everything kept, unprocessed. <em>DGM</em> holds the code of every functioning ancestor in a tree.</dd>
+<dt>compiled artifacts</dt><dd>Lessons kept, runs discarded. <em>AdaExplore</em> distils failures into 78 validity rules.</dd>
+<dt>shared across agents</dt><dd>One store, many writers. <em>CORAL</em> gives four concurrent agents a common attempts / notes / skills filesystem.</dd>
+</dl>
+<p class="dimnote">Rejected edits are their own question: <em>SkillHone</em> keeps a decision history of what it declined; <em>DGM</em> leaves no trace of a broken child.</p>
+</section>
+
+<section class="dim" id="d5">
+<h2><span class="dtag">D5</span> Search <small>How are candidates produced, and which are kept?</small></h2>
+<p class="dimsub">Topology — how candidates are produced</p>
+<dl>
+<dt>none</dt><dd>No candidate set at all. <em>Ouroboros</em> runs evolution tasks in sequence.</dd>
+<dt>greedy</dt><dd>One candidate, take it or leave it. <em>Living-Harness</em> commits once per episode.</dd>
+<dt>archive</dt><dd>Any past survivor can be the next parent. <em>DGM</em> samples from the whole tree.</dd>
+<dt>population archive</dt><dd>Parallel branches that can be merged. <em>DarwinX</em> recombines lineages.</dd>
+<dt>lineage tree</dt><dd>Structured descent with bandit selection. <em>Mendel GM</em> uses clade-level Thompson sampling.</dd>
+<dt>Pareto frontier</dt><dd>Keep what is best on some axis. <em>Meta-Harness</em> maintains a score–cost frontier.</dd>
+<dt>agent-directed</dt><dd>No fixed topology; the optimizer decides. <em>OEO</em> chooses when to branch, roll back, or stop.</dd>
+</dl>
+<p class="dimsub">Gate — which candidates are admitted</p>
+<dl>
+<dt>functionality</dt><dd>Does it still run? <em>DGM</em> admits any child that compiles and can still edit code, improvement or not.</dd>
+<dt>strict improvement</dt><dd>Validation must not drop. <em>HCL</em> rejects anything that regresses.</dd>
+<dt>preserve-and-extend</dt><dd>Gain something, break nothing. <em>DarwinX</em> requires positive gain with bounded regression.</dd>
+<dt>peer review</dt><dd>Another agent decides. <em>SkillHone</em> issues accept, reject, or request-changes.</dd>
+<dt>optimizer-chosen</dt><dd>No external gate. <em>OEO</em> commits and picks its own final checkpoint.</dd>
+</dl>
+</section>
+
+<section class="dim" id="d6">
+<h2><span class="dtag">D6</span> Recursion <small>Is the editor itself in the edit set?</small></h2>
+<dl>
+<dt>no</dt><dd>The optimizer is fixed; only its target moves. <em>Meta-Harness</em> freezes its outer loop by design.</dd>
+<dt>partial</dt><dd>The agent rewrites its own editing code, but the machinery choosing what to try stays fixed. <em>DGM</em>.</dd>
+<dt>yes</dt><dd>The procedure that performs modifications is itself modifiable. <em>Hyperagents</em>.</dd>
+</dl>
+</section>
+
+<section class="dim" id="quality">
+<h2><span class="dtag">EQ</span> Evidence quality <small>Marked ✓ present · ✗ absent or violated · ~ partial · — not stated</small></h2>
+<dl>
+<dt>sealed split</dt><dd>Data the optimizer can never touch. <em>OEO</em> scores its final skill on one, once.</dd>
+<dt>held-out tasks</dt><dd>Tasks absent from optimization. <em>DGM</em> measures transfer to benchmarks and models it never evolved against.</dd>
+<dt>matched-budget control</dt><dd>The same compute spent more simply. <em>DGM</em>'s greedy ablation drops the archive at equal budget: 39.7 against 50.0.</dd>
+<dt>repeated-sampling baseline</dt><dd>The same budget spent on more attempts. <em>Meta-Harness</em> runs Best-of-N.</dd>
+<dt>contamination addressed</dt><dd>Leakage between optimization and evaluation checked. <em>Ouroboros</em> filters SWE-bench Pro reference leakage.</dd>
+</dl>
+</section>
+
+<h2 id="systems">Ten systems</h2>
+
 <table>
 <thead>
 <tr>
@@ -665,6 +683,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </tr>
 </tbody>
 </table></article>
-<footer>Generated 2026-08-24 00:13 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-24 00:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
