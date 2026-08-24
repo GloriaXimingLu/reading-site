@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A: Darwin Gödel Machine</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a> · <a class="crumb" href="../tutorials/darwin-godel-machine.html">tutorial</a><h1>Q&amp;A: Darwin Gödel Machine</h1><h2>Session 2026-08-23</h2>
+<p><strong>Q: In "Python repository powered by frozen, pretrained FMs" — what is FM?</strong></p>
+<p><strong>A:</strong> Foundation model — the pretrained LLM the agent calls (Claude 3.5 Sonnet, o1, and so on). The paper uses the abbreviation throughout.</p>
+<p>The word <em>frozen</em> is the load-bearing part. A DGM agent is a Python repository that makes API calls to a model whose weights never change; everything it evolves is the code around that model — tools, prompts, control flow, retry logic. The 20.0% → 50.0% gain on SWE-bench Verified involves no gradient steps at all: the same frozen model, wrapped in better scaffolding.</p>
+<p>Two consequences that carry across the rest of the corpus:</p>
+<ul>
+<li><strong>It is what makes the archive cheap.</strong> A node in DGM's tree is a directory of Python, not a model checkpoint, so retaining every functioning ancestor indefinitely costs kilobytes. Contrast Harness-R1, which trains a 9B editor and consequently has no archive: its only memory across edits is the weights.</li>
+<li><strong>It bounds what "self-improvement" can mean here.</strong> DGM can discover that it should validate patches before submitting, or generate three candidates and rank them. It cannot become a better reasoner. The paper files "rewrite your own training script" as future work, which is roughly the boundary between harness optimization and the recursive self-improvement that Hyperagents and AIDE² probe.</li>
+</ul>
+<p>One DGM-specific wrinkle: the diagnosis step calls a <strong>separate</strong> frozen FM (OpenAI o1), not the agent's own model. It is fed the agent's code, run logs, the GitHub issue, the predicted patch, and SWE-bench's private test patch, and returns a structured ticket. So "the agent diagnoses its own failure" is slightly generous — an external model reads the evidence and writes the instruction the agent then implements.</p></article>
+<footer>Generated 2026-08-24 02:36 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
