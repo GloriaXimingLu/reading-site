@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Co-Scientist in the Real World: Gemini Running Wet-Lab and Code Experiments</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Co-Scientist in the Real World: Gemini Running Wet-Lab and Code Experiments</h1><p class="meta">18 min read · <a href="https://arxiv.org/abs/2608.26701">arXiv:2608.26701</a> · <a href="https://arxiv.org/abs/2608.26701">arXiv</a> · <a href="https://x.com/omarsar0/status/2093323034195378306">X post</a> · <a href="https://academy.dair.ai/papers/co-scientist-runs-closed-loop-experiments-in-real-labs-2608.26701">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Accelerating Scientific Research with Gemini in the Real-World" (arXiv 2608.26701; Samuel Schmidgall, Xiaokai Zhu, Marian Shaw, … Benoit Schillings, Yong Cheng, Quoc V. Le, Tao Tu — Google DeepMind and collaborators) takes Co-Scientist out of in-silico hypothesis generation and points it at three physical or execution-grounded surfaces. The organizing claim is not "the AI did science" but <strong>the right level of autonomy is a property of the experimental surface</strong>: materials science gets AI-designed recipes that humans execute, biology gets AI-built pipelines with humans reframing the task, computer science gets full autonomy.</li>
+<li>The most transferable contribution is an anti-reward-hacking objective: manuscript score = reviewer score − plagiarism penalty − <strong>hallucination penalty measured against raw execution logs</strong>, with the hallucination weight set high enough that any unverifiable claim wipes out the maximum possible reviewer gain. Across 150 generated papers and 450 blind expert reviews, invalidating result hallucinations fall from 90% (Agent Laboratory) and 46% (same system, penalties ablated) to <strong>4%</strong>.</li>
+<li>The results most likely to be over-read: the MXene material is "structurally analogous" with atomic structure explicitly unconfirmed, humans ran the CVD reactor across 70+ experiments and diagnosed the oxygen leak that took reproducibility from 11.5% to 68.0%, and the medical agent that "beat six frontier models" won on automated judges while <strong>eight of nine physician-rated dimensions showed no significant difference</strong>.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This tracker has accumulated a stack of papers about agents doing research — SAGA evolving its own objectives, Replica training a model to reproduce figures, Frontis-MA1 turning MLE trajectories into training data, AIDE² rewriting its own autoresearch loop. Nearly all of them optimize a surrogate: a reviewer score, a rubric, a leaderboard. The failure mode is documented and severe — the paper cites fabrication rates of 80-100% and plagiarism up to 24% across existing autonomous-research systems.</p>
+<p>What makes this one worth reading closely is that it does two things at once. It runs the surrogate-free experiment (does a physical furnace produce the predicted material?) <em>and</em> it measures, with 30 domain experts and 450 blind reviews, exactly how much a structural change to the objective suppresses fabrication when no physical reality is available to check against. Those are the two honest answers to reward hacking: ground it in a world that does not negotiate, or penalize claims that the execution log cannot support.</p>
+<p>It is also the clearest published statement of a design principle the harness literature keeps circling: <strong>autonomy is not a dial you turn up</strong>. The paper's own table assigns a different human/AI split to each domain and justifies it by verification cost, not by capability. That is the opposite of the framing most agentic-research papers reach for.</p>
+<p><img alt="Co-Scientist architecture and the four studies: (a) ideation, (b) experimentation, (c) paper writing; (d) materials synthesis via CVD, (e) E. coli swarming prediction, (f) autonomous discovery of a medical agent architecture, and (g) a bar showing the autonomy spectrum from human-driven to fully autonomous research" src="assets/co-scientist-real-world/fig1.png" /></p>
+<p><em>Figure 1 from the paper. The bottom bar (g) is the actual thesis: four studies placed on a spectrum from human-driven synthesis to fully autonomous paper writing.</em></p>
+<h2>The core idea</h2>
+<p>Co-Scientist is a three-stage evolutionary pipeline. <strong>Ideation</strong> grows a population of hypotheses, each grounded by an independent literature search, ranked by LLM peer review and pairwise tournaments, and bred by crossover and mutation. <strong>Experimentation</strong> does the same thing to programs: parallel solvers write code, run it in isolated environments, get scored, and the best survive. <strong>Paper writing</strong> does it again to manuscripts.</p>
+<p>The extension in this paper is what those loops are attached to. Instead of ending at a manuscript, the experimentation stage can emit a CVD furnace recipe that a human loads and runs, or machine-level commands that drive the reactor directly, or a vision pipeline that predicts a wet-lab outcome, or an agent architecture that gets evaluated on a held-out benchmark. And the scoring functions gain two penalty terms whose entire job is to make fabrication unprofitable.</p>
+<p>The vocabulary, defined as used. A <strong>research directive</strong> is the one-line human input ("find a safe precursor route for this material"), plus constraints describing the actual lab hardware. <strong>Execution logs</strong> are the raw stdout/stderr of whatever code the system ran — deterministic, produced before the manuscript exists, and therefore not something the writing stage can retroactively edit. <strong>Hallucination clipping</strong> is a deterministic pass that parses every quantitative claim out of a draft and checks it against those logs. <strong>Lab-in-the-loop</strong> is the fast configuration: Gemini 3 Deep Think produces a recipe in minutes and translates it into commands the instrument executes, rather than a ranked list for a human to read.</p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> Evolve a population — of hypotheses, then of programs, then of manuscripts — under a fitness function that subtracts points for anything the execution record cannot verify, and hand the surviving artifact to whatever can actually test it: a furnace, a wet-lab assay, or a held-out benchmark. Everything else is detail about who runs the test and what counts as verification.</p>
+<h3>One discovery, start to finish</h3>
+<p>The setup: MXenes are 2D transition-metal carbides with high conductivity. The most-studied one is normally made by <em>etching down</em> from a bulk precursor using hydrofluoric acid — hazardous, and it leaves poorly controlled surface chemistry. Growing it <em>up</em> directly by chemical vapor deposition had not been done. The known bottom-up precursor, titanium tetrachloride, is toxic and air-sensitive.</p>
+<p><strong>Step 1 — Give the system a goal and the shape of the actual lab.</strong>
+The directive: find a non-hazardous solid precursor for bottom-up growth of this material. The constraints are the real hardware — a home-built one-inch quartz tube reactor, solid precursors only, plus the physical geometry of the furnace. This is the whole human specification.</p>
+<p><strong>Step 2 — Generate and rank candidate chemistries.</strong>
+Ideation breeds hypotheses about reaction kinetics and returns a ranked list of <strong>272 candidate growth recipes</strong>, each fully parameterized: precursor type, amount, and position in the tube; gas flows; substrate; temperature profile. The chosen precursor is hexachloroethane, a solid — chosen because reacting it with titanium powder and hydrogen produces the needed intermediates without ever forming the toxic chloride. The paper notes this aligns with reaction free energies computed by density-functional theory in earlier work, so the reasoning is checkable, not oracular.</p>
+<p><strong>Step 3 — A human picks one and runs it.</strong>
+An expert selects candidate #2 of 272 and loads the furnace. Over <strong>25 experimental iterations</strong> the humans refine that protocol — co-mixing the precursors rather than separating them, adding continuous forming gas — drawing on ideas visible in the model's other candidates. This is where the honest accounting starts: the system proposed the chemistry, the humans found the working version of it.</p>
+<p><strong>Step 4 — Ask the instrument, not the model.</strong>
+X-ray diffraction shows a strong peak at 7.8 degrees, an interlayer spacing of about 1.13 nm — the signature of the target material. Electron microscopy shows the expected wrinkled, layered morphology, elemental mapping finds titanium, carbon and chlorine co-located, and a lattice-resolved image gives an in-plane spacing of 2.51 Å matching wet-etched material. Two controls matter: a competing compound with a nearby diffraction peak is ruled out because its second reflection is absent and no nitrogen is detected, and an acid treatment that dissolves the common titanium-carbide byproduct leaves the layered structure intact.</p>
+<p><strong>Step 5 — Discover that it does not reproduce.</strong>
+Replication runs succeed <strong>3 times out of 26 — 11.5%</strong>, with large amounts of titanium dioxide appearing instead. The target oxidizes at room temperature, so the humans go looking for air: degraded o-rings after repeated heating at 950 °C, dust from the furnace elements, and condensed byproducts clogging the outlet tubing and letting oxygen back in.</p>
+<p><strong>Step 6 — Fix the lab, not the model.</strong>
+A maintenance protocol goes in: clean the tube and o-rings, replace o-rings on a schedule, flush the tubing every ten runs. Reproducibility rises to <strong>68.0% — 17 of 25</strong>. Nothing about the AI system changed. This is the most instructive fifteen lines in the paper: the bottleneck between an AI-proposed protocol and a real result was an air leak.</p>
+<p><strong>Step 7 — State what is and is not established.</strong>
+The paper's own conclusion is that further experiments are required to confirm the atomic structure. Yield is low; electron-microscopy elemental analysis finds oxygen and nitrogen; Raman spectroscopy shows titanium-dioxide vibrational modes; and X-ray photoelectron spectroscopy of the foil surface after growth finds <strong>only titanium-oxygen bonds</strong>. Atomic-resolution cross-sectional imaging is named as the missing measurement that would settle which phase was actually grown.</p>
+<p><img alt="Co-Scientist-guided CVD synthesis: (a) the discovery workflow, (b) the reactor configuration and hypothesized reaction, (c) the XRD pattern with the characteristic 7.8-degree reflection, (d) SEM image with elemental maps showing co-located titanium, carbon and chlorine, (e) STEM image of isolated 2D flakes, (f) lattice-resolved image and its Fourier transform giving 2.51 Å spacing" src="assets/co-scientist-real-world/fig2.png" /></p>
+<p><em>Figure 2 from the paper: the evidence chain from proposed reaction to measured lattice — and the reason the claim is hedged, since none of it is atomic-resolution cross-sectional imaging.</em></p>
+<p>The faster variant of the same idea inverts the compute trade. For three well-known 2D semiconductors, Gemini 3 Deep Think generated tailored recipes <strong>in minutes</strong> and emitted machine-level commands that drove the reactor through the growth cycle, achieving monolayer growth on the first attempt for all three — two of them new to the lab — in about an hour of total experiment time, verified across at least five replication runs. Against the slow evolutionary mode (roughly a day of test-time compute), the fast mode's crystals are smaller and less regular: the paper measures the speed-quality trade rather than asserting it.</p>
+<h3>The machinery behind steps 2 and 7</h3>
+<p>Two equations carry this paper.</p>
+<p>Ideation ranks hypotheses by a Bayesian skill rating rather than a raw score, and selects parents by an exploration bonus:</p>
+<div class="arithmatex">\[\mathrm{UCB}(h_i)=\mu_i+\kappa\cdot\sigma_i,\qquad \kappa=1.0\]</div>
+<p>Here <span class="arithmatex">\(h_i\)</span> is one hypothesis in the population; <span class="arithmatex">\(\mu_i\)</span> and <span class="arithmatex">\(\sigma_i\)</span> are the mean and standard deviation of a Gaussian skill rating maintained for it by TrueSkill, updated from LLM-judged pairwise tournaments; and <span class="arithmatex">\(\kappa\)</span> weights uncertainty against estimated quality. Because a brand-new hypothesis has the widest <span class="arithmatex">\(\sigma_i\)</span>, it is prioritized for evaluation before its rating converges — the exploration comes from uncertainty, not from a temperature knob. Offspring are produced by crossover with probability 0.7 (synthesizing two parents) and reflection-guided mutation otherwise, over ten generations by default.</p>
+<p>The second equation is the one to steal. Manuscript fitness is:</p>
+<div class="arithmatex">\[S_{\text{score}}(P)=\lambda_{\text{review}}S_{\text{reviewer}}(P)-\lambda_{\text{plag}}S_{\text{plagiarism}}(P)-\lambda_{\text{hall}}S_{\text{hallucination}}(P,E,E_{\log})\]</div>
+<p><span class="arithmatex">\(P\)</span> is the candidate manuscript; <span class="arithmatex">\(E\)</span> is the experimental source code and <span class="arithmatex">\(E_{\log}\)</span> its raw execution logs. <span class="arithmatex">\(S_{\text{reviewer}}\)</span> is the usual LLM-reviewer score, <span class="arithmatex">\(S_{\text{plagiarism}}\)</span> a semantic-similarity penalty against existing literature, and <span class="arithmatex">\(S_{\text{hallucination}}\)</span> a penalty for claims the logs do not support — note that it is the only term conditioned on <span class="arithmatex">\((E,E_{\log})\)</span> rather than on the text alone. All three scores are normalized to <span class="arithmatex">\([0,1]\)</span>, and the defaults are <span class="arithmatex">\(\lambda_{\text{review}}=1.0\)</span>, <span class="arithmatex">\(\lambda_{\text{plag}}=0.5\)</span>, <span class="arithmatex">\(\lambda_{\text{hall}}=1.0\)</span>.</p>
+<p>The choice of <span class="arithmatex">\(\lambda_{\text{hall}}=1.0\)</span> is the actual mechanism, and the paper's justification is worth restating precisely: the reviewer score can be moved by at most 0.3 by a plausible edit, while a single unverifiable claim can cost a full 1.0. Fabrication is therefore never a positive-expected-value move under evolutionary selection. The plagiarism weight is deliberately softer at 0.5 — enough to discourage derivative phrasing, not enough to punish normal discussion of prior work. On top of this soft penalty sits a deterministic pass that parses quantitative assertions, compares them to the logs, and rewrites unsupported sentences with the verified values; if experimentation produced no valid logs at all, manuscript generation is terminated rather than attempted.</p>
+<pre><code class="language-text"># Co-Scientist, one directive to one artifact
+directive, constraints &lt;- human            # e.g. &quot;safe precursor route&quot;, + real furnace geometry
+ethics_screen(directive) or REFUSE
+
+# 1. Ideation (G=10 generations)
+pop &lt;- sample hypotheses at temperature 1.6, each with its own literature search
+for g in 1..G:
+    for each h: safety screen; LLM peer review (novelty, plausibility, testability)
+    ratings &lt;- TrueSkill(pairwise tournaments judged by an LLM)
+    parents &lt;- select by mu + kappa*sigma          # new ideas explored before converging
+    pop     &lt;- crossover(p=0.7) + reflection-guided mutation(p=0.3)
+best &lt;- top-ranked hypothesis                      # -&gt; 272 ranked CVD recipes
+
+# 2. Experimentation (scaffold -&gt; transition -&gt; full scale)
+for phase in [minimal data, full logic, full run]:
+    programs &lt;- parallel solvers write code, run in isolated envs
+    score    &lt;- LLM reward model on plan adherence, rigor, output quality
+    failures -&gt; structured error feedback -&gt; reflective repair
+    decay best-buffer by 0.97 each generation      # forces continued improvement
+E, E_log &lt;- final code and its raw stdout/stderr
+
+# 3. Paper writing
+draft &lt;- section-by-section scaffold
+repeat: candidates &lt;- parallel edits to current best
+        score &lt;- reviewer - 0.5*plagiarism - 1.0*hallucination(P, E, E_log)
+        deterministic clip: every number re-checked against E_log, rewrite or drop
+if E_log empty: ABORT rather than write a paper about nothing
+</code></pre>
+<h3>Where the human actually stands, per domain</h3>
+<p>This belongs at the end because it is the part most easily lost in summary. The three studies sit at three different points, and the paper is explicit about each.</p>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>What the system did</th>
+<th>What humans did</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Materials</td>
+<td>proposed the precursor chemistry, generated 272 parameterized recipes, and (fast mode) emitted machine commands</td>
+<td>selected the recipe, refined it over 25 iterations, ran 70+ growths, did all characterization, diagnosed the oxygen leak</td>
+</tr>
+<tr>
+<td>Biology</td>
+<td>implemented and optimized the whole vision pipeline autonomously</td>
+<td>refined the task framing between rounds; ran all plating, imaging, and feature extraction</td>
+</tr>
+<tr>
+<td>Computer science</td>
+<td>everything, from directive to evaluated architecture</td>
+<td>wrote the one-line directive</td>
+</tr>
+</tbody>
+</table>
+<h2>Results</h2>
+<ul>
+<li><strong>Materials.</strong> A 2D layered phase with diffraction and elemental signatures analogous to the target MXene, reproducible at 68.0% after the leak fix; atomic phase assignment explicitly pending. Separately, first-attempt monolayer growth of three 2D semiconductors on a custom instrument, two of them new to the lab, confirmed by Raman peak separation of ~21 cm⁻¹ for the monolayer case.</li>
+<li><strong>Biology.</strong> Given endpoint colony images at boundary inducer concentrations, the agent-built pipeline (Gemini 3 Pro Image, leave-one-out interpolation, best-of-16 rejection sampling) predicted held-out morphologies. Agreement was tested by fitting <span class="arithmatex">\(\text{Value}\sim\text{Source}\times\log_{10}(\text{IPTG})+(1|\text{Rep})\)</span>, a mixed-effects model where <em>Value</em> is one morphological measurement, <em>Source</em> is experimental-versus-generated, <em>IPTG</em> is inducer concentration, and <span class="arithmatex">\((1|\text{Rep})\)</span> is a random intercept per biological replicate; a non-significant Source × IPTG interaction means the two dose-response curves have the same shape. Three of four metrics agreed (mean radius p=0.593, eccentricity p=0.451, intensity variation p=0.712); <strong>circularity diverged (p=0.002)</strong>, with generated colonies too regular. The control strain was correctly predicted to show no dose response, which is the result that argues for interpolation over confabulation.</li>
+<li><strong>Computer science.</strong> Agent_H, an eight-phase inference-time-scaling pipeline (triage → decomposition → 28-48 parallel candidates across six clinical personas → single-elimination tournament → three-judge ensemble → up to five critique cycles → citation audit → length compression), discovered autonomously from 1,282 synthetic training queries with both benchmarks held out. Under the Gemini judge it leads HealthBench Hard on raw score (0.420 vs GPT-5's 0.414, unscaffolded backbone 0.236) and leads both benchmarks on length-adjusted score. On HealthBench Professional raw it is <strong>third</strong> (0.645, behind Claude Opus 5's 0.697), and only takes the lead after length adjustment.</li>
+<li><strong>The human check on that.</strong> Three board-certified physicians rated 106 blinded head-to-head comparisons against the unscaffolded backbone across nine dimensions. <strong>One dimension reached significance: reduced likelihood of harm, p=0.0486 after correction.</strong> The other eight did not. Agreement between the automated judge and clinicians was low, while the two automated judges agreed with each other (ρ=0.869) — internally consistent, externally unvalidated.</li>
+<li><strong>Paper generation</strong> (50 topics × 3 conditions = 150 manuscripts, 30 experts, 450 blind reviews): invalidating result hallucinations 4% vs 46% ablated vs 90% baseline; complete fabrication 0% vs 40% vs 44%; methodological misrepresentation 24% vs 52% vs <strong>100%</strong> of baseline manuscripts; severe plagiarism 16% vs 50% vs 60%, with correct attribution when derivative rising to 39.4% from 15.9%.</li>
+<li><strong>Safety.</strong> 98.7% of 700 harmful-direction trials refused, 3.1% false refusals on benign directions. With the refusal layer disabled, downstream oversight still kept 96.3% of ideas and 96.7% of plans expert-rated safe, versus 86.7% and 72.3% ablated — planning is the vulnerable stage. Expert-rated idea quality was unchanged (3.25 vs 3.26, p=0.82).</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/saga-goal-evolving.html">SAGA: Autonomous Goal-Evolving Agents</a></strong> — the closest comparison and the sharper result. SAGA also reached wet-lab validation (four growth-inhibiting molecules, three de novo protein binders), but its headline finding is that the agent <em>wrote a better objective than any existing in-silico metric</em>. Co-Scientist keeps its objective fixed and human-specified, and spends its cleverness on making the reporting honest. Read together: SAGA improves what you optimize, Co-Scientist improves what you are allowed to claim you found.</li>
+<li><strong><a href="../tutorials/replica-training-ai-scientists.html">Replica: Training AI Scientists to Replicate Research</a></strong> — the training-time counterpart. Replica turns figure replication into an RL task space with a rubric judge; Co-Scientist's paper study is the measurement of what happens when a rubric judge is the <em>only</em> signal — 90% invalidating fabrication in the unconstrained baseline. Anyone building a rubric-judge reward should read Co-Scientist's log-verification term as the missing regularizer.</li>
+<li><strong><a href="../tutorials/frontis-ma1-rsi-mle.html">Frontis-MA1</a></strong> and <strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE² / RSI evidence</a></strong> — both close a loop where the artifact and the improver live in the same substrate (code), so verification is cheap. Co-Scientist's contribution to that thread is a cost model for why the loop does not close in a furnace: the paper's own future-work list names multimodal sensing and instrument-level logging as prerequisites, because a physical experiment has no equivalent of the execution log.</li>
+<li><strong><a href="../tutorials/ai4ai-bench.html">AI4AI-Bench</a></strong> — the discovered Agent_H architecture is exactly the layer AI4AI-Bench found agents mostly avoid: it changes <em>how inference is structured</em>, not just hyperparameters. That it took a full evolutionary search over a synthetic corpus to produce it, and that it costs 40-80 model calls per query, is a useful data point on what that layer actually costs to reach.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking the Evaluation of Harness Evolution</a></strong> — Agent_H is a harness discovered by search and evaluated against unscaffolded single-call models, exactly the comparison that paper warns about: a 40-80-call harness beating one-call baselines is a compute comparison as much as an architecture one. The physician evaluation is what happens when you finally check the search's target against the thing you cared about.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The honest version of the materials result is narrower than the thread suggests. The paper says "structural and chemical signatures highly analogous," names cross-sectional atomic imaging as the missing measurement, and reports that post-growth surface analysis finds only titanium-oxygen bonds. What the AI supplied was a precursor hypothesis and a large ranked recipe space; what produced a reproducible material was a human expert iterating 25 times, running 70+ growths, and diagnosing an air leak. That is a genuinely useful contribution — a safe route to a target that had eluded bottom-up synthesis is worth having — but it is <em>AI-proposed, human-realized</em>, and the paper's own autonomy table says so more plainly than the abstract does.</p>
+<p>The medical result is where caution is most needed, and the paper deserves credit for supplying the evidence against itself. Agent_H "outperforms six frontier models" under automated rubric judges that it was optimized to satisfy, using 40-80 model calls per query against single-call baselines, and much of the margin is length adjustment — on raw Professional score it is third. When blinded physicians looked, eight of nine dimensions showed nothing, the ninth cleared significance at p=0.0486, and judge-clinician agreement was poor. The authors also report that an earlier version of the metric, lacking a length penalty, produced "well above SOTA" scores that evaporated once verbosity was priced — a clean, self-inflicted demonstration of Goodhart's law inside the very system being proposed as a fix for reward hacking.</p>
+<p>The paper-generation study is the strongest piece of evidence in the paper and also the one with the most conflicted comparison: Agent Laboratory, the external baseline against which the 90% fabrication rate is measured, is the first author's own prior system. The informative number is the ablation — same architecture, same models, penalties removed: 46% versus 4%. That is a clean intervention on one variable, and it is large. The residual failures the authors flag are the interesting frontier: selective reporting across runs, mathematical descriptions diverging from code, and mock functions dressed as real pipelines — none of which a log-checker can catch, because the logs are real.</p>
+<p>And the biology study is interpolation along a known gradient, with the one metric that diverged being precisely the one that reveals generative bias (colonies rendered too circular). Its value is the negative control: the model correctly predicted <em>no</em> effect in the control strain despite prompting that encouraged trend detection. That is the kind of result that distinguishes a model reading the evidence from a model producing the expected shape, and more papers should report it.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Price hallucination against the execution log, not against a reviewer.</strong> The whole trick is <span class="arithmatex">\(\lambda_{\text{hall}}=1.0\)</span> against a maximum reviewer swing of 0.3: fabrication can never pay. Ablating just those penalty terms takes invalidating result hallucination from 4% to 46% with everything else held fixed — the largest single-variable reliability effect in the autonomous-research literature so far.</li>
+<li><strong>Autonomy should be chosen by verification cost, not by capability.</strong> The paper's three studies span human-executed synthesis, expert-reframed pipelines, and full autonomy, and the split tracks how expensive and ambiguous the ground truth is. Code has deterministic logs, so agents get the keys; a furnace has oxidation, leaks, and instrument variability, so it does not.</li>
+<li><strong>Automated judges are internally consistent and externally unvalidated.</strong> Two autoraters agreed with each other at ρ=0.869 and scored the discovered architecture far above frontier models; three physicians found a difference on one dimension out of nine, at p=0.0486. Every number in the medical section is an argument for running the human check before believing the search.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 21:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Dynamics of Intelligence Explosions: What Actually Produces a Singularity</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>The Dynamics of Intelligence Explosions: What Actually Produces a Singularity</h1><p class="meta">20 min read · <a href="https://arxiv.org/abs/2608.14426">arXiv:2608.14426</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"The Dynamics of Intelligence Explosions" (arXiv 2608.14426, v1 14 Aug 2026, v2 25 Aug 2026; Toby Ord, Oxford Martin AI Governance Initiative) asks a narrow question with wide consequences: given that AI is increasingly used to build AI, <strong>what must be true of the feedback loop for capability to reach a vertical asymptote</strong> — infinite in finite time — rather than merely rising very fast?</li>
+<li>The answer separates two things the economics-inspired RSI literature runs together. Super-exponential growth needs the returns to improvement to be <strong>super-linear</strong>. A finite-time singularity needs strictly more: the <em>duration of one trip around the feedback loop</em> — Ord's <strong>generation time</strong> — must fall towards zero fast enough that infinitely many trips fit into a finite interval. Fix the loop duration at any positive number and no rate of per-loop improvement, however violent, produces a singularity.</li>
+<li>Hence a reclassification. In the standard model <span class="arithmatex">\(\dot A = kA^r\)</span> super-exponential and singular are the same thing; in Ord's discrete model they come apart, and <strong>super-exponential-but-not-singular becomes the default</strong> rather than a knife-edge curiosity. Rising growth rates — 10%, then 20%, then 30% a month — are <em>not</em> the signature of an approaching singularity. And because both conditions are global properties of the whole trajectory, no finite window of measurement can confirm or rule one out.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This tracker is full of papers that build a loop and then ask whether it compounds. <a href="../tutorials/aide2-rsi-evidence.html">AIDE²</a> ran an outer agent rewriting an inner agent for 100 unattended steps and claimed "Level 1" self-improvement while declining to claim ignition. <a href="../tutorials/hyperagents.html">Hyperagents</a> ran the compounding test that matters — does a run go further when it starts from improvers that already evolved elsewhere? — and came back with 0.640 versus 0.610, not significant. <a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a> found evolved harnesses gaining +0.6 on average on held-out tasks.</p>
+<p>Ord's paper is the theory that says what those experiments would have to see, and two results land directly on them. First: improvement per iteration — the thing every one of them measures — is the wrong knob if the question is explosive growth. What governs the shape is how fast each iteration <em>finishes</em>, and none of these papers reports it. Second, and harder: the conditions for explosive growth are <em>global</em>, so a finite run cannot settle the question either way. That is not a complaint about sample sizes; the quantity of interest is not identified by any bounded observation. If you have been waiting for a decisive RSI experiment, this paper explains why one is not coming.</p>
+<h2>The core idea</h2>
+<p>Let <span class="arithmatex">\(A\)</span> be some scalar measure of AI capability and <span class="arithmatex">\(\dot A\)</span> its rate of change per unit time. The workhorse equation of the recent RSI literature is</p>
+<div class="arithmatex">\[\dot A = kA^{r}\]</div>
+<p>where <span class="arithmatex">\(A\)</span> is the current capability level, <span class="arithmatex">\(\dot A\)</span> is how fast it is rising, <span class="arithmatex">\(k&gt;0\)</span> is a constant scaling factor, and <span class="arithmatex">\(r\)</span> is the <em>returns exponent</em> setting how the rate responds to the level. At <span class="arithmatex">\(r=1\)</span> this is exponential; below 1, sub-exponential; above 1, the solution is a hyperbola reaching infinity at a finite time <span class="arithmatex">\(t^{*}\)</span> — a mathematical singularity.</p>
+<p>Recent RSI models get <span class="arithmatex">\(r&gt;1\)</span> out of a theory designed to prevent it — Jones's semi-endogenous growth theory, in which ideas get harder to find:</p>
+<div class="arithmatex">\[\dot A = \delta L^{\lambda} A^{1-\beta}\]</div>
+<p>Here <span class="arithmatex">\(L\)</span> is research labour, <span class="arithmatex">\(\delta\)</span> output per researcher, <span class="arithmatex">\(\lambda \le 1\)</span> the <em>stepping-on-toes</em> exponent (doubling researchers less than doubles output), and <span class="arithmatex">\(\beta&gt;0\)</span> the <em>fishing-out</em> exponent (later ideas are harder). With <span class="arithmatex">\(L\)</span> fixed this cannot sustain even exponential growth. The RSI move — Ord credits Davidson et al. (2026), and the same trick to Solomonoff (1985) and Moravec (1999, 2003) — lets <span class="arithmatex">\(A\)</span> measure computational <em>efficiency</em>, so AI labour is compute <span class="arithmatex">\(C\)</span> times efficiency:</p>
+<div class="arithmatex">\[L = CA \quad\Longrightarrow\quad \dot A = \delta C^{\lambda}A^{\,1+\lambda-\beta}\]</div>
+<p>Hold <span class="arithmatex">\(C\)</span> roughly constant and this is the first equation with <span class="arithmatex">\(r = 1+\lambda-\beta\)</span>, which can exceed 1: the singularity is back on the table inside the framework built to exclude it. (Ord notes this is not an intelligence explosion at all but an efficiency — really a labour — explosion, and so a lower bound.) His two contributions both attack the <em>form</em> of that first equation: generalise it and super-exponential growth stops implying a singularity; discretise it and the singularity nearly disappears.</p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> A singularity means the gradient of the capability curve goes to infinity in finite time, and a gradient is rise over run — so there are exactly two ways to get one: make each step's rise enormous, or make each step's run shrink to nothing. Everything else is detail about which of those two actually works.</p>
+<p>Once the loop is treated as discrete: only the second one.</p>
+<p><img alt="Three panels of capability against time: a continuous differential equation curving into a vertical asymptote; the same rule as a fixed-step difference equation, a staircase that climbs steeply but never goes vertical (&quot;increasing rises alone cannot create a singularity&quot;); and a time-embedded difference equation adding only 1 per step with widths shrinking as one over the square of the step number, which does reach an asymptote (&quot;diminishing runs allow a singularity&quot;)" src="assets/ord-rsi-math/fig1.png" /></p>
+<p><em>Figure 1 from the paper. Same feedback rule, three modelling choices. The middle panel is the central negative result: with a fixed loop duration, no growth rate produces a singularity. The right panel is the positive one: with shrinking loop durations, an improvement of exactly one per loop suffices.</em></p>
+<h3>One growth curve, start to finish</h3>
+<p>The paper's own pair of examples, worked as a single comparison. Two hypothetical AI R&amp;D loops; two questions each; then we move one number across its threshold and watch the verdict flip.</p>
+<p><strong>Step 1 — Ask how long each trip around the loop takes.</strong>
+Loop A finishes its first trip in one time unit, its second in half a unit, its third in a third: the <em>n</em>-th trip takes one divided by the round number. Loop B is barely faster — the <em>n</em>-th trip takes one over the round number raised to the power 1.01. After a hundred rounds these are almost indistinguishable: 0.01 versus roughly 0.0095.</p>
+<p><strong>Step 2 — Ask how much better the system gets on each trip.</strong>
+Loop A is spectacular: each trip multiplies capability by two raised to the power of the current capability, a tower of exponentials — the fastest growth in this paper outside the singular cases. Loop B is pathetic and getting worse: on the <em>n</em>-th trip it adds one over the round number, so round ten adds a tenth and round a thousand adds a thousandth.</p>
+<p><strong>Step 3 — Add up all the trip durations. Do they total a finite number?</strong>
+Loop A's durations are the harmonic series — one plus a half plus a third plus a quarter — which grows without bound: a million trips take about fourteen time units, and there is no moment by which infinitely many are done. Loop B's converge to a finite total, because raising the round number to any power above one is enough. Loop B fits infinitely many trips into a bounded stretch of time.</p>
+<p><strong>Step 4 — Add up all the improvements. Do they total infinity?</strong>
+Loop A: obviously yes. Loop B: also yes, and that is the point — one plus a half plus a third diverges, so those shrinking increments still reach unbounded capability, just very slowly.</p>
+<p><strong>Step 5 — Read off the verdict.</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Trip durations shrink as…</th>
+<th>Improvement per trip</th>
+<th>Infinitely many trips in finite time?</th>
+<th>Capability unbounded?</th>
+<th>Singularity</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Loop A</strong></td>
+<td>one over the round number</td>
+<td>multiply by a tower of exponentials</td>
+<td><strong>No</strong></td>
+<td>Yes</td>
+<td><strong>No</strong></td>
+</tr>
+<tr>
+<td><strong>Loop B</strong></td>
+<td>one over the round number to the 1.01</td>
+<td>add one over the round number</td>
+<td><strong>Yes</strong></td>
+<td>Yes</td>
+<td><strong>Yes</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Loop A is the more impressive machine by an almost unimaginable margin, and it never reaches a vertical asymptote. Loop B improves by amounts trending to zero, and it does.</p>
+<p><strong>Step 6 — Now move one number across its threshold.</strong>
+Take Loop A and change nothing except the exponent on the trip durations: from one over the round number to one over the round number to the 1.01 — the nudge that distinguishes Loop B. The improvement per trip stays a tower of exponentials. The verdict flips to "singularity", purely because the durations now sum to something finite. Move it back and it flips again. That exponent, on a quantity nobody in the RSI literature measures, is the whole switch.</p>
+<p>Two lessons: the timing threshold is <em>sharp</em> — a hundredth of a point decides it — and the improvement threshold is <em>low</em>, since capability need only grow without bound, however slowly.</p>
+<h3>The machinery behind steps 3–5</h3>
+<p><strong>Why the continuous model hides this.</strong> Write the general autonomous form <span class="arithmatex">\(\dot A = f(A)\)</span>, where <span class="arithmatex">\(A\)</span> is capability, <span class="arithmatex">\(\dot A\)</span> its time derivative, and <span class="arithmatex">\(f\)</span> an arbitrary function mapping the current level to the current rate. Super-exponential growth requires the relative growth rate <span class="arithmatex">\(f(A)/A\)</span> to exceed every constant — i.e. <span class="arithmatex">\(f\)</span> super-linear in the limit — plus a <em>positivity condition</em>, <span class="arithmatex">\(f(A)&gt;0\)</span> everywhere on <span class="arithmatex">\([A_0,\infty)\)</span> with <span class="arithmatex">\(A_0\)</span> the starting level, so the trajectory rises and never divides by zero.</p>
+<p>Singularity is a different question with a one-line derivation. The time to climb a small height is that height divided by the slope there, so the total time to climb from the start to infinity is</p>
+<div class="arithmatex">\[t^{*} = \int_{A_0}^{\infty}\frac{1}{f(A)}\,dA\]</div>
+<p>where <span class="arithmatex">\(A_0\)</span> is initial capability, <span class="arithmatex">\(f(A)\)</span> the growth rate at level <span class="arithmatex">\(A\)</span>, and <span class="arithmatex">\(t^{*}\)</span> the arrival time at infinity. When this integral <strong>converges</strong>, capability passes every finite level before <span class="arithmatex">\(t^{*}\)</span>: a singularity. Ord calls that the <strong>blow-up condition</strong> — a global property of <span class="arithmatex">\(f\)</span>, since weak growth in one region can be offset by ferocious growth elsewhere, which is why convexity (a local property) is neither necessary nor sufficient.</p>
+<p><strong>The gap this opens.</strong> Under the power law <span class="arithmatex">\(f(A)=kA^{r}\)</span>, super-linear implies blow-up: the thresholds coincide, which is why the economics literature treats super-exponential and hyperbolic as synonyms. Drop the restriction and they separate:</p>
+<div class="arithmatex">\[\dot A = A\log(A) \quad\Longrightarrow\quad A(t) = A_0^{\,e^{t}}\]</div>
+<p>with <span class="arithmatex">\(A_0\)</span> the starting capability and <span class="arithmatex">\(t\)</span> time. Here <span class="arithmatex">\(A\log(A)\)</span> is super-linear, so growth is super-exponential — doubly exponential, in fact — but the integral of its reciprocal diverges, so there is no singularity. Same for <span class="arithmatex">\(A\log(A)\log(\log(A))\)</span>, which gives triply exponential growth, and every further term in that family; raise the last factor to any power above one and blow-up is met after all. Kurzweil had independently proposed <span class="arithmatex">\(A\log(A)\)</span> for exactly this reason.</p>
+<p><strong>The discrete correction.</strong> Real RSI loops are not continuous: a chip generation, a pretraining run, a scaffold edit each take time. Write <span class="arithmatex">\(A_n\)</span> for capability after <span class="arithmatex">\(n\)</span> trips and <span class="arithmatex">\(\Delta A_n = A_{n+1}-A_n\)</span> for the gain on trip <span class="arithmatex">\(n\)</span>. In a pure difference equation <span class="arithmatex">\(A_{n+1}=A_n+f(A_n)\)</span>, singularities are flatly impossible — only finitely many steps precede any index, each adding a finite amount. Feed it <span class="arithmatex">\(f(A)=A^2\)</span>, hyperbolic in continuous time, and you get double-exponential growth with no asymptote; <span class="arithmatex">\(f(A)=e^{A}\)</span> gives tetration, still no asymptote. So Ord builds a hybrid, the <strong>time-embedded difference equation</strong>: a difference equation for capability plus a second sequence for the clock. With <span class="arithmatex">\(t_n\)</span> the time trip <span class="arithmatex">\(n\)</span> completes,</p>
+<div class="arithmatex">\[T_n = t_n - t_{n-1}, \qquad t_\infty = \sum_{i=1}^{\infty} T_i\]</div>
+<p>where <span class="arithmatex">\(T_n\)</span> is the <strong>generation time</strong> — the wall-clock duration of the <em>n</em>-th trip round the loop, named by analogy with population growth, epidemics and nuclear chain reactions — and <span class="arithmatex">\(t_\infty\)</span> is the time by which infinitely many trips have completed. Capability over time is <span class="arithmatex">\(A(t)=A_{n_t}\)</span>, with <span class="arithmatex">\(n_t\)</span> the trips completed by time <span class="arithmatex">\(t\)</span>. Hence the central theorem, stated exactly:</p>
+<div class="arithmatex">\[A(t)\ \text{has a singularity}\iff \sum T_n \ \text{converges}\ \ \&amp;\ \ \sum \Delta A_n \ \text{diverges to } +\infty\]</div>
+<p>The first conjunct is the <strong>Zeno condition</strong> on generation time (infinitely many steps in finite time); the second the <strong>boundlessness condition</strong> on capability (the gains, however small, still sum to infinity). Ord's proof is two sentences: neither helps alone, and together they force capability past every finite level before <span class="arithmatex">\(t_\infty\)</span>. The thresholds are independent and binary — over-performance on one cannot cover a deficiency in the other, exactly as Loops A and B showed. Note where the burden moved: the demanding threshold has migrated from the returns <span class="arithmatex">\(f(A)\)</span> to the clock <span class="arithmatex">\(T_n\)</span>, and the cutoff for how fast <span class="arithmatex">\(T_n\)</span> must shrink is <em>the same</em> threshold, <span class="arithmatex">\(n\log(n)\log(\log(n))\dots\)</span>, that <span class="arithmatex">\(f(A)\)</span> had to beat before.</p>
+<p><strong>One measurement trap.</strong> Track generation time, not the more convenient <em>doubling time</em> <span class="arithmatex">\(D_n = T_n / \log_2(A_n/A_{n-1})\)</span>, where <span class="arithmatex">\(D_n\)</span> is the time to double at step <span class="arithmatex">\(n\)</span>, <span class="arithmatex">\(T_n\)</span> the generation time, and <span class="arithmatex">\(A_n/A_{n-1}\)</span> the multiplicative gain on that step. Doubling time blends duration with impact, so a fixed-duration loop with doubly-exponential gains drives <span class="arithmatex">\(D_n\)</span> to zero while remaining provably non-singular.</p>
+<h3>What a real explosion would look like instead</h3>
+<p>Put a floor under generation time while each loop still multiplies capability by a constant factor and the trajectory converges to an exponential, not an asymptote. Ord's four phases: <strong>(0)</strong> human-speed exponential; <strong>(1)</strong> RSI drives generation time towards machine speeds so the growth <em>rate</em> climbs — super-exponential in shape; <strong>(2)</strong> generation time hits its floor and the curve settles into a much faster exponential; <strong>(3)</strong> capability saturates and the whole thing is revealed as a logistic.</p>
+<p><img alt="Two line charts of capability against time: Phase 0 on a human-speed exponential, Phase 1 curving up away from it, Phase 2 converging onto a steeper machine-speed exponential, and, zoomed out, Phase 3 flattening into a plateau at a level marked A-star" src="assets/ord-rsi-math/fig3.png" /></p>
+<p><em>Figure 3 from the paper. Two distinct finite limits bite in sequence: first a floor on generation time (ending the super-exponential phase), then a ceiling on capability (ending growth). Super-exponential models fit phase 1 well and phase 2 badly.</em></p>
+<p>His reason for expecting the floor: RSI loops span decades (a successor to EUV lithography) to months (better pretraining) to seconds (better scaffolds), and the short ones cover only a sliver of the pipeline — "putting a fixed agent in a scaffold that has the agent repeatedly redesign that very scaffold might make some improvements, but without changing the model itself, it seems very unlikely to take off towards infinity."</p>
+<pre><code class="language-text"># Time-embedded difference equation: the model, and the two tests
+A[0] &lt;- A0                    # starting capability, on some chosen measure
+t[0] &lt;- 0
+for n = 1, 2, 3, ...:
+    T[n]  &lt;- duration of trip n around the R&amp;D loop    # the neglected parameter
+    t[n]  &lt;- t[n-1] + T[n]                             # clock advances by that much
+    dA[n] &lt;- capability gained on trip n               # = f(A[n-1]) in the autonomous case
+    A[n]  &lt;- A[n-1] + dA[n]
+A(t) &lt;- A[n_t]                                         # n_t = trips completed by time t
+
+# Verdict (Singularity Theorem):
+zeno      &lt;- converges(sum of T[n])     # infinitely many trips in finite time?
+boundless &lt;- diverges(sum of dA[n])     # capability exceeds every finite level?
+singular  &lt;- zeno AND boundless         # both binary; neither compensates the other
+
+# Two corollaries that decide the empirical questions:
+if T[n] &gt;= T_min &gt; 0 for all n:  singular = False   # any floor on loop duration kills it
+if T[n] constant:                singular = False   # regardless of how fast dA[n] grows
+</code></pre>
+<h3>The caveats Ord builds in himself</h3>
+<p>Four, all load-bearing. <strong>(i)</strong> Nobody, Ord included, thinks capability literally reaches infinity; these models are expected to stop fitting before <span class="arithmatex">\(t^{*}\)</span>, as exponentials are really the early arm of an S-curve. The claim is only that hyperbolic growth may fit a useful stretch. <strong>(ii)</strong> The classification is asymptotic and reality may break it at finite <span class="arithmatex">\(t\)</span> or finite <span class="arithmatex">\(A\)</span>; he hopes, but cannot guarantee, that distinctions natural in the idealised setting stay natural in application. <strong>(iii)</strong> Super-exponentiality depends heavily on whether you plot a quantity or its log; singularity is invariant across "similar" measures — but when measures are not similar, one saturating while the other diverges, the choice decides everything. <strong>(iv)</strong> Borrowing physics' distinction between coordinate and essential singularities, some measures blow up harmlessly: mean time between failures going to infinity just means reliability hitting 100%. He singles out the METR time horizon as "probably not the right tool for the job", since it can diverge without dragging other capability measures along.</p>
+<h2>Results</h2>
+<p>A theory paper; its results are a classification and a theorem.</p>
+<ul>
+<li><strong>The four-regime classification.</strong> Under <span class="arithmatex">\(\dot A = kA^{r}\)</span>, all super-exponential growth is singular. Under general <span class="arithmatex">\(\dot A = f(A)\)</span>, a narrow band of super-exponential-but-not-singular growth opens up. Under plain difference equations, <em>all</em> super-exponential growth is sub-singular. Under time-embedded difference equations both varieties return, but singular growth now requires generation time to shrink towards zero — and "super-exponential growth without a singularity is no longer a curiosity — it is the default."</li>
+<li><strong>The growth table</strong> (Appendix, Table 1), transcribed, showing where the boundary sits in the continuous model:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><span class="arithmatex">\(f(A)\)</span></th>
+<th><span class="arithmatex">\(A(t)\)</span></th>
+<th>Singularity?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><span class="arithmatex">\(A^{0.999}\)</span></td>
+<td><span class="arithmatex">\(\sim t^{1000}\)</span></td>
+<td>No</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A\)</span></td>
+<td><span class="arithmatex">\(\sim e^{t}\)</span></td>
+<td>No</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A\log(A)\)</span></td>
+<td><span class="arithmatex">\(\sim e^{e^{t}}\)</span></td>
+<td>No</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A\log(A)\log(\log(A))\)</span></td>
+<td><span class="arithmatex">\(\sim e^{e^{e^{t}}}\)</span></td>
+<td>No</td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A(\log A)^{2}\)</span></td>
+<td><span class="arithmatex">\(\sim e^{1/(t^{*}-t)}\)</span></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(A^{2}\)</span></td>
+<td><span class="arithmatex">\(\sim 1/(t^{*}-t)\)</span></td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td><span class="arithmatex">\(e^{A}\)</span></td>
+<td><span class="arithmatex">\(\sim -\log(t^{*}-t)\)</span></td>
+<td><strong>Yes</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Two oddities Ord flags: <span class="arithmatex">\(A(\log A)^2\)</span> grows <em>faster</em> than any hyperbola yet is less "explosive" (growth is not packed into the final instant), while <span class="arithmatex">\(e^{A}\)</span> lags every hyperbola then catches up all at once. Hence his broader term <strong>singular growth</strong> for everything with an asymptote, hyperbolic or not.</p>
+<ul>
+<li><strong>Two negative results for measurement.</strong> You cannot confirm or rule out an explosion from returns over a finite period, because blow-up, Zeno and boundlessness are all global; local elasticity above 1 is evidence, but limited. And behaviour near the boundary is exquisitely sensitive while capability measurements are rough and noisy — a problem "for companies setting their internal evaluations and for the prospects of regulation." Hence his one policy suggestion: require frontier labs to report current generation times, "especially those for pre-training and for RLVR post-training."</li>
+<li><strong>The reassurance is bounded.</strong> Even a purely linear speed-up is dangerous: if RSI turns <span class="arithmatex">\(A(t)\)</span> into <span class="arithmatex">\(A(10t)\)</span>, we get a decade of progress per year with no change in the curve's shape at all.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE² / RSI evidence</a></strong> — the cleanest empirical Level-1 claim in this tracker, and the one Ord re-reads most sharply. Weco's headline is improvement <em>per outer step</em> (7 improved versions in 100 steps, 8 days), which speaks to the boundlessness condition — the <em>easy</em> one. What would decide anything about explosiveness is how the wall-clock cost per outer step trends, and that is never reported. Weco's own refusal to claim ignition — installing the evolved agent as the outer agent converged ~2× faster but to the same ceiling — is in Ord's vocabulary a generation-time speed-up under a capability ceiling: phase 1 straight into phase 3, no phase 2.</li>
+<li><strong><a href="../tutorials/hyperagents.html">Hyperagents</a></strong> — the compounding test that came back inconclusive (0.640 vs 0.610, five runs, heavy-tailed). Ord supplies the theoretical reason that verdict was always likely, and reframes "inconclusive": a system can pass every compounding test you can afford and still be provably non-singular if its loop duration has a floor.</li>
+<li><strong><a href="../tutorials/darwin-godel-machine.html">Darwin Gödel Machine</a></strong> and <strong><a href="../tutorials/mendel-godel-machine.html">Mendel Gödel Machine</a></strong> — the archive-and-self-edit thread, and a clean case of the rise-versus-run split. MGM's entire contribution raises the <em>rise</em> per self-edit (better evidence, same budget: +10.0pp on SWE-bench Verified-60) with expansions held fixed. Under fixed generation time that is unambiguously valuable and unambiguously non-singular; nothing in this lineage attacks the run.</li>
+<li><strong><a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a></strong> — where Ord's scaffold remark lands directly: prompt-level harness refinement with a fixed external optimizer, converging in one to two iterations. His prediction for exactly this setup is that scaffold-only loops have the shortest generation times <em>and</em> the smallest slice of the pipeline, so they saturate fast.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> — the empirical mirror of the negative measurement result: finite-window gains from harness evolution mostly fail to generalise (+0.6 average held-out), while Ord shows even clean generalising gains would not settle the shape question.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The mathematics is elementary and correct, and that is a feature: the Singularity Theorem is two convergence tests and a two-sentence proof, which is why it is hard to argue with. The reframing is genuinely useful — "increasing growth rates are not the signature of singular growth" belongs above the desk of anyone reading takeoff forecasts.</p>
+<p>But much of the force comes from a modelling choice rather than a discovery. Difference equations cannot produce singularities <em>by construction</em>: finitely many finite additions cannot diverge. Once you accept that RSI is discrete the impossibility result is immediate, and everything interesting is smuggled into the one place continuity survives — the clock. Ord is transparent about this and offers delayed differential equations as an equivalent continuous route, but the headline is closer to "singularities require a Zeno process" than to a new fact about intelligence.</p>
+<p>The generation-time floor, which does most of the practical work, is asserted rather than derived: it seems "highly unlikely" that loop durations reach zero, illustrated with lithography and pretraining timescales. Plausible and completely informal — no model of what sets the floor, no estimate of where it is, and no treatment of the obvious complication that an explosion could migrate between loops, exhausting scaffold edits and moving into pretraining changes and then hardware. A system that switches to progressively shorter loops is not described by a single sequence of generation times, and it is the scenario the labs actually describe.</p>
+<p>The measurement pessimism also cuts deeper than the paper admits: if no finite observation identifies the conditions, "report your generation times" is one input to a test just proved unavailable — useful for judging phase 1 versus phase 2, not diagnostic. And <span class="arithmatex">\(A\)</span> is undefined throughout. The invariance claim holds only across "similar" measures, and the most interesting real cases — efficiency or effective compute versus general capability — are exactly the ones he shows are <em>not</em> similar: the theorem is robust to how you measure right up to the point where measurement matters most. What survives is one clean transferable idea: for feedback loops the run matters more than the rise, and almost nobody measures the run.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Two thresholds, not one.</strong> Super-exponential growth needs super-linear returns; a finite-time singularity needs strictly more — the blow-up condition, that <span class="arithmatex">\(\int_{A_0}^{\infty} dA/f(A)\)</span> converges. Under <span class="arithmatex">\(\dot A = kA^{r}\)</span> these coincide, which is why the literature conflates them; in general they do not, and <span class="arithmatex">\(\dot A = A\log(A)\)</span> gives doubly exponential growth with no asymptote at all.</li>
+<li><strong>The clock is the switch.</strong> Treat the loop as discrete and the theorem is exact: a singularity exists iff the generation times sum to something finite <em>and</em> the capability gains sum to infinity. Fix the loop duration and nothing else saves you; shrink it fast enough and adding one per loop suffices. Any floor on generation time — Ord thinks one near-certain — turns asymptote into exponential into logistic.</li>
+<li><strong>A finite run cannot settle it.</strong> Both conditions are global properties of an infinite trajectory, so no bounded window confirms or refutes an explosion, and the borderline is razor-thin against noisy metrics. Which is why every compounding experiment in this tracker comes back inconclusive — and why the reassurance is limited, since a mere tenfold linear speed-up delivers a decade of progress per year with the curve's shape unchanged.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 21:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoSaddler: Automatic Harness Patching Is Easy; Keeping the Patches That Help Is Hard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AutoSaddler: Automatic Harness Patching Is Easy; Keeping the Patches That Help Is Hard</h1><p class="meta">21 min read · <a href="https://arxiv.org/abs/2608.23041">arXiv:2608.23041</a> · <a href="https://arxiv.org/abs/2608.23041">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2092761296819425328">X post</a> · <a href="https://aka.ms/AutoSaddler-website">aka.ms</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"AutoSaddler: Automatic Harness Optimization with Durable Updates from Agent Execution Traces" (arXiv 2608.23041; Sungho Park, Wonjoong Kim, Rongyuan Tan, Jue Zhang, Wook-Shin Han, Pengfei Gao, Chanyoung Park, Yongqiang Yao, Rao Fu, Elsie Nallipogu, Qingwei Lin, Saravan Rajmohan, Dongmei Zhang — Microsoft, KAIST, POSTECH, SUSTech) treats harness optimization as <strong>mini-batch offline learning over textual parameters</strong>: run a small batch, diagnose the failures, patch prompts/tools/middleware as code, and — the part everyone skips — verify on a held-out development set before keeping anything.</li>
+<li>The single most useful number in the paper is an ablation. Remove generalization-aware selection and GAIA2 test accuracy is <strong>50.6%</strong> — <em>below the 53.0% hand-written harness the whole search started from</em>. Letting a model rewrite your harness without a held-out check does not merely fail to help; it makes things worse. With the check: <strong>62.0%</strong>.</li>
+<li>Gains over the base harness are <strong>+9.0 pp</strong> (GAIA2), <strong>+9.6 pp</strong> (SWE-Bench Pro), <strong>+10.0 pp</strong> (Terminal-Bench 2.0), beating GEPA and Meta-Harness on all three and beating the expert hand-tuned Terminus KIRA on TB2. It is also far cheaper: best dev score after <strong>147 leveraged traces</strong> versus Meta-Harness's 1,400.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Everyone who has pointed a coding agent at their own agent's prompt file knows the first half of this: the patches come easily and they look great. The failure trace says the agent didn't check the parent directory before <code>mkdir</code>, so you add a rule saying check the parent directory. It fixes the case. You ship it.</p>
+<p>What you do not see is the eleven other tasks where that rule now fires and wastes turns, or the hook you attached to a high-frequency tool that quietly redirects behavior across scenarios nobody was thinking about. Fixes are visible; collateral damage is not, because you only re-ran the tasks the patch was written for. Twenty iterations of this and you have a harness that has memorized your debugging session.</p>
+<p>AutoSaddler measures exactly that gap. Its "w/o generalization-aware selection" ablation is a fully competent optimizer — same in-depth diagnosis, same structured patching, same mini-batch loop — that simply keeps any patch improving the batch it was written for. It achieves the <em>same fix rate</em> as full AutoSaddler on the dev set, and still ends up below the manual baseline, because its regression rate climbs while AutoSaddler's falls. Capability was never the difference. Selection was.</p>
+<p>This lands squarely on the tracker's open wound. <a href="../tutorials/rethinking-harness-evolution.html">"Rethinking Harness Evolution"</a> showed that harness-evolution papers routinely evolve and report on the same benchmark, and that forcing a real train/validation/test split collapses the gains to +0.6 on average. AutoSaddler is the response from inside the harness-optimization camp: build the split into the optimizer, make crossing it a precondition for keeping a patch, and show the result holds up on repositories and task universes it never saw.</p>
+<h2>The core idea</h2>
+<p>Treat the harness as a parameter vector you happen to write in English and Python, and then run the textbook loop.</p>
+<p><img alt="AutoSaddler overview: the current harness is tested on a mini-batch from the training set; a Diagnosis-Patch Agent analyzes failed traces and patches prompt, tool, or middleware layers under a phased exploration/refinement schedule; the patched harness is verified on the same mini-batch; if improved it is evaluated on the dev set; a Reflection Agent extracts lessons from before/after traces either way; lessons enter an EvoDAG of previously explored harnesses; an Evolution Agent synthesizes the next candidate from the whole graph" src="assets/keeping-harness-patches/fig1.png" /></p>
+<p><em>Figure 2 from the paper: the seven numbered stages of one iteration. Note stage 4 — the dev-set evaluation — is conditional, and stages 5–6 happen whether the patch was kept or thrown away.</em></p>
+<p>The analogy to mini-batch training is not decoration; the paper works it out stage by stage in Appendix A, and the mapping makes the design decisions legible. Sampling a mini-batch and running the agent is the forward pass; the task outcome is the loss. <strong>Diagnosis, patching, and same-batch verification together stand in for backpropagation</strong> — because a failed rollout, unlike a loss value, does not tell you which parameter to move, the system must infer a root-cause hypothesis, implement it as an intervention, and empirically test whether it helped. The paper's framing of this is its sharpest sentence: a patch at this stage is <em>not yet the parameter update</em>; it is an experiment testing whether the inferred textual gradient points anywhere real.</p>
+<p>Dev-set evaluation is validation. And the optimizer state — the analogue of momentum — is <strong>EvoDAG</strong>, a directed graph of every harness explored, annotated with what it changed, how it scored, and what was learned. The next candidate is synthesized from the whole graph rather than the last node, so the search can rebase onto an older ancestor and cherry-pick proven changes from unrelated branches.</p>
+<p>One deliberate ordering inversion: standard training applies the optimizer update <em>before</em> validating. AutoSaddler validates first, because EvoDAG is part of the optimizer state — and a misleading lesson written into it steers every future round. Validation gates what gets <em>remembered</em>, not just what gets shipped.</p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> Run a few tasks, debug the failures properly, make one typed change, check it on the tasks it was written for, then check it on tasks it wasn't — and write down what you learned even when you throw the change away. Everything else is detail about the last two clauses.</p>
+<h3>One patch, start to finish</h3>
+<p>The setting is GAIA2, a simulated smartphone environment where each "universe" emulates one persona's digital life. The base harness is GAIA2's own default ReAct agent; the optimizer runs on Claude Opus 4.6.</p>
+<p><strong>Step 1 — Run the current harness on a handful of tasks.</strong>
+A mini-batch from the training split, not the whole set. Both successes and failures are kept, because you cannot recognize a regression later without knowing what was working before.</p>
+<p><strong>Step 2 — Read the failures like a debugger, not a reviewer.</strong>
+Take the paper's cab-booking case. The user's request matched two rides on September 30, and the agent should have noticed the ambiguity and asked which destination was meant. Instead it confidently booked using the first match and never saw the second, which sat at index 19 of the ride history.</p>
+<p>The shallow approach — one LLM call given the trace, which is what most prompt-optimization pipelines do — never spotted the second ride, and produced a diagnosis about contact identification and oracle-call counts: fluent, plausible, aimed at the wrong thing. AutoSaddler's diagnosis agent instead opened the environment's actual ride history, filtered by date, found both candidates (index 5, Ahmedabad Railway Station; index 19, Chennai Central), and cross-checked against the oracle's expectation of zero ride orders. Only then did it name the cause: the agent could not see the conflict because nothing let it look.</p>
+<p>The difference is investigative effort, and the paper quantifies it: <strong>+6.2 tool calls and +5.8 file accesses</strong> per optimization step over the shallow variant (69.7 and 45.5, versus 63.5 and 39.7). Small in absolute terms, decisive in effect — by iteration 25, deep diagnosis had produced 13 accepted patches to the shallow variant's 5.</p>
+<p><strong>Step 3 — Write the fix as a typed change to one of three layers.</strong>
+Not a free-form edit of the codebase. The patch must be one of nine subtypes across three layers:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Subtypes</th>
+<th>Kind</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prompt</td>
+<td>rule addition, rule modification</td>
+<td>steering</td>
+</tr>
+<tr>
+<td>Tool</td>
+<td>new tool, argument modification, implementation fix</td>
+<td>capability</td>
+</tr>
+<tr>
+<td>Tool</td>
+<td>tool description fix</td>
+<td>steering</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td>infrastructure change, agent-loop logic change</td>
+<td>capability</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td>pre-tool-use hook</td>
+<td>steering</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Capability</strong> changes mean executable code or orchestration; <strong>steering</strong> changes are text that leaves the code alone. For the cab case the fix is a new tool: <code>search_ride_history</code>, filtering by date, start location, and end location, so conflicting candidates surface in one call. The editor is shown the harness's functional source and explicitly blocked from evaluation code and benchmark data — the fence that stops it from optimizing against the answer key.</p>
+<p>There is also a schedule. Early iterations prioritize capability changes; later ones switch to steering. The stated intuition is a learning-rate schedule: fix what the harness <em>cannot do</em> before tuning how it behaves.</p>
+<p><strong>Step 4 — Re-run the same tasks. Did it help here?</strong>
+A patch counts as a mini-batch improvement only if the batch score goes up. This is the cheap filter, and it exists so the expensive filter is not wasted on obvious duds.</p>
+<p><strong>Step 5 — Only then spend the expensive check, on tasks the patch was not written for.</strong>
+The dev set is drawn from <em>different task groups</em> than training. The split is clearest on the paper's software-engineering benchmark: train on tasks from <code>qutebrowser</code>, develop on <code>Vuls</code> and <code>NodeBB</code>, test on <code>Ansible</code>, <code>Flipt</code>, and <code>Element-web</code> — a different repository at every stage, so a patch that memorized one codebase's quirks cannot pass.</p>
+<p><strong>Step 6 — Write down the lesson either way — including for patches you reject.</strong>
+The reflection agent compares before-and-after traces and sorts every task into <em>fixed</em>, <em>regressed</em>, <em>still-failing</em>, or <em>still-passing</em>, then answers targeted questions about each bucket. This is where the paper's central contrast lives.</p>
+<p>At iteration 4, AutoSaddler proposed a calendar hook that fired indiscriminately on every event creation. It helped its batch. Reflection flagged it as over-scoped and it was blocked. At iteration 20, the ablation — no reflection, no dev evaluation — proposed a structurally identical patch: a new progress-message tool plus a hook on the widely used message-to-user tool that forcibly redirected traffic to it. It also helped its batch, and it was kept. On the next iteration the dev-set regression rate jumped from <strong>8% to 22%</strong>, disrupting behavior across many unrelated scenarios.</p>
+<p>Same failure mode, same optimizer, opposite outcome, and the only difference is whether anything was empowered to say "this helped, and it is still a bad idea." Over the run, AutoSaddler's regression rate trends <strong>down 0.24 pp per iteration</strong> while the ablation's trends <strong>up 0.16 pp per iteration</strong>.</p>
+<p><strong>Step 7 — Build the next candidate from the whole history, not just the last one.</strong>
+Because every harness tried so far, and every lesson written about it, sits in one graph, the system can abandon a bad branch entirely and restart from an older ancestor. The GAIA2 trajectory does exactly this: after iteration 20 crashed dev accuracy to 33.8% via a hook on a high-frequency tool, the search rebased onto iteration 13 (67.7%), cherry-picked the changes from iterations 13 and 14 that reflection had endorsed, and reached its global peak of <strong>72.3%</strong> at iteration 27. Later, when iteration 46 over-accumulated eight cherry-picked hooks and rules and lost 12.3 pp, iteration 47 diagnosed collective steering overhead and pruned back to four, recovering to 69.2%.</p>
+<h3>The machinery behind steps 1–5</h3>
+<p>Four short definitions, then the selection rule that is the paper's whole argument.</p>
+<p><strong>What is being optimized.</strong> The harness parameter is a triple:</p>
+<div class="arithmatex">\[\theta=(\theta_{\text{prompt}},\theta_{\text{tool}},\theta_{\text{middleware}})\in\Theta\]</div>
+<p>where <span class="arithmatex">\(\theta_{\text{prompt}}\)</span> is the instructions and system prompts, <span class="arithmatex">\(\theta_{\text{tool}}\)</span> the available tools and their interfaces, <span class="arithmatex">\(\theta_{\text{middleware}}\)</span> the runtime control logic including hooks and agent-loop behavior, and <span class="arithmatex">\(\Theta\)</span> the space of all valid harnesses. Memory and skill curation are deliberately excluded, because the paper assumes tasks are stateless and independent.</p>
+<p><strong>What is being maximized.</strong> The population objective is expected task performance:</p>
+<div class="arithmatex">\[J(\theta)=\mathbb{E}_{(x,y^{\ast})\sim\mathcal{T}}\,\mathbb{E}_{(\tau,\hat{y})\sim P_{\theta}(\cdot\mid x)}[\mu(\hat{y},y^{\ast})]\]</div>
+<p>where <span class="arithmatex">\(x\)</span> is a task drawn from the task distribution <span class="arithmatex">\(\mathcal{T}\)</span>, <span class="arithmatex">\(y^{\ast}\)</span> its gold answer, <span class="arithmatex">\(P_\theta\)</span> the stochastic execution process the harness induces (randomness from sampling, tool-use decisions, and the environment), <span class="arithmatex">\(\tau\)</span> the execution trace, <span class="arithmatex">\(\hat{y}\)</span> the agent's answer, and <span class="arithmatex">\(\mu\)</span> the task metric — here pass/fail. The double expectation is the honest part: even a fixed harness on a fixed task does not give a fixed result.</p>
+<p><strong>What can actually be measured.</strong> <span class="arithmatex">\(J(\theta)\)</span> is unobservable, so on a finite dataset <span class="arithmatex">\(D\)</span>:</p>
+<div class="arithmatex">\[\widehat{J}_{D}(\theta)=\frac{1}{|D|}\sum_{(x_{i},y_{i}^{\ast})\in D}\frac{1}{R_{i}}\sum_{r=1}^{R_{i}}\mu(\hat{y}_{i,r},y_{i}^{\ast})\]</div>
+<p>with <span class="arithmatex">\(|D|\)</span> the number of tasks, <span class="arithmatex">\(R_i\)</span> how many times task <span class="arithmatex">\(i\)</span> was repeated, and <span class="arithmatex">\(\hat y_{i,r}\)</span> the answer on repeat <span class="arithmatex">\(r\)</span>. Every repeat is a rollout — the budget the whole method is trying to spend well.</p>
+<p><strong>The selection rule — the paper in one line.</strong> Given a rollout budget <span class="arithmatex">\(K\)</span> and the set of candidates explored within it:</p>
+<div class="arithmatex">\[\hat{\theta}_{\mathrm{AS}}=\arg\max_{\theta\in\mathcal{V}_{K,\mathrm{dev}}}\widehat{J}_{D_{\mathrm{dev}}}(\theta)\]</div>
+<p>where <span class="arithmatex">\(\mathcal{V}_{K,\mathrm{dev}}\)</span> is the subset of explored harnesses that earned a dev-set evaluation (by first improving their own mini-batch), and <span class="arithmatex">\(\widehat{J}_{D_{\mathrm{dev}}}\)</span> is the empirical score on the development split. The returned harness is the best on <strong>development</strong>, never on training — and it is scored once on test afterward, with no further modification. Everything else in the system exists to make this argmax range over good candidates cheaply.</p>
+<p><strong>The phase transition.</strong> The capability→steering switch happens at iteration</p>
+<div class="arithmatex">\[k=E\cdot\left\lceil\frac{|\mathcal{D}_{\mathrm{train}}|}{B}\right\rceil\]</div>
+<p>with <span class="arithmatex">\(E\)</span> the number of capability-phase epochs, <span class="arithmatex">\(|\mathcal{D}_{\mathrm{train}}|\)</span> the training-set size, and <span class="arithmatex">\(B\)</span> the mini-batch size — so <span class="arithmatex">\(k\)</span> is simply "however many iterations it takes to see the training set <span class="arithmatex">\(E\)</span> times." The experiments use <span class="arithmatex">\(E = 1\)</span>: one full pass fixing what the harness cannot do, then switch to refining how it behaves.</p>
+<h3>Which patches actually last</h3>
+<p>The durability analysis is the practical takeaway and it is counterintuitive.</p>
+<table>
+<thead>
+<tr>
+<th>Patch type</th>
+<th>Fix rate</th>
+<th>Regression rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Steering (text only)</td>
+<td>58%</td>
+<td>17%</td>
+</tr>
+<tr>
+<td>Capability (executable)</td>
+<td>55%</td>
+<td>8%</td>
+</tr>
+</tbody>
+</table>
+<p>Editing text — prompts, tool descriptions, hook reminders — fixes about as much as editing code and breaks <strong>more than twice as often</strong>. Well-scoped executable fixes address deterministic limitations; a prompt rule or a hook on a common tool spills into scenarios nobody was thinking about. Grouping by <em>layer</em> instead (prompt 59/14, tool 57/19, middleware 57/14) shows almost nothing, because each layer mixes both kinds. Capability-versus-steering is the axis that separates.</p>
+<p>This is why structured intervention is its own ingredient. Left unconstrained, the editing agent collapses onto steering patches — <strong>91.5%</strong> of them — even though capability subtypes have by far the highest acceptance rates (new tool 83%, loop change 71%, infrastructure change 67%). Under the ablation those high-value types are 4% of what gets generated; under AutoSaddler's taxonomy and schedule, over 25%.</p>
+<p><img alt="Development-set accuracy versus total tasks executed, rising in steps from about 47% to 72.3%, split by a dashed line into an Exploration phase and a Refinement phase; callouts show three representative patches — a batch query API added at iteration 11, a silent infrastructure issue fixed at iteration 13, and a prohibitive hook rewritten into a constructive response template at iteration 27" src="assets/keeping-harness-patches/fig2.png" /></p>
+<p><em>Figure 11 from the paper: the phased schedule in action. Exploration adds capability (a batched query API at iteration 11; a notification-based exit for an execution stall at iteration 13); refinement tunes behavior (iteration 27 replaces a prohibitive hook with a constructive response template, reaching the 72.3% peak). Cumulative dev-set improvement across both phases: 24.6 pp.</em></p>
+<h3>Caveats</h3>
+<p><strong>The optimization runs are single-seed.</strong> One evolution run per method on train and dev; three repeated runs only at test. Robustness is checked separately — an independent GAIA2 run reaches 58.6%, optimizing on a different training universe reaches 57.4% (+5.9 over base) — but both sit below the headline 62.0%, so the reported figure is plausibly the better of a small number of draws.</p>
+<p><strong>Test standard deviations are wide relative to some margins.</strong> GAIA2 is 62.0 ± 1.2 against 53.0 ± 1.5 for the base — comfortable — but per-universe numbers carry ±2.4 to ±3.1, and the SWE-Bench Pro Element-web column actually favors GEPA (45.2 vs 43.5).</p>
+<p><strong>The paper's own summary numbers do not reconcile.</strong> Section 5.2 states a <strong>+8.4 pp</strong> gain on SWE-Bench Pro from 37.3 to 46.9 — arithmetic that gives 9.6, which is what the abstract and conclusion report. It also claims "+6.2 pp on SBP" and "+4.4 pp on TB2" over the strongest automated baseline, while the tables give 42.5→46.9 = 4.4 and 43.3→50.0 = 6.7. The tables are consistent; the §5.2 prose is not.</p>
+<p><strong>The Meta-Harness comparison is not budget-clean.</strong> Meta-Harness does not natively support a train/dev split, so it was given the union of both — more data exposure, no held-out check. That is the fair way to run it, but it makes the headline contrast partly "with a split versus without one," which is also the paper's thesis.</p>
+<p><strong>Scope.</strong> Memory and skill curation are excluded by assumption, and the framing is offline pre-deployment tuning. Nothing here addresses a harness that must adapt during a live long-horizon run.</p>
+<pre><code class="language-text"># AutoSaddler (Algorithm 1), annotated with the GAIA2 trajectory
+init EvoDAG G with base harness H_0                # GAIA2 default ReAct agent, 53.0% test
+for n = 0,1,2,... until rollout budget K exhausted:
+    B_n &lt;- sample mini-batch from D_train          # forward pass
+    run H_n on B_n -&gt; outcomes + full traces       # loss = pass/fail; trace = the evidence
+    diagnose failures in traces                    # open the environment state, not just the log
+    dtheta &lt;- ONE typed patch                      # 9 subtypes; capability phase then steering
+    H'_n  &lt;- H_n + dtheta                          # patch = experiment, not yet an update
+    rerun H'_n on B_n                              # cheap filter: did it help HERE?
+    if batch score improved:
+        eval H'_n on D_dev                         # expensive filter: does it help THERE?
+                                                   #   iter 4 calendar hook: blocked here
+                                                   #   ablation iter 20 analogue: kept -&gt; 8%-&gt;22%
+    reflect(before, after)                         # fixed / regressed / still-failing / still-passing
+    G &lt;- G + node(dtheta, scores, lessons)         # optimizer state; validated BEFORE it is written
+    H_{n+1} &lt;- evolve(G)                           # rebase + cherry-pick across branches
+                                                   #   iter 20 crash 33.8% -&gt; rebase to iter 13
+                                                   #   -&gt; iter 27 peak 72.3% dev
+return argmax over dev-evaluated candidates        # scored once on test, never tuned on it
+</code></pre>
+<h2>Results</h2>
+<ul>
+<li><strong>Against the base harness</strong>: GAIA2 53.0% → <strong>62.0%</strong> (+9.0), SWE-Bench Pro 37.3% → <strong>46.9%</strong> (+9.6), Terminal-Bench 2.0 40.0% → <strong>50.0%</strong> (+10.0), all Pass@1 on held-out task groups, averaged over three test runs.</li>
+<li><strong>Against automated baselines</strong>: +7.4 pp over GEPA on GAIA2 (54.6 → 62.0), +4.4 pp over GEPA on SBP (42.5 → 46.9), +6.7 pp over Meta-Harness on TB2 (43.3 → 50.0). On TB2 it also beats the <em>expert hand-tuned</em> Terminus KIRA, 50.0 vs 47.5.</li>
+<li><strong>Ablations (GAIA2 test)</strong>: full 62.0; without in-depth diagnosis 57.8; without structured intervention 56.9; <strong>without generalization-aware selection 50.6</strong> — the largest drop by far, and below the 53.0 manual baseline. Finer-grained: removing only dev-set filtering costs 60.7 → 50.0, and additionally removing reflection with EvoDAG costs a further 50.0 → 44.9. Removing only the phased schedule costs 60.7 → 54.8.</li>
+<li><strong>Fix rate is not the difference.</strong> On the dev set, AutoSaddler and the no-selection ablation achieve comparable fix rates on scenarios the base harness failed; they diverge entirely on regressions on scenarios the base harness passed.</li>
+<li><strong>Efficiency</strong>: 72.3% dev accuracy with ~1,000 total task executions, where GEPA and Meta-Harness saturate at 64.6% and 61.5% after ~2,800. By traces actually leveraged for learning, the best dev score arrives after <strong>147 traces</strong> versus Meta-Harness's 1,400 — roughly 10× fewer; on TB2, 12 traces versus 98.</li>
+<li><strong>Transfer</strong>: swapping the GAIA2 task agent from Opus 4.6 to Haiku 4.5 while keeping the Opus-optimized harness still beats the base harness by +5.6 pp.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a></strong> — the same problem attacked one level up. AutoSaddler <em>prompts</em> a frontier model to write patches and then filters hard; Harness-R1 <em>trains</em> a 9B harness engineer with GRPO whose only reward is the realized success change from rerunning the frozen agent. Read together they bracket the design space: improve the patch writer, or improve the patch filter. Harness-R1's reward is itself a durability signal (an inert or harmful patch is worth zero), so the two are more complementary than competing — a trained writer feeding AutoSaddler's dev gate is an obvious untried combination.</li>
+<li><strong><a href="../tutorials/living-harness.html">Living-Harness</a></strong> — the most direct precedent for treating admission as the hard part. Living-Harness requires candidate repairs to clear five gates (schema, scope, evidence, constraint, merge) before touching persistent state, and ablating that discipline while keeping the storage costs 9.7 points. Same lesson, different instrument: Living-Harness gates on structural checks, AutoSaddler gates on held-out score.</li>
+<li><strong><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></strong> — the population-level answer to the same question. Its preserve-and-extend contract admits a child only if it solves something new <em>without regressing what its parent solved</em> — a regression gate in the same spirit, but with a whole archive, so a locally-good-globally-harmful edit survives in one lineage instead of being discarded. Its sharpest evidence: the in-loop proxy saturated at 1.000 while held-out sat at 68.3%, and four merged specialists beat any one of them. AutoSaddler's EvoDAG rebase-and-cherry-pick is the single-lineage version of that recombination.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> — the critique AutoSaddler is answering: evolved harnesses "memorize fixes rather than distilling strategies," gaining only +0.6 on held-out tasks. AutoSaddler's Appendix M is the most interesting rebuttal in the literature — it traces one problem across four iterations and shows reflection's knowledge of it changing <em>form</em>, from a scenario-specific diagnostic, to a matcher bug, to a pattern spanning four scenarios, to a scenario-independent principle about how steering text should be framed. Distillation rather than memorization, observed in the artifact. A qualitative case study rather than a measurement, but the right kind of evidence.</li>
+<li><strong><a href="../tutorials/harness-rl-coevolution.html">Harness–Model Co-Evolution</a></strong> — the sibling worth reading next, because it is the counterexample. HarnessX shows what a second optimization channel buys you, but it evolves and reports on the same task set throughout and states plainly that held-out generalization is not evaluated. AutoSaddler's numbers say what that omission is likely worth: on GAIA2 the difference between selecting with and without a held-out split is 11.4 points, and the wrong side of it is below the harness you started with.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> — AutoSaddler's closest baseline and its philosophical opposite: Meta-Harness bets on feedback bandwidth (unrestricted filesystem access to every prior candidate's source, scores, and raw traces) with a minimal outer loop; AutoSaddler bets on constrained interventions plus a hard validation gate. On GAIA2 AutoSaddler wins by 8.8 points using ~10× fewer leveraged traces — though Meta-Harness was adapted to a benchmark it did not target and given the train+dev union.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline framing is right and the evidence for it is genuinely clean, which is rarer here than it should be. The ablation is well-constructed: the no-selection variant is not a strawman, it keeps every other ingredient, it achieves the same fix rate, and it still lands below the hand-written baseline. That should change how people run harness optimizers. The efficiency numbers are the second reason to take it seriously — 147 leveraged traces against 1,400 is what makes the method usable rather than merely correct.</p>
+<p>The weaknesses are endemic to the area and worth holding in view. Optimization is single-seed, and the two robustness runs the paper reports both land several points below the headline, which suggests 62.0 is not the expected value of running this method once. The prose in §5.2 contains at least two numbers inconsistent with the paper's own tables — minor, but a poor signal in a paper whose central claim is about careful measurement. The generalization claim is narrower than "generalizes": test groups are different repositories or personas <em>within the same benchmark</em>, so what is demonstrated is cross-group durability, not cross-domain transfer, with the model swap (+5.6 with Haiku) the only evidence of the stronger kind. And the deepest limitation is cost: three separate agents driven by Opus 4.6, deep filesystem investigation per step, and a dev-set evaluation for every candidate that clears its batch. The paper is candid that optimizer-side cost per patch exceeds the baselines and argues selective evaluation pays it back in rollouts saved. Probably true at Microsoft's scale. Whether the same discipline is affordable for someone tuning one agent is the question the paper does not answer, and the one most readers actually have.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Automatic harness optimization without a held-out check is worse than not doing it.</strong> GAIA2: 62.0% with generalization-aware selection, <strong>50.6% without it, 53.0% for the hand-written harness it started from</strong>. The two variants have the <em>same fix rate</em>; they differ only in regression rate, which trends down 0.24 pp/iteration for AutoSaddler and up 0.16 pp/iteration for the ablation. Score fixes minus regressions, never fixes alone.</li>
+<li><strong>Text patches are the dangerous ones.</strong> Steering edits (prompt rules, tool descriptions, hooks) fix 58% and regress 17%; capability edits (new tools, implementation fixes, loop changes) fix 55% and regress 8%. Unconstrained editors collapse onto steering — 91.5% of their patches — because it is easy, which is exactly why the taxonomy and the capability-first schedule are load-bearing rather than cosmetic.</li>
+<li><strong>Validate before you remember, not just before you ship.</strong> AutoSaddler evaluates on dev <em>before</em> writing the lesson into EvoDAG, because a misleading lesson in optimizer state contaminates every future round. The payoff is visible in the trajectory: after iteration 20 crashed to 33.8%, the search rebased onto iteration 13 and cherry-picked only the changes reflection had endorsed, reaching 72.3% at iteration 27.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 21:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

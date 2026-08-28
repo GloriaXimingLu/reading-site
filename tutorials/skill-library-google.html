@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WikiSkill: Compiling Agent Experience into a Persistent Wiki for Skill Evolution (Google)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>WikiSkill: Compiling Agent Experience into a Persistent Wiki for Skill Evolution (Google)</h1><p class="meta">18 min read · <a href="https://arxiv.org/abs/2608.27454">arXiv:2608.27454</a> · <a href="https://arxiv.org/abs/2608.27454">arXiv</a> · <a href="https://x.com/dair_ai/status/2093324233158045788">X post</a> · <a href="https://academy.dair.ai/papers/wikiskill-compiles-agent-experience-into-a-persistent-wiki-2608.27454">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"WikiSkill: Compiling Agent Experience into Persistent Knowledge for Skill Evolution" (arXiv 2608.27454; Liyan Tang, Cyrus Rashtchian, Chun-Sung Ferng, Andrew Tomkins, Da-Cheng Juan, Tu Vu — Google Research, Tu Vu also Virginia Tech) splits the agent workspace into three layers that skill-evolution systems normally collapse: <strong>immutable raw traces</strong>, a <strong>persistent wiki</strong> of consolidated knowledge, and the <strong>executable skills</strong> themselves. The asymmetry is the whole design — a rejected skill update is rolled back, but the wiki is <em>never</em> rolled back.</li>
+<li>Across five benchmarks (LiveMath, SealQA, SpreadsheetBench, OfficeQA, ALFWorld) and five models (Qwen-3.5-4B/9B, Qwen-3.6-27B, Gemma-4-31B, Gemini-3.5-Flash), WikiSkill has the best average for every model, beating the strongest competing skill-evolution method by <strong>+3.3 / +5.1 / +10.0 / +5.8 / +12.0</strong> points. Every number averages three independent runs of the full evolution pipeline, with paired bootstrap significance testing.</li>
+<li>Two findings worth more than the headline. <strong>Skill evolution complements scale but can also substitute for it</strong>: gains within the Qwen family grow with model size (+12.3 → +17.5 → +23.9), yet Qwen-3.5-9B with skills (47.4) beats Qwen-3.6-27B without them (39.4). And <strong>skills transfer across families, sometimes beating self-evolved ones</strong> — Qwen-3.6-27B's skills lift Gemma-4-31B on LiveMath to 73.7 against 56.7 for Gemma's own. The ablation says the wiki carries it: removing persistent knowledge costs <strong>15.0 points</strong> of average performance.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Two things are worth separating here, because the framing that circulated on X gets one of them backwards.</p>
+<p>What WikiSkill does <em>not</em> do is separate skill retrieval from skill execution. It does the opposite on purpose: every active skill is injected in full into the inference agent's system prompt, precisely so retrieval and triggering failures cannot confound the measurement of skill <em>quality</em>. Retrieval is named in the limitations as the thing this setup does not evaluate.</p>
+<p>What it does do is separate three things that skill-evolution pipelines conflate — the raw experience, the knowledge distilled from it, and the executable artifact. In EvoSkill the accumulated insight lives in a flat feedback history of past proposals; in Trace2Skill it is consolidated directly into skill patches; in SkillOpt it lives in rejected-edit feedback and epoch-wise meta guidance. In all three, what the system has learned exists only as a by-product of the optimization history. WikiSkill makes it a first-class, persistently maintained object — and shows by ablation that this object carries most of the gain.</p>
+<p>The separation that <em>does</em> fall out of the results is a different and more interesting one: <strong>discovering good procedural knowledge and executing it are distinct capabilities</strong>. A 4B model's skills can make a 31B model much better while making the 4B model itself slightly worse. That is the finding to carry forward, and it is an argument for evolving skills wherever it is cheapest and deploying them wherever they will be executed best.</p>
+<p><img alt="Three stacked layer bars — Skill Layer (skills/, evolving procedural knowledge, reversible conditional update), Wiki Layer (wiki/, structured patterns and evolution logs, compounding never reset), Raw Layer (raw/, immutable execution traces, permanent write once) — above a four-step loop: Inference Agent executes rollouts, Wiki Maintainer performs root-cause analysis, Skill Proposer proposes updates from wiki and traces, Gating and Rollback evaluates on the validation set" src="assets/skill-library-google/fig1.png" /></p>
+<p><em>Figure 2 from the paper. Read the right-hand annotations as the contract: traces are write-once, the wiki compounds and is never reset, only the skill layer is reversible. Note that the inference agent's arrows touch skills and raw traces but never the wiki — that restriction is deliberate and ablated.</em></p>
+<h2>The core idea</h2>
+<p>A <strong>skill</strong> here is the now-standard filesystem artifact: a directory whose <code>SKILL.md</code> carries frontmatter metadata plus full procedural instructions and applicability conditions. WikiSkill adds a second file per skill, <code>PURPOSE.md</code>, which points back at the wiki patterns that motivated its creation — a provenance link from artifact to evidence.</p>
+<p>The three layers:</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Contents</th>
+<th>Write policy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>raw/</code></td>
+<td>Complete execution traces: reasoning, tool calls, outputs, final answers</td>
+<td>Immutable, write-once</td>
+</tr>
+<tr>
+<td><code>wiki/</code></td>
+<td><code>patterns/</code> (one markdown file per failure mode or successful strategy, with workarounds), <code>index.md</code>, <code>logs.md</code>, <code>skill-impact.md</code></td>
+<td>Compounds, never reset, never rolled back</td>
+</tr>
+<tr>
+<td><code>skills/</code></td>
+<td>Active skills the inference agent reads</td>
+<td>Reversible; reverts on a failed validation gate</td>
+</tr>
+</tbody>
+</table>
+<p>Two of the wiki's files are doing more work than the pattern pages. <code>logs.md</code> is a chronological record of what the maintainer found each iteration. <code>skill-impact.md</code> is written <em>programmatically</em> by the outer harness after every gate, recording the proposal metadata, target skill, the unified diff, the validation score, and whether it was accepted or rejected. That file is not an LLM's summary of what happened; it is a ground-truth audit trail, and it is what stops the proposer from re-proposing something that has already been tried and rejected.</p>
+<p>The loop each iteration: the <strong>Inference Agent</strong> rolls out on the training tasks with the current skills; the <strong>Wiki Maintainer</strong> reads a sample of those traces alongside the existing wiki and patches the pattern pages; the <strong>Skill Proposer</strong> reads the updated wiki and pulls whatever traces it wants, then emits one atomic proposal; a <strong>gate</strong> evaluates the candidate skill set on validation and keeps it only if it beats the best score so far. Rejected skills disappear. The wiki keeps everything.</p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> Run the agent, write down what you learned in a notebook that is never erased, propose one change to the skills based on that notebook, and keep the change only if a held-back set of tasks says it helped. Everything else is detail about who is allowed to read the notebook.</p>
+<h3>One skill, start to finish</h3>
+<p>The paper's case study is Qwen-3.6-27B on ALFWorld — a text-based household simulator where an agent picks up, heats, cools, and places objects, and where the characteristic failure is looping.</p>
+<p><strong>Step 1 — Run the tasks and keep every log.</strong>
+The agent attempts the 39 training tasks with whatever skills currently exist (at iteration 0, none). Every trajectory is written to the raw layer and never touched again.</p>
+<p><strong>Step 2 — A separate agent reads a sample and writes down what it saw.</strong>
+Not all of it: at most 8 traces per iteration, at most 5 failing and up to 3 passing, each capped at 15,000 characters. Failures are for root-cause analysis, successes to identify what is working and avoid breaking it. At iteration 0 the maintainer notices a specific pathology and creates a pattern page, <code>take-examine-move-loop.md</code>: the agent takes an item, examines it, puts it back where it was, and repeats.</p>
+<p><strong>Step 3 — A third agent proposes exactly one change to the skills.</strong>
+It does not get a fixed bundle of traces. It starts with the wiki index, the impact tracker, and a one-line pass/fail summary of every training task, then uses a file-reading tool to pull the specific pattern pages and traces it wants. Its output is atomic: create one skill, or patch one existing skill. At iteration 0 it proposes <code>goal-directed-action</code>.</p>
+<p><strong>Step 4 — The gate decides, and the record survives either way.</strong>
+<code>goal-directed-action</code> scores 0.72 on validation, below the running best, and is <strong>rejected</strong>. The skill vanishes. But the harness appends the full diff and the rejection to <code>skill-impact.md</code>, so the next proposer knows exactly what was tried and that it did not work.</p>
+<p><strong>Step 5 — The next proposal is informed by the failure.</strong>
+At iteration 1 the proposer writes <code>break-repetition-loop</code>, and its <code>PURPOSE.md</code> states the reasoning out loud: the previous attempt was rejected for being too abstract, so this version is concise and uses concrete action patterns. Its rule is a specific prohibition — <em>Never Return an Item to Its Origin Location</em> — with a failing example (take clock from desk → examine → move clock to desk) and a successful one (take clock → go to shelf → move clock to shelf). Validation 0.78. <strong>Accepted.</strong></p>
+<p><strong>Step 6 — Evidence accumulates and the skill is refined, not replaced.</strong>
+Later rollouts surface a variant the first rule does not cover, and the maintainer opens <code>multi-operation-loop.md</code>: the agent cycles operations on the same item without checking completion. At iteration 4 the proposer patches the existing skill with a second rule, <em>Each Operation Type ONCE Per Item</em>, plus an explicit anti-pattern (take → operate → move → take = infinite cycle) and its fix. Accepted again.</p>
+<p><strong>Step 7 — Stop.</strong>
+The loop runs to a fixed iteration budget (accepted updates are reported across iterations 0–7), terminating early only if validation hits 1.0.</p>
+<p><img alt="Left, the persistent wiki layer: skill-impact.md showing iteration 0 create goal-directed-action REJECTED with its diff, iteration 1 create break-repetition-loop ACCEPTED, iteration 4 update ACCEPTED; logs.md with chronological entries and validation scores; pattern pages take-examine-move-loop.md and multi-operation-loop.md with per-iteration evidence. Right, the active skill layer: PURPOSE.md explaining that the earlier proposal was rejected for being too abstract, and SKILL.md with trigger, two rules, an anti-pattern and a fix" src="assets/skill-library-google/fig2.png" /></p>
+<p><em>Figure 3 from the paper — the same worked example, laid out as files. The red arrow is the point of the architecture: the rejection at iteration 0 is still readable at iteration 1, which is why the second proposal is concrete where the first was abstract.</em></p>
+<h3>The machinery behind steps 1–4</h3>
+<p>Four short equations, one per component.</p>
+<p><strong>Rollout.</strong> At iteration <span class="arithmatex">\(k\)</span>:</p>
+<div class="arithmatex">\[\tau_{i}\sim\pi(x_{i};S_{k-1})\]</div>
+<p><span class="arithmatex">\(x_i\)</span> is a task instance, <span class="arithmatex">\(\pi\)</span> the inference agent, <span class="arithmatex">\(S_{k-1}\)</span> the active skill set left by the previous iteration, and <span class="arithmatex">\(\tau_i\)</span> the resulting trajectory — a sequence of observations and actions ending in a predicted answer. The full text of every skill in <span class="arithmatex">\(S_{k-1}\)</span> is injected into <span class="arithmatex">\(\pi\)</span>'s system prompt, which is what removes retrieval from the experiment.</p>
+<p><strong>Consolidation.</strong> The Wiki Maintainer <span class="arithmatex">\(\mathcal{M}_{\text{WM}}\)</span> turns sampled traces into an updated wiki:</p>
+<div class="arithmatex">\[W^{\prime}_{k}\leftarrow\mathcal{M}_{\text{WM}}(W_{k-1},\mathcal{T}_{\text{sample},k})\]</div>
+<p><span class="arithmatex">\(W_{k-1}\)</span> is the entire wiki as it stood, <span class="arithmatex">\(\mathcal{T}_{\text{sample},k}\)</span> the stratified sample of at most 8 traces, and <span class="arithmatex">\(W'_k\)</span> the intermediate wiki state. It edits by patch — appending, replacing, inserting spans — rather than rewriting pages, revises <code>index.md</code> when pages change, and appends its findings to <code>logs.md</code>. There is no cap on how many patterns it may create or edit per iteration; it decides.</p>
+<p><strong>Proposal.</strong> The Skill Proposer <span class="arithmatex">\(\mathcal{M}_{\text{P}}\)</span> emits a candidate change:</p>
+<div class="arithmatex">\[P_{k}\leftarrow\mathcal{M}_{\text{P}}(W^{\prime}_{k},S_{k-1},\mathcal{T}_{\text{train},k})\]</div>
+<p><span class="arithmatex">\(W'_k\)</span> is the freshly updated wiki, <span class="arithmatex">\(S_{k-1}\)</span> the current skills, <span class="arithmatex">\(\mathcal{T}_{\text{train},k}\)</span> all of this iteration's training trajectories — accessed on demand through a read tool rather than pre-loaded, which is how the proposer avoids exhausting its context on long execution histories. <span class="arithmatex">\(P_k\)</span> targets exactly one skill.</p>
+<p><strong>Gating.</strong> Apply the proposal to get a candidate set <span class="arithmatex">\(S'_k\)</span>, score it on validation, and:</p>
+<div class="arithmatex">\[S_{k}\leftarrow\begin{cases}S^{\prime}_{k}&amp;\text{if }\mathcal{R}(\mathcal{T}_{\text{val},k})&gt;\mathcal{R}_{\text{best}}\\ S_{k-1}&amp;\text{otherwise}\end{cases}\]</div>
+<p><span class="arithmatex">\(\mathcal{R}(\mathcal{T}_{\text{val},k})\)</span> is the mean score of the candidate skills on the validation split and <span class="arithmatex">\(\mathcal{R}_{\text{best}}\)</span> the best validation score seen so far, initialized by evaluating the empty skill set. Strictly greater — a neutral proposal is rejected. Then, regardless of the decision, the harness writes the outcome into the wiki: <span class="arithmatex">\(W_{k}\leftarrow\text{Update}(W^{\prime}_{k},P_{k},\mathcal{R}(\mathcal{T}_{\text{val},k}),a_{k})\)</span>, where <span class="arithmatex">\(a_k\in\{\text{Accepted},\text{Rejected}\}\)</span>. That single line is the architecture's whole thesis. Skills are reversible; knowledge is not.</p>
+<pre><code class="language-text"># WikiSkill evolution loop (Algorithm 1)
+S &lt;- {};  W &lt;- {}                                  # skills and wiki both start empty
+R_best &lt;- score(rollouts on D_val with no skills)  # baseline to beat
+for k = 1..K:                                      # accepted updates span iters 0-7
+    if R_best == 1.0: break
+    T_train &lt;- rollout inference agent on D_train with S    # wiki NOT visible here
+    T_sample &lt;- stratified sample of &lt;=8 traces             # &lt;=5 failing, &lt;=3 passing
+    W' &lt;- WikiMaintainer(W, T_sample)              # patch pattern pages, append logs
+    P  &lt;- SkillProposer(W', S, T_train)            # ReAct; reads index, impact tracker,
+                                                   #   then pulls pages/traces on demand
+    S' &lt;- Apply(S, P)                              # one skill created or patched
+    r  &lt;- score(rollouts on D_val with S')
+    if r &gt; R_best:  S &lt;- S';  R_best &lt;- r;  a &lt;- Accepted
+    else:           a &lt;- Rejected                  # skills roll back ...
+    W  &lt;- Update(W', P, r, a)                      # ... wiki records diff + outcome
+return S, W
+</code></pre>
+<h3>Caveats, in one place</h3>
+<p><em>Retrieval is out of scope by construction.</em> Full skill injection removes triggering failures as a confound, which is the right call for measuring skill quality and the wrong setup for predicting behavior in a library with hundreds of skills. The paper says so in its limitations.</p>
+<p><em>Validation splits are small.</em> 10 to 40 tasks depending on benchmark, matched to prior work. The mitigation is three full independent evolution runs per cell plus paired bootstrap testing, not a larger split — so individual gate decisions are noisy even where the reported averages are not.</p>
+<p><em>The gate is strict, and the paper knows it.</em> Requiring a strict improvement rejects neutral proposals that might have enabled later gains. It is adopted for comparability with SkillOpt and EvoSkill rather than because it is believed optimal.</p>
+<p><em>The wiki grows without bound.</em> No pruning mechanism exists. With 6.3–8.9 patterns created and 7.0–18.4 edits per run on average this is fine; over long deployments it is exactly the failure mode that motivated the paper in the first place, one level up.</p>
+<p><em>One cell is degenerate.</em> Gemini-3.5-Flash on ALFWorld hits 100% validation before evolution starts, so every method — including no-skill — reports the same 85.9, and Gemini contributes no ALFWorld source skills to the transfer table.</p>
+<p><em>Negative transfer is real and unpredicted.</em> Qwen-3.5-4B's SpreadSheet skills drop Gemini-3.5-Flash from 50.5 to <strong>18.1</strong>. The diagnosis is convincing (low-level workarounds and fragmented diagnostics that a stronger model does not need and that burn its interaction budget), but nothing in the method anticipates or screens for it.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Every model, best average.</strong> Against the strongest competing method per model: Qwen-3.5-4B 38.5 (+3.3), Qwen-3.5-9B 47.4 (+5.1), Qwen-3.6-27B 63.3 (+10.0), Gemma-4-31B 54.9 (+5.8), Gemini-3.5-Flash 68.1 (+12.0). Individual jumps are large — Gemini on LiveMath 33.0 → 72.6 and SpreadSheet 50.5 → 76.6, Qwen-3.6-27B on ALFWorld 52.8 → 77.6 and SpreadSheet 40.8 → 81.7.</li>
+<li><strong>Baselines are inconsistent where WikiSkill is not.</strong> EvoSkill lifts Qwen-9B on LiveMath 28.2 → 58.1 but <em>degrades</em> Gemma-4-31B on the same benchmark 33.9 → 29.8; SkillOpt degrades Gemini on SealQA 29.4 → 28.2. Reliability, not just magnitude, is the claim.</li>
+<li><strong>Scale and skills compound — and substitute.</strong> Within Qwen, average gains grow with size: +12.3 (4B), +17.5 (9B), +23.9 (27B), most starkly on SpreadSheet (+6.5, +9.3, +40.9). Yet Qwen-3.5-9B with skills (47.4) beats Qwen-3.6-27B without (39.4).</li>
+<li><strong>The ablation is the paper's real result</strong> (Gemini-3.5-Flash, four configurations). No skills 40.4. Skill evolution with <strong>no wiki at all</strong> 48.7. Add the wiki for the proposer: <strong>63.7</strong> — a <strong>+15.0</strong> jump, with LiveMath 51.3 → 72.6 and SpreadSheet 49.9 → 76.6. Persistent knowledge accumulation, not the evolution loop, is where the performance lives.</li>
+<li><strong>Letting the inference agent read the wiki makes things worse</strong>: 63.7 → 60.9, with LiveMath falling 72.6 → 64.8. The hypothesis is that an agent solving tasks from the wiki produces trajectories that no longer diagnose the <em>skills</em>, so the training signal degrades. Whatever the mechanism, it is a concrete argument for keeping the knowledge store out of the execution path.</li>
+<li><strong>Cross-family transfer, sometimes beating self-evolution.</strong> Qwen-3.6-27B's skills take Qwen-3.5-9B on SpreadSheet to 50.5 (none 24.3, self 33.6) and Gemma-4-31B on LiveMath to 73.7 (none 33.9, self 56.7). Small-to-large works too: Qwen-3.5-4B's skills lift Gemma-4-31B to 73.1 on LiveMath and 66.9 on ALFWorld. The sharpest case is OfficeQA, where Qwen-3.5-4B's own skills <em>hurt it</em> (30.2 → 28.5) while helping Qwen-3.6-27B (42.1 → 52.9) — the 4B model writes multi-step search procedures it cannot itself follow across long contexts.</li>
+<li><strong>What the artifacts look like.</strong> Qwen models write long skills (118.9–128.6 markdown lines), Gemma-4-31B compact ones (45.1). SpreadSheet drives the longest skills (142.5 lines) and most patterns (9.8); LiveMath the shortest (84.6) and fewest (4.4). Refinement keeps happening: only 39–52% of accepted updates land in the first two iterations, and on SealQA 28% arrive in iterations 5–7.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/oeo-self-evolving-skills.html">Rethinking Self-Evolving Agents / OEO</a></strong> — the direct collision, and both papers beat the same baseline. OEO's thesis is that with a strong enough optimizer you should <em>delete</em> the prescribed pipeline and hand the model a contract; WikiSkill's is that you should <em>add</em> structure — a fourth agent, a persistent store, a programmatic audit trail. Both outperform SkillOpt. The reconciliation is probably OEO's own capability-dependence finding: a frontier optimizer can hold the accumulated context in its head and compose its own process, while everything below that needs the wiki to externalize it. Someone should run WikiSkill's ablation with OEO's GPT-5.5 optimizer and see whether the +15.0 survives.</li>
+<li><strong><a href="../tutorials/msce-memory-to-skills.html">MSCE: Converting Agent Memory into Executable Skills</a></strong> — the closest architectural relative. MSCE layers grounded step traces, reusable procedural policies, and declarative environmental cognition, and promotes evidence-backed policies with positive estimated gain into skills carrying their own metadata. WikiSkill's three layers map onto that almost cleanly, with <code>PURPOSE.md</code> playing MSCE's evidence link. The difference is governance: MSCE promotes on an estimated-gain criterion computed from reflection-weighted values; WikiSkill promotes on a measured validation score and keeps the rejected evidence anyway. Measured-and-strict versus estimated-and-graded is the live design choice for skill promotion.</li>
+<li><strong><a href="../tutorials/agent-skills-harmful.html">Agent Skills Can Be Harmful</a></strong> — the necessary counterweight, and the reason the transfer table should worry you. That study found 307 skill-induced failures dominated by <em>topically relevant</em> skills whose examples and defaults get read as requirements (86/125 functional failures), plus efficiency regressions from skills that turn checklists into mandatory work. WikiSkill's negative-transfer case is exactly that mechanism in the wild: Qwen-3.5-4B's single-line-Python and string-conversion workarounds are read by Gemini as requirements, blocking end-to-end scripts and burning its budget, for a 50.5 → 18.1 collapse. Validation gating catches this for the <em>source</em> model and cannot catch it for any other, which is a strong argument for re-gating any transferred skill.</li>
+<li><strong><a href="../tutorials/living-harness.html">Living-Harness</a></strong> — the same commit discipline in a different substrate. Living-Harness gates candidate repairs on schema, scope, evidence, constraint, and merge checks before they touch episodic memory or a state graph; WikiSkill gates skill edits on validation but lets wiki writes through ungated. Two different answers to which store deserves protection, and WikiSkill's ablation is evidence for the permissive option — the ungated store is where the +15.0 lives.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> — explicitly named as complementary: WikiSkill evolves reusable procedural skills while holding the broader harness fixed, where harness-optimization work searches over prompts, context, tools, memory, and workflows. Worth reading as a scoping decision, since the two directions have not yet been run against each other at matched budget, and the skill layer is a much cheaper surface to evolve than the harness.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The ablation makes the paper, and it also somewhat undercuts the framing. Take the wiki away and WikiSkill scores 48.7; put it back and it scores 63.7. That single comparison is worth more than the entire five-model main table, because it isolates a mechanism rather than a system. But it means the contribution is narrower than "a framework": it is the observation that skill-evolution proposers do much better when a durable, structured record of prior findings and prior rejections is maintained for them. That is a strong, useful, actionable finding — and it is one ablation, on one model, on four of the five benchmarks.</p>
+<p>The main table is honest but hard to attribute. WikiSkill differs from its baselines along at least four axes at once — a dedicated maintainer agent, a persistent pattern store, a programmatic impact tracker, and a ReAct proposer that fetches traces on demand — and only the persistent-knowledge axis is ablated. How much of the +12.0 over SkillOpt on Gemini comes from the audit trail versus the on-demand trace access is unknown. The case study makes the audit trail look decisive (the second proposal is concrete <em>because</em> the first was rejected for being abstract), but a case study is not a measurement.</p>
+<p>The transfer results are the most interesting and the least controlled. "Skills evolved by other models can outperform self-evolved skills" is a genuinely surprising claim and the numbers support it, but the mechanism the paper offers — specificity level matched to executor capability — predicts the direction only in hindsight. Notably nothing in the pipeline optimizes for transferability, so the good cases are luck and the 50.5 → 18.1 collapse is the same luck running the other way. A transferability-aware objective, or simply re-gating a transferred skill on the target model's validation split, is the obvious next step and is not taken.</p>
+<p>Two smaller things I would want. The wiki has no pruning, which means the paper's own diagnosis — knowledge scattered across an optimization history nobody can systematically reuse — recurs at a longer time scale. And the strict gate means a neutral-but-enabling proposal can never be accepted, which is precisely the kind of move a wiki-informed proposer should be good at making.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The asymmetry is the design.</strong> Skills are reversible and roll back on a failed validation gate; the wiki is never rolled back, so a rejected proposal still leaves behind its diff, its score, and the reason it failed. Removing that persistent layer costs <strong>15.0 points</strong> of average performance (48.7 → 63.7 on Gemini-3.5-Flash) — the accumulation, not the loop, is what works.</li>
+<li><strong>Keep the knowledge store out of the execution path.</strong> Letting the inference agent read the wiki during training rollouts <em>lowers</em> final performance (63.7 → 60.9, LiveMath 72.6 → 64.8), apparently because trajectories that lean on the wiki stop diagnosing the skills. The wiki is for the improver, not the executor.</li>
+<li><strong>Discovery and execution are different capabilities.</strong> Qwen-3.6-27B's skills beat Gemma-4-31B's own on LiveMath (73.7 vs 56.7); Qwen-3.5-4B writes OfficeQA procedures that hurt itself (30.2 → 28.5) and help a 27B model (42.1 → 52.9); and 4B SpreadSheet skills collapse Gemini from 50.5 to 18.1. Evolve where it is cheap, deploy where it executes well — and re-gate anything you transfer.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 21:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
