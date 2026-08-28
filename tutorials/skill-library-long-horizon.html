@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recuris: Maintaining a Skill Library That Knows When It Is Needed</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Recuris: Maintaining a Skill Library That Knows When It Is Needed</h1><p class="meta">19 min read · <a href="https://arxiv.org/abs/2608.24876">arXiv:2608.24876</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Recursive Experiential-Working Memory Evolution for Long-Horizon Agent Harnesses" (arXiv 2608.24876; Zhaochen Yu, Yingcheng Wu, Zhenfei Yin, Kaiyuan Chen, Zhe Zhao, Mengdi Wang, Shuicheng Yan, Ling Yang) makes one claim about skill libraries that the rest of the paper is built to defend: <strong>a skill library is worth almost nothing on its own, and almost everything once something knows when to hand each skill over.</strong> On τ²-Retail, adding the library alone is worth +2.0 points (interval spans zero); adding the state that decides when to invoke it is worth +23.9.</li>
+<li>Recuris splits agent memory into <strong>Working Memory</strong> (a verified list of goals and their status) and <strong>Experiential Memory</strong> (the skill library), and retrieves from the second using the first. That coupling also emits a structured trace, which lets a fixed Meta-Agent attribute a failed run to <em>one of four memory components</em> at 64.8% accuracy, versus 13.0% from the task outcome alone.</li>
+<li>One memory, evolved once from sixteen failed tasks on a mid-sized model, transfers unchanged: <strong>+17.8 points to GPT-5.6 Sol and +15.6 to Claude Opus 5</strong> on τ²-Retail (taking Opus 5 to 87.9%), improving 35 of 37 completed model-benchmark pairs. The base model is never touched — the trainable surface is the memory layer.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Almost every skill-library paper in this tracker answers the question <em>what should we store</em>. MSCE crystallizes traces into callable skills with applicability metadata; HiSME evolves the rules that write skills; SkillRise trains a policy to curate a skill document with RL. All assume that once a good skill exists and is reachable, it will be used.</p>
+<p>Recuris attacks that assumption, and the ablation is brutal. Take the identical ten-skill library, byte-for-byte, and inject all of it every turn — the standard "load your SKILL.md files" pattern. That scores <strong>65.6</strong> on τ²-Retail. The same agent carrying <em>no skills at all</em>, but tracking a verified task state, scores <strong>82.0</strong>. More skill text in front of the model is worse than none, and costs 45% more tokens per success (147k vs 101k). This is "Agent Skills Can Be Harmful" measured from the other direction: that paper counted the failures relevant-but-misapplied skills cause, this one shows what recovers them.</p>
+<p>The second reason to care is diagnostic. If your harness has a skill library, a retrieval rule, a state tracker, and a verifier, "the run failed" tells you nothing about which of the four to fix — and the field's standard answer is to rewrite the whole memory from the outcome. A structured trace makes the culprit identifiable, which is the precondition for any repair loop that is not guessing.</p>
+<h2>The core idea</h2>
+<p>In plain English first. The agent keeps a short checklist of what the task requires and what it has actually accomplished — not what it <em>said</em> it accomplished, but what a tool receipt proved. Whenever it is about to do something consequential, the harness looks at that checklist, pulls the one relevant skill out of the library, and puts it in front of the model <em>before</em> the action goes out. Afterwards a checker reads the environment's response and decides whether any checklist item may be marked done. Because every step records the checklist, the skill supplied, the action and the observation, a failed run is no longer an opaque transcript but a timeline in which you can see where state and world diverged.</p>
+<p>The vocabulary, defined as used. <strong>Experiential Memory</strong> is the skill library, stored in the Agent Skills format. <strong>Working Memory</strong> is the per-task checklist: each goal carries content, a status (pending / done / blocked), supporting evidence, and an optional blocker. The <strong>invocation policy</strong> decides at which moments skills are retrieved and which ones. The <strong>checkers</strong> are explicit completion predicates that read tool results rather than the model's claims. Those four together are the <strong>Skill Memory</strong>, and they are the only things Recuris ever modifies — the base model, the tools, the Meta-Agent, the patching procedure and the validation gate are all fixed.</p>
+<p><img alt="Recuris overview: within a task, working memory tracks each goal with its verified state; at a defined execution event the invocation policy retrieves the matching skill from experiential memory, and after the agent acts the checker set commits only the state changes the observation supports. Across tasks, the structured trace lets a fixed Meta-Agent attribute each diagnosed failure to a component and patch exactly the components implicated, behind a validation gate." src="assets/skill-library-long-horizon/fig1.png" /></p>
+<p><em>Figure 3 from the paper. (a) is the within-task loop: state selects skill, skill shapes action, observation verifies state. (b) is the cross-task loop: trace to diagnosis to scoped patch to gate.</em></p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> The harness keeps a verified checklist of what the task still needs, uses it to hand the agent exactly one relevant skill at the moment of each consequential action, and then — across tasks — reads the resulting timelines to figure out which part of that machinery to patch. Everything else is detail about how the checklist is verified and how the patch is scoped.</p>
+<h3>One failed task, start to finish</h3>
+<p>The setup, from the paper's own case studies on τ²-Retail — a customer-service benchmark where success requires the <em>database</em> to end up correct, so an episode that ends in friendly agreement but changes nothing is a failure.</p>
+<p><strong>Step 1 — What does the task actually require?</strong>
+A customer wants to return one item and exchange another. The harness turns that into a checklist with two entries, both pending, each with an empty evidence field. That is the whole state: no transcript summary, no embedding, just goals and whether anything has proved them done.</p>
+<p><strong>Step 2 — The agent drafts a consequential action.</strong>
+Mid-conversation the model drafts a tool call that would change the database. The harness intercepts it and <strong>does not execute it</strong>, returning a synthetic "not executed" result instead. That is the trigger for retrieval.</p>
+<p><strong>Step 3 — Fetch the one skill that matches.</strong>
+The retrieval key is the tool the drafted call named. One skill comes back and enters the context, so the action finally issued is drafted <em>with</em> that skill in view. The paper calls this call-time invocation; the alternative it also implements, boundary invocation, supplies skills once at the start of an attempt, which is what the Terminal-Bench configuration uses.</p>
+<p><strong>Step 4 — Act, and let the environment decide what happened.</strong>
+The call goes out. A checker reads the returned tool receipt and asks a narrow question: does this observation support marking that goal done? Verbal confirmation does not count. Attempting the call does not count. Only a matching successful receipt moves a goal from pending to done; otherwise it stays pending or becomes blocked. In the paper's matched example, a conventional agent reaches verbal confirmation and issues neither required tool call; Recuris keeps both goals visibly open until receipts arrive.</p>
+<p><strong>Step 5 — Repeat until the checklist is empty.</strong>
+The state is what keeps unresolved work visible for the rest of the episode. That is the entire within-task mechanism, and it is where most of the headline gain lives.</p>
+<p>Now the run that fails, and the second loop.</p>
+<p><strong>Step 6 — A failure the transcript alone would misdiagnose.</strong>
+On a different exchange task, the agent reuses the <em>original</em> item's identifier as the replacement. The tool acknowledges the call — it is a well-formed request — so nothing looks wrong in the dialogue, but the task state is now incorrect and the run fails.</p>
+<p><strong>Step 7 — Attribute the failure to one component.</strong>
+A fixed Meta-Agent (an LLM agent built on Claude Code; a second implementation on DeepSeek Harness is tested later) reads the timeline and picks which of four things to repair:</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>What it is</th>
+<th>What a failure attributed to it looks like</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Skill library</td>
+<td>the reusable procedures</td>
+<td>a missing or wrong procedure</td>
+</tr>
+<tr>
+<td>Working-memory spec</td>
+<td>what the checklist tracks and how it proposes updates</td>
+<td>an omitted goal, a bad field, a wrong proposed update</td>
+</tr>
+<tr>
+<td>Invocation policy</td>
+<td>when skills are fetched and which ones</td>
+<td>a skill that arrived late, wrong, or never</td>
+</tr>
+<tr>
+<td>Checkers</td>
+<td>the completion predicates</td>
+<td>a supported transition rejected, or an unsupported one accepted</td>
+</tr>
+</tbody>
+</table>
+<p>Here the diagnosis is the skill library: the exchange procedure never says to look up a valid variant identifier first. This is a <em>repair</em> decision, not a causal claim — the paper is explicit that several mechanisms may contribute, and it picks where an intervention is most likely to help.</p>
+<p><strong>Step 8 — Patch that component only, and make the patch prove itself.</strong>
+The Meta-Agent revises the exchange procedure to retrieve a valid variant identifier before the call; everything outside the implicated component is copied over unchanged. A fixed gate then re-runs the candidate against the failed task <em>and</em> a held-out development set of anchor tasks the current memory already solves, admitting it only if it repairs the failure without regressing the anchors. Once admitted, the updated memory succeeds on an unseen matched task — and changes what future runs look like, which is what makes the loop recursive rather than a one-shot patch.</p>
+<h3>The machinery behind steps 1-5</h3>
+<p>Four decisions above were stated plainly; here is what governs them.</p>
+<p>The thing being evolved is a four-tuple:</p>
+<div class="arithmatex">\[\mathcal{M}_k=(\mathcal{E}_k,\;\mathcal{W}_k,\;\rho_k,\;\mathcal{C}_k)\]</div>
+<p>Read left to right: <span class="arithmatex">\(k\)</span> indexes the evolution round, so <span class="arithmatex">\(\mathcal{M}_k\)</span> is the memory layer as it stands at round <span class="arithmatex">\(k\)</span>; <span class="arithmatex">\(\mathcal{E}_k\)</span> is the experiential memory, the set of stored skills; <span class="arithmatex">\(\mathcal{W}_k\)</span> is the working-memory specification — the schema of the checklist plus the rule that proposes updates to it; <span class="arithmatex">\(\rho_k\)</span> is the invocation policy; <span class="arithmatex">\(\mathcal{C}_k\)</span> is the set of checkers. These four are the entire patch space.</p>
+<p>Step 3, retrieval, is one function call:</p>
+<div class="arithmatex">\[\mathcal{E}_t=\rho_k(x,\,w_t,\,e_t,\,\mathcal{E}_k),\qquad \mathcal{E}_t\subseteq\mathcal{E}_k\]</div>
+<p>Here <span class="arithmatex">\(t\)</span> indexes steps within a single episode; <span class="arithmatex">\(x\)</span> is the task instruction; <span class="arithmatex">\(w_t\)</span> is the current checklist (the verified working state); <span class="arithmatex">\(e_t\)</span> is the <em>execution event</em> that fired at this step — a drafted state-changing call, or a turn boundary; and <span class="arithmatex">\(\mathcal{E}_t\)</span> is the small subset of skills that actually enters the context. The point of the equation is what is <em>absent</em>: the interaction history <span class="arithmatex">\(h_t\)</span> is not an argument. The model still sees the history when producing its action, but which skills reach it is decided from progress and event only.</p>
+<p>Step 4, verification, is three lines that separate proposing from committing:</p>
+<div class="arithmatex">\[\widetilde{w}_{t+1}=U_{\mathcal{W}_k}(w_t,a_t,o_t),\qquad c_t=\mathcal{C}_k(w_t,\widetilde{w}_{t+1},a_t,o_t),\qquad w_{t+1}=K(w_t,\widetilde{w}_{t+1},c_t)\]</div>
+<p><span class="arithmatex">\(a_t\)</span> is the action taken and <span class="arithmatex">\(o_t\)</span> the environment's observation. <span class="arithmatex">\(U_{\mathcal{W}_k}\)</span> <em>proposes</em> a next checklist <span class="arithmatex">\(\widetilde{w}_{t+1}\)</span> — the tilde marks it as a proposal, not a fact. <span class="arithmatex">\(\mathcal{C}_k\)</span> evaluates that proposal against the observation and emits decisions <span class="arithmatex">\(c_t\)</span>. <span class="arithmatex">\(K\)</span> is a fixed commit rule in the harness — not evolvable, not model-written — that merges only the supported changes into the real next state <span class="arithmatex">\(w_{t+1}\)</span>. A goal moves to done only when its checker returns 1. That split is the difference between an explicit state and a <em>trustworthy</em> one: a state the model writes for itself is exactly as reliable as the model.</p>
+<h3>The machinery behind steps 6-8</h3>
+<p>The diagnosis is one equation, and its type signature is the whole idea:</p>
+<div class="arithmatex">\[D_k=\mathcal{A}_{\text{fixed}}(\Gamma_k,\mathcal{M}_k)=\{(f_j,z_j)\}_{j=1}^{J_k},\qquad z_j\in\{\mathcal{E},\mathcal{W},\rho,\mathcal{C}\}\]</div>
+<p><span class="arithmatex">\(\mathcal{A}_{\text{fixed}}\)</span> is the localization stage of the Meta-Agent — fixed means the same implementation, prompts and procedure at every round on every benchmark. <span class="arithmatex">\(\Gamma_k\)</span> is the structured trace: unlike a raw transcript, it records at every step the state that triggered retrieval, the skills supplied, the action, the observation, the <em>proposed</em> next state, and the checker decisions. <span class="arithmatex">\(J_k\)</span> is how many distinct failures were diagnosed, <span class="arithmatex">\(f_j\)</span> is one of them, <span class="arithmatex">\(z_j\)</span> names the component to repair. The output is not a rewrite and not a score — it is a set of (failure, address) pairs drawn from a four-element alphabet, and patching edits exactly those components.</p>
+<p>Why the trace matters is measured rather than asserted. Inject a known fault into one component and ask a fixed judge to name the culprit. Against a 33.3% constant-answer floor, macro accuracy is <strong>13.0% from the outcome alone</strong> (below the floor), <strong>37.0% from the raw trajectory</strong>, and <strong>64.8% from the structured trace</strong>. The per-class rows say the gain is observability, not reasoning: an invocation fault is a <em>non-event</em> — nothing appears in the transcript where a skill should have been injected — and neither condition without the trace's mechanism events names it even once, against 38.9% with it.</p>
+<pre><code class="language-text"># Recuris: two nested loops
+# Inner (per task) --------------------------------------------------
+w &lt;- initial checklist from task x under spec W
+for t = 1..L:
+    e &lt;- execution event?              # drafted state-changing call, or turn boundary
+    if e fires:
+        skills &lt;- rho(x, w, e, E)      # retrieval key = the tool the call named
+        inject skills; drafted call NOT executed, synthetic result returned
+    a &lt;- model acts (sees history + w + skills)
+    o &lt;- Env(a)
+    w_prop &lt;- U_W(w, a, o)             # proposed next checklist
+    c      &lt;- C(w, w_prop, a, o)       # checkers read the RECEIPT, not the claim
+    w      &lt;- K(w, w_prop, c)          # commit only supported changes
+    record (w, skills, a, o, w_prop, c, w') into trace Gamma
+# Outer (across tasks) ----------------------------------------------
+for round k = 1..:
+    for each failed run:
+        D &lt;- A_fixed(Gamma, M)         # {(failure, one of E / W / rho / C)}
+        patch each implicated component; copy the rest       # -&gt; M+
+        if G_fixed(M+, M; failed task, dev anchors):  M &lt;- M+   # else discard
+    # new memory changes future runs -&gt; new traces -&gt; next round
+</code></pre>
+<h3>What the design leaves open</h3>
+<p>Three limits are visible in the paper's own numbers, and they belong here rather than in the middle of the story.</p>
+<p><strong>The memory only grows.</strong> Across eight accepted patches the loop added 51 skills, revised 2, and deprecated none, leaving 17 near-duplicate pairs. Recuris survives this only because no single skill carries the gain — rebuilding a package without its procedure skills moves the held-out result by −2.3 to +1.7 points, every interval containing zero. Redundant rather than fragile, but there is no pruning operator.</p>
+<p><strong>Rounds are not monotone.</strong> Run A plateaued at round 3; Run C peaked at +17.44 in round 2 and gave most of it back; Run B's round-4 candidate was never invoked on any held-out task at all — a broken binding rather than a diminishing return. The in-round gate cannot resolve differences this fine: two runs of an <em>unchanged</em> package on the 10-14 task dev split differ by [−12.1, +11.1] points.</p>
+<p><strong>Cross-task evolution needs shared structure.</strong> On Terminal-Bench 2.1, whose tasks share no tools or policies, the loop <strong>admitted no patch in thirteen runs</strong>. The fallback is a per-task adaptation mode, reported honestly: its headline +26.4 points comes from the retry budget, not from learning.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Where the gain comes from</strong> (τ²-Retail, 114 tasks, 456 episodes, matched model/tools/seeds/budget): base 58.1; skill library only <strong>60.1</strong> (+2.0, CI [−4.0, +7.9]); verified working state only <strong>82.0</strong> (+23.9†); same library injected in full every turn with the model deciding <strong>65.6</strong> (+7.5†); coupled <strong>83.6</strong> (+25.4†). Against a working state alone the library adds +1.5, CI [−2.4, +5.7]; against the model-controlled variant carrying the <em>byte-identical</em> library, Recuris leads by <strong>18.0 points</strong> [+11.6, +24.6].</li>
+<li><strong>The failure it fixes is execution, not retrieval.</strong> Read-action recall stays at 88.0-97.9% for every variant in every horizon quartile — no agent, at any length, fails to find out what its task needs — while required-write recall separates by 26.7 points. The base agent ends <strong>42%</strong> of write-requiring episodes having executed none, against 16% for Recuris; omitted required writes per episode fall 0.596 → 0.121 (the "up to 80%" in the thread). The median turn of the first correct write is 18 in all four variants: what changes is not <em>when</em> the agent acts but <em>whether</em>.</li>
+<li><strong>Horizon.</strong> Recuris leads the base agent in all four quartiles of task-intrinsic length, by +17.0 to +44.7 points, with no monotone decline; the abstract summarizes the longest-task advantage as <strong>+32.2</strong>.</li>
+<li><strong>Model transfer</strong> (one package, evolved on doubao-seed-2-0-pro, shipped unchanged): GPT-5.6 Sol 58.33 → <strong>76.10</strong> (+17.76†), Claude Opus 5 72.37 → <strong>87.94</strong> (+15.57†), Gemini 3.7 Flash 73.46 → 78.29 (+4.82, CI touches zero). It is not a crutch for weak models — the strongest target also ends highest. But headroom is a ceiling, not a prediction: at nearly identical starting levels (72.4 and 73.5) the same package is worth +15.6 and +4.8.</li>
+<li><strong>Held-out evolution.</strong> From 16 training failures, 12 dev tasks, and 86 tasks nothing touches: every package that reaches the held-out set clears the starting memory by <strong>+9.01 to +17.44</strong> with intervals excluding zero, against a +0.00 [−6.98, +7.27] instrument resolution from re-running an identical package.</li>
+<li><strong>The Meta-Agent is replaceable.</strong> Re-implemented from scratch on a second agent stack, it lands −1.45 points from the original, CI [−7.85, +4.65], p=0.72 — inside the noise band — and the two implementations converge <em>mechanistically</em>, distilling the same sixteen failures into the same repair family. What the loop learns is set by the evidence, not the machinery.</li>
+<li><strong>The gate is conservative, not load-bearing.</strong> Accepted patches broke 4 of 42 anchor tasks (9.5%) versus 25.9% for re-running an identical package (p=0.013), but a fourth run that admitted everything and merely <em>recorded</em> dev verdicts landed all three packages at +14.5 to +18.0 — including two the gate had condemned at −10.4 and −6.2.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/msce-memory-to-skills.html">MSCE: Converting Agent Memory into Executable Skills</a></strong> — the closest neighbour and the sharpest contrast. MSCE gives each skill metadata about <em>when it applies</em> and how to verify itself, so the skill carries its own applicability. Recuris moves that judgment out of the skill and into a harness-level state, and its ablation is the argument for doing so: with invocation delegated to the model, the identical library scores 18 points lower. Both papers agree the field over-invests in what to store; they disagree about where the "when" should live.</li>
+<li><strong><a href="../tutorials/hisme-skill-meta-evolving.html">HiSME: Hierarchical Skill Meta-Evolving</a></strong> — HiSME evolves the <em>rules that write skills</em>; Recuris evolves the <em>rules that fetch and verify them</em>, and keeps the writer fixed. Together they bracket the design space: HiSME's meta-skills make the extractor better, Recuris's localization makes the target of any edit identifiable.</li>
+<li><strong><a href="../tutorials/skillrise-curriculum-skills.html">SkillRise: Cross-Task RL with an Evolving Skill Document</a></strong> — the trained-weights alternative, putting curation inside the RL objective with discounted downstream reward. Recuris never updates weights, and gets frontier-model gains from a memory evolved on a mid-sized one — the design that survives when you do not control the model you are shipping to.</li>
+<li><strong><a href="../tutorials/agent-skills-harmful.html">Agent Skills Can Be Harmful</a></strong> — the negative result Recuris is implicitly answering: 86 of 125 functional failures there came from <em>topically relevant</em> skills whose examples and defaults got treated as requirements, plus 114 efficiency regressions from excessive procedure. Recuris's model-controlled variant reproduces that shape from scratch — same library, always in context, 18 points worse and 45% more expensive per success — and state-grounded invocation is a concrete mitigation.</li>
+<li><strong><a href="../tutorials/skill-library-google.html">The sibling skill-library paper from Google</a></strong> — arrived within days on the same question of how a long-horizon agent should maintain its skills; read as a pair, noting where they differ on who owns the retrieval decision.</li>
+<li><strong><a href="../tutorials/mendel-godel-machine.html">Mendel Gödel Machine</a></strong> and <strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE² / RSI evidence</a></strong> — the Gödel-machine thread rewrites agent <em>source code</em> from failures; Recuris confines recursion to a four-component memory layer and holds the improvement procedure fixed. Both bet the binding constraint is evidence quality at the moment of the edit — MGM's answer is a controlled pair of trajectories, Recuris's is a trace structured enough to name a component, and its 13.0%-vs-64.8% localization table is the cleanest measurement in this thread of what the evidence format is worth.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The strongest results are the ablations, not the headline. "35 of 37 pairs" is a count with no size attached, and many of those deltas are small with intervals containing zero (Qwen3.5-4B on τ²-Retail: +0.3; Gemini 3.7 Flash on Airline: −1.5). The τ²-Airline column resolves almost nothing — 50 tasks, every interval spanning zero — and the paper says so. On Terminal-Bench all four rows are honestly decomposed and both memory terms sit within run-to-run variation.</p>
+<p>The deeper tension is between the title and the finding. This is presented as recursive memory <em>evolution</em>, but the evolution contributes about +10 points while the within-task coupling contributes +24, and the coupling requires no recursion at all. Worse for the framing: on τ²-Retail the skill library the paper is nominally about is nearly inert on its own (+2.0), its value entirely conditional on invocation control. A reader who takes only the working-memory mechanism and ships a hand-written skill file captures most of the reported gain.</p>
+<p>Some load-bearing pieces are also less general than they look. The two invocation deliverers are hand-designed per domain (call-time for τ², first-turn for Terminal-Bench), and the paper's own double dissociation — write review carries Airline and is inert on Retail, the status board does the reverse — is evidence that you cannot know at design time which mechanism will matter. One of the four patch targets is effectively untested: the checkers are excluded from the fault-injection ground truth because removing them changes the τ²-Retail pass rate by zero. And the gate, sold as the safety boundary of the recursion, turns out to reject only noise.</p>
+<p>None of that undercuts the central result, which is unusually well isolated: hold the library byte-identical, vary only who decides when its entries reach the model, and the gap is 18 points. That is a clean measurement of something the skill-library literature has mostly assumed away.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>A skill library is invocation-conditional.</strong> Same ten skills, byte-identical: injected wholesale every turn → 65.6; fetched by a verified task state at the moment of each consequential action → 83.6; no skills at all but with the state → 82.0. What a library is worth depends less on what it contains than on whether anything knows when it is needed.</li>
+<li><strong>Verify state against receipts, not claims.</strong> Long-horizon failure on these benchmarks is not a retrieval failure — read-action recall never drops below 88% at any length — it is agents ending 42% of write-requiring episodes having executed no write. Separating a <em>proposed</em> state update from a <em>committed</em> one, with the commit rule fixed in the harness and gated on tool receipts, is what recovers them.</li>
+<li><strong>Structure the trace or you cannot localize the fault.</strong> Naming which of four memory components caused a failure: 13.0% from the outcome (below the always-guess floor), 37.0% from the raw transcript, 64.8% from a trace that records state, invocation, action, observation and checker decision at every step. Invocation faults are invisible without it — they are non-events — and a repair aimed at the wrong component is wasted.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 20:46 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

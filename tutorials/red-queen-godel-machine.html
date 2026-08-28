@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Red Queen Gödel Machine: Self-Improving Agents Co-Evolving with Their Evaluators</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Red Queen Gödel Machine: Self-Improving Agents Co-Evolving with Their Evaluators</h1><p class="meta">19 min read · <a href="https://arxiv.org/abs/2606.26294">arXiv:2606.26294</a> · <a href="https://arxiv.org/abs/2606.26294">arXiv</a> · <a href="https://x.com/HowToPrompt__/status/2092983677919830336">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"The Red Queen Gödel Machine: Co-Evolving Agents and Their Evaluators" (arXiv 2606.26294, 24 June 2026) removes the one component every previous Gödel machine held fixed: <strong>the thing that decides whether a self-edit was an improvement</strong>. The judge is now an evolving agent inside the archive. The paper is Cambridge-led (Alex Iacob, Andrej Jovanović, William F. Shen, equal first authors) with co-authors at NVIDIA, Flower Labs, MBZUAI and Inria — not, as the thread that surfaced it says, an NVIDIA paper.</li>
+<li>What keeps this from becoming a moving-goalposts disaster is <strong>controlled utility evolution</strong>: search runs in <em>epochs</em> under one frozen evaluator; the evaluator may change only at exponentially spaced checkpoints, and only if a challenger beats it on a fixed ground-truth anchor; every score the displaced evaluator produced is then <strong>erased</strong>. Each epoch is therefore a fixed-criterion search, so the Huxley Gödel Machine's guarantees still apply — one epoch at a time.</li>
+<li>Results are modest where verification exists and large where it does not. Coding: held-out Polyglot <strong>69.9% → 71.7%</strong> (119/166 vs 116/166) at <strong>1.35×–1.72× fewer tokens</strong>. Paper writing, where no benchmark can score the artifact: reviewer-panel acceptance <strong>21.8% → 40.5%</strong> (1.86×). Proof writing: the specialist beats a gold-medal hand-built pipeline on mean score but concedes on the strictest metric.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every system in this tracker's Gödel-machine thread — <a href="../tutorials/darwin-godel-machine.html">Darwin</a>, Huxley, <a href="../tutorials/mendel-godel-machine.html">Mendel</a>, <a href="../tutorials/hyperagents.html">Hyperagents</a> — edits an agent's own code and keeps the edits that score better. The scoring is load-bearing, and it has always sat outside the loop: a test suite, a benchmark, a labelled split. That bounds the enterprise three ways. It rules out any domain where no benchmark exists (you cannot recursively self-improve at writing papers if nothing can grade a paper). It makes evaluation the dominant cost whenever the verifier is itself a multi-turn agent run. And once the archive saturates the benchmark, or learns to game it, the loop is done — the ceiling is the ruler.</p>
+<p>RQGM's premise is that this is a modelling error borrowed from optimisation rather than evolution: species do not climb a fixed fitness landscape, the landscape is other species and it moves. What makes the metaphor useful is that the authors identify exactly what breaks when the objective moves — every previous score in the archive becomes meaningless — and pay that cost explicitly. The contribution is not "let the judge evolve," which is obvious; it is the bookkeeping that makes an evolving judge compatible with the guarantees you already had, at linear rather than quadratic cost.</p>
+<h2>The core idea</h2>
+<p>Start with the Huxley Gödel Machine, which RQGM inherits wholesale: a tree-shaped archive of agent variants grown by alternating <strong>expansion</strong> (an agent edits its own code, producing a child) and <strong>evaluation</strong> (an agent runs one task, producing a binary outcome), with either action assigned by Thompson sampling over <em>clade</em> statistics — the pooled success rate of a node's whole subtree, not the node alone. RQGM changes four things.</p>
+<p><strong>Each archive node is a workspace, not an agent.</strong> A node holds several agentic <em>roles</em> sharing one codebase — writer and reviewer, coder and code reviewer, prover and grader — plus a meta-agent that can edit any of them. Roles may reuse each other's code; only the scoring and orchestration harness is fixed.</p>
+<p><strong>Some of those roles are the evaluators.</strong> A role with a real benchmark (Polyglot tests) is <em>evaluator-independent</em>. A role without one (paper writing) is <em>evaluator-dependent</em> and is scored by an <strong>evaluator slot</strong> holding a frozen copy of some evaluator agent from the archive.</p>
+<p><strong>The slot's occupant can be replaced, but only at checkpoints.</strong> The stretch between two replacements is an <strong>epoch</strong>, within which the evaluator, the artifact-generation protocol and the scoring rule are all frozen, so every outcome recorded in that window means the same thing.</p>
+<p><strong>Replacement is judged against something that never moves.</strong> Each evaluator role has a <strong>ground-truth anchor</strong> — a fixed held-out set of objective or human labels: real conference accept/reject decisions for paper review, human IMO grades for proof grading, accepted/rejected pull requests for code review. Incumbent and challengers are compared <em>only</em> on this anchor, which is what stops a co-evolving judge drifting toward whatever is easiest to satisfy.</p>
+<p><img alt="RQGM overview: an archive tree whose nodes are shared workspaces holding generator and evaluator roles, sampled by Thompson sampling on clade metaproductivity; and a checkpoint at which challengers are compared to the frozen incumbent by epsilon-best-belief on a ground-truth anchor, the winner re-frozen, and the displaced evaluator's records selectively erased" src="assets/red-queen-godel-machine/fig1.png" /></p>
+<p><em>Figure 2 from the paper. Left: each node is a shared workspace with several roles; generators are scored by evaluator slots, evaluators by fixed ground truth. Right: at a checkpoint, challengers face the incumbent on the anchor, the winner is frozen for the next epoch, and the displaced evaluator's records are erased.</em></p>
+<p>The payoff: because the objective may change at boundaries, you can change it <em>on purpose</em>, not merely improve it — which is how the paper's sharpest result works, an adversarial term injected mid-search to fix a bias a fixed evaluator cannot even express.</p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> RQGM runs the ordinary self-improvement loop — expand, evaluate, expand, evaluate — under a frozen judge, and every so often stops, swaps the judge for a better one, and throws away every score the old judge produced. Everything else is detail about who gets swapped, when, and what "better" means.</p>
+<h3>One epoch boundary, start to finish</h3>
+<p>The setting is the paper-writing run. One workspace holds two roles sharing a codebase: a <strong>writer</strong> that produces papers, and a <strong>reviewer</strong> that accepts or rejects them. No benchmark can score a generated paper, so the writer's entire fitness signal is the reviewer's verdict. The reviewer is checked against 100 held-out real conference accept/reject decisions.</p>
+<p><strong>Step 1 — During the epoch, who is grading whom?</strong>
+The reviewer in the slot is a frozen snapshot; it does not change while the epoch runs. Every writer variant is scored by it, and those scores accumulate as ordinary wins and losses. Meanwhile the <em>live</em> reviewer role keeps evolving in the archive like any other agent, scored separately against the real conference decisions. The archive is simultaneously growing better writers under today's judge and better judges for tomorrow.</p>
+<p><strong>Step 2 — What triggers a boundary?</strong>
+Nothing adaptive: checkpoints are scheduled in advance at doubling intervals — after 1 unit of budget, then 2, then 4, then 8. Early swaps are cheap because little has been recorded; late swaps are rare because the gap has grown. That is the whole reason the accounting stays affordable.</p>
+<p><strong>Step 3 — Who is allowed to take the slot?</strong>
+The incumbent plus every reviewer variant the archive has produced, ranked <em>only</em> by agreement with the 100 real conference decisions — never by how they scored writers, which would be circular. A candidate needs at least five recorded anchor outcomes to be ranked at all, and ties go to the incumbent, because a swap is expensive. The contenders at selection time:</p>
+<table>
+<thead>
+<tr>
+<th>Reviewer</th>
+<th>Agrees with real decisions</th>
+<th>Accepts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Best fixed-evaluator baseline reviewer</td>
+<td>88 / 100</td>
+<td>45%</td>
+</tr>
+<tr>
+<td>RQGM reviewer, best raw accuracy</td>
+<td>84 / 100</td>
+<td>40%</td>
+</tr>
+<tr>
+<td>RQGM reviewer just before the swap</td>
+<td>84 / 100</td>
+<td>42%</td>
+</tr>
+<tr>
+<td>RQGM reviewer after the adversarial epoch</td>
+<td>80 / 100</td>
+<td>32%</td>
+</tr>
+<tr>
+<td>Published prior-work reviewer</td>
+<td>73 / 100</td>
+<td>25%</td>
+</tr>
+<tr>
+<td>Hand-written prompt reviewer (real conference form)</td>
+<td>63 / 100</td>
+<td>13%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Step 4 — The swap happens, and the writer's scoreboard is deleted.</strong>
+This is the part that feels wrong the first time and is the crux of the design. Every win and loss the writers accumulated under the old reviewer is <em>erased</em> — not rescaled, not carried over. Keeping them would mix two different judges into one number. Scores that never depended on the displaced reviewer (the anchor evidence, anything from other roles) survive untouched. Clade statistics are recomputed and search continues.</p>
+<p><strong>Step 5 — The archive is genuinely re-ranked, not just re-scored.</strong>
+After the swap the fitness ordering of writers shifts substantially and never drifts back. Lineages the previous reviewer ranked low are pulled into contention, so the new bar is met by different candidates rather than the same ones re-measured. One thing survives: the best lineage tends to stay on top — the population is hardened around a stable backbone, not scattered.</p>
+<p><strong>Step 6 — The deliberate twist: make the next judge adversarial.</strong>
+LLM judges accept machine-written text more readily than human-written text, and the baseline reviewer here does exactly that, accepting AI papers at up to <strong>1.91×</strong> the human rate. RQGM exploits the boundary: papers the <em>displaced</em> reviewer accepted become a pool, and the next epoch additionally rewards reviewers for rejecting them — on top of, not instead of, agreement with the real decisions. A change to the objective itself, expressible only because objectives may change at boundaries.</p>
+<p><strong>Step 7 — What that bought, and what it cost.</strong>
+The selected reviewer is <em>less</em> accurate on raw conference decisions (80/100 against the baseline's 88/100), unavoidably, since the benchmark's accept/reject balance rewards leniency. What it gains is calibration — it accepts machine- and human-written papers at similar rates — and it is a far better teacher. The writer co-evolving under it reaches <strong>40.5%</strong> mean acceptance across a four-reviewer panel against the fixed-evaluator writer's <strong>21.8%</strong>, measured by judges neither writer trained against.</p>
+<h3>The machinery behind steps 1–5</h3>
+<p>Four quantities govern everything above.</p>
+<p><strong>Which agent gets the next action (steps 1 and 5).</strong> Nodes are drawn by Thompson sampling over <em>clade metaproductivity</em>:</p>
+<div class="arithmatex">\[\widehat{\mathrm{CMP}}(a)=\frac{n_{\mathrm{success}}^{C}(a)}{n_{\mathrm{success}}^{C}(a)+n_{\mathrm{failure}}^{C}(a)} \in [0,1]\]</div>
+<p>Here <span class="arithmatex">\(a\)</span> is one archive node; <span class="arithmatex">\(C(a)\)</span> is its <strong>clade</strong>, the whole subtree rooted at <span class="arithmatex">\(a\)</span> including <span class="arithmatex">\(a\)</span> itself; <span class="arithmatex">\(n_{\mathrm{success}}^{C}(a)\)</span> and <span class="arithmatex">\(n_{\mathrm{failure}}^{C}(a)\)</span> count every solved and failed task recorded anywhere in that subtree; and <span class="arithmatex">\(\widehat{\mathrm{CMP}}(a)\)</span> is the resulting pooled success rate. Using the subtree rather than the node lets a mediocre agent with thriving descendants keep attracting budget — the evidence its branch is fertile lives in its children. Inherited unchanged from Huxley.</p>
+<p><strong>How anything is ranked, including evaluators (step 3).</strong> Both final agent selection and evaluator replacement use the same conservative score:</p>
+<div class="arithmatex">\[BB_\epsilon(a)=I^{-1}_{\epsilon}\!\left(1+S_a,\,1+F_a\right)\in[0,1]\]</div>
+<p><span class="arithmatex">\(S_a\)</span> and <span class="arithmatex">\(F_a\)</span> are the successes and failures recorded for <span class="arithmatex">\(a\)</span>; <span class="arithmatex">\(1+S_a\)</span> and <span class="arithmatex">\(1+F_a\)</span> are those counts under a uniform prior; <span class="arithmatex">\(I^{-1}_{\epsilon}\)</span> is the inverse regularised incomplete Beta function, i.e. the <span class="arithmatex">\(\epsilon\)</span>-quantile of the resulting Beta posterior; <span class="arithmatex">\(\epsilon\in(0,1)\)</span> is the confidence level, set to <strong>0.05</strong> in every run. Read <span class="arithmatex">\(BB_{0.05}(a)\)</span> as "a true success rate this agent exceeds with 95% probability" — a <em>lower bound</em>, not an estimate. Which is why an agent that went 1-for-1 does not win: with two outcomes the lower bound is near zero regardless of the ratio. Applied to evaluators on the anchor, a challenger is promoted only when its <strong>guaranteed</strong> anchor performance beats the incumbent's — the paper's formal argument that replacements improve things across epochs, not merely within them.</p>
+<p><strong>How the population is capped.</strong> Expansion is permitted only when</p>
+<div class="arithmatex">\[N_t^{\alpha} \ge |\mathcal{T}_t|\]</div>
+<p>where <span class="arithmatex">\(N_t\)</span> is the number of evaluations performed by step <span class="arithmatex">\(t\)</span>, <span class="arithmatex">\(|\mathcal{T}_t|\)</span> is the archive's current node count, and <span class="arithmatex">\(\alpha\in(0,1)\)</span> is the expansion exponent, fixed at <strong>0.6</strong> (inherited from Huxley); otherwise the step is an evaluation. Archive size therefore grows as roughly the 0.6 power of the evidence behind it — the 12,288-evaluation budget supports on the order of 280 nodes, not thousands.</p>
+<p><strong>What "utility" means when a node has several roles.</strong> A node is a workspace, so its fitness is an average of averages:</p>
+<div class="arithmatex">\[U_{\boldsymbol{j}}(a) = \frac{1}{|\mathcal{R}|}\sum_{r\in\mathcal{R}}p_{r,\boldsymbol{j}}(a),\qquad p_{r,\boldsymbol{j}}(a)=\frac{1}{|\mathcal{D}_r|}\sum_{d\in\mathcal{D}_r}p_{r,d,\boldsymbol{j}}(a)\]</div>
+<p><span class="arithmatex">\(\mathcal{R}\)</span> is the node's set of roles and <span class="arithmatex">\(|\mathcal{R}|\)</span> their count; <span class="arithmatex">\(\mathcal{D}_r\)</span> is the finite pool of tasks role <span class="arithmatex">\(r\)</span> is scored on; <span class="arithmatex">\(p_{r,d,\boldsymbol{j}}(a)\)</span> is node <span class="arithmatex">\(a\)</span>'s expected success rate on task <span class="arithmatex">\(d\)</span> of role <span class="arithmatex">\(r\)</span>; <span class="arithmatex">\(p_{r,\boldsymbol{j}}(a)\)</span> is that averaged uniformly over the role's tasks; <span class="arithmatex">\(U_{\boldsymbol{j}}(a)\)</span> is the uniform average over roles. The subscript <span class="arithmatex">\(\boldsymbol{j}\)</span> is the <strong>epoch vector</strong> — one epoch index per evaluator slot — and its presence in every term is the formal statement that these numbers mean something only within one epoch. When a slot advances, every quantity carrying that slot's index is exactly what gets erased. Because the averages are uniform rather than sample-weighted, a node is rewarded for improving <em>all</em> its roles, which makes co-evolution a shared search rather than two searches competing for budget.</p>
+<p>The scheduler choosing <em>what</em> to evaluate is deliberately dumb: a node by Thompson sampling, then its least-evaluated role, then that role's least-evaluated task — round-robin at the bottom, uncertainty-driven sampling at the top.</p>
+<pre><code class="language-text"># RQGM search (Algorithm 1), annotated with the paper-domain example
+T &lt;- {seed workspace}; N &lt;- 0
+for each evaluator slot m: epoch[m] &lt;- 1; E[m] &lt;- Freeze(incumbent)
+
+while N &lt; total_budget:                    # runs: 12,288 evaluations
+    b &lt;- next checkpoint after N           # checkpoints double: 1,2,4,8,...
+    while N &lt; b:
+        if N^alpha &gt;= |T|:                     # EXPAND
+            parent &lt;- ThompsonSample(clade CMP)
+            child  &lt;- parent's meta-agent edits the shared workspace
+            if valid(child): T &lt;- T + {child}  # writer AND reviewer code
+        a &lt;- ThompsonSample(clade CMP)         # EVALUATE
+        r &lt;- least-evaluated role of a         # writer or reviewer
+        d &lt;- least-evaluated task of r
+        o &lt;- run a's role r on d, scored by frozen E[m] or by anchor
+        record (a,r,d,o) tagged with epoch vector; N &lt;- N + 1
+
+    for each evaluator slot m:                 # CHECKPOINT ONLY
+        cands &lt;- {E[m]} + reviewer variants in T
+        rank by BB_eps on the anchor           # never on writer scores
+        best &lt;- argmax (ties -&gt; incumbent)     # &gt;= 5 anchor outcomes
+        if best != E[m]:
+            epoch[m]++; E[m] &lt;- Freeze(best)
+            erase every record tagged with slot m   # writers' scoreboard
+            recompute clade statistics
+            # optional: papers the displaced reviewer accepted become
+            # an adversarial pool the next epoch rewards rejecting
+return argmax BB_eps over archive nodes
+</code></pre>
+<p>Cost is amortised: after a swap, old nodes are re-scored only when search returns to them, and cached agent outputs mean re-scoring rarely needs a fresh generation call.</p>
+<h3>Caveats on the mechanism itself</h3>
+<p>Three things deserve flagging before the numbers, all of them the authors' own.</p>
+<p><strong>The guarantees are epoch-local and nothing more.</strong> They bound neither the number of transitions, nor cumulative regret from erased evidence, nor convergence to any globally optimal agent–evaluator pair. The tree topology inherited across a boundary may reflect expansion choices optimised for a judge that no longer exists.</p>
+<p><strong>The anchor is the whole ceiling.</strong> Anchoring replacements to fixed ground truth keeps evaluators honest but confines them to the anchor's own decision boundary — and the anchors here are themselves imperfect. Improvement <em>beyond</em> the benchmark must come from objectives layered on top, of which the adversarial reviewer is the single demonstrated instance.</p>
+<p><strong>Epoch-local stationarity cannot strictly hold in the wild.</strong> Provider-side model updates, nondeterministic tools and hardware variation all break the assumption that a frozen evaluator gives the same verdict twice — true of every framework without full stack control, and a sign the formal apparatus is cleaner than reality.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Coding, where ground truth already exists (RQ1).</strong> Co-evolving a code reviewer alongside the coder lifts held-out Polyglot pass rate from the prior state of the art's <strong>69.9%</strong> to <strong>71.7%</strong> — 119/166 versus 116/166 — at <strong>1.35×–1.72× fewer blended tokens</strong>. The mechanism is not extra effort: <strong>90%</strong> of accepted patches modify shared functionality used by <em>both</em> roles, so one edit improves two utilities.</li>
+</ul>
+<p><img alt="Left: held-out Polyglot pass rate against blended search tokens, RQGM above the baseline's dashed line at 1.35x-1.72x fewer tokens. Right: best-belief utility over the run, dropping sharply at each evaluator replacement and re-climbing afterwards" src="assets/red-queen-godel-machine/fig2.png" /></p>
+<p><em>Figure 1 from the paper. Left: RQGM exceeds the baseline pass rate at 1.35×–1.72× fewer tokens. Right: the sawtooth is the whole design — each dashed rule is a replacement, each drop is erasure discarding the displaced reviewer's records, each re-climb is the archive re-earning its score under a stricter judge.</em></p>
+<ul>
+<li><strong>Paper writing, where no benchmark can score the artifact (RQ2).</strong> Against a fixed panel of four reviewers, the fixed-evaluator baseline writer reaches <strong>21.8%</strong> mean acceptance at 42.5M search tokens. RQGM's generalist reaches <strong>38.8%</strong> (1.78×) at a comparable 44.6M; its specialist reaches <strong>40.5%</strong> (1.86×) at 221.8M.</li>
+<li><strong>Proof writing.</strong> Mean grade (0–7) across a three-grader panel: static hand-built IMO-gold pipeline <strong>4.07</strong>, baseline prover <strong>3.73</strong>, RQGM generalist <strong>3.73</strong> (identical, at 1.8× the cost), RQGM specialist <strong>4.33</strong>. Pass@6 rises to 61.7%, but Pass@7 — full credit — is <strong>48.3%</strong> against the hand-built pipeline's <strong>55.0%</strong>: more <em>near</em>-complete proofs rather than more complete ones.</li>
+<li><strong>Evaluators improve too (RQ4).</strong> The co-evolved grader reaches the best anchor accuracy of any judge tested at <strong>3× lower search cost</strong> than the baseline, and got there in two patches — one adding a milestone-checking rubric, one reversing an over-strict calibration. The abstract reports <strong>9%</strong> higher ground-truth accuracy for co-evolved graders.</li>
+<li><strong>Erasure is load-bearing (RQ3).</strong> After each replacement the rank correlation between old and new orderings settles well below 1 and never recovers. The no-erasure control stays pinned at <strong>ρ ≥ 0.90</strong> — stale scores hold the old order in place and the new criterion never gets to re-rank anything.</li>
+<li><strong>Ablations, on a smaller backbone.</strong> Turning replacement off lets the writer saturate its frozen critic at <strong>75/75</strong> accepted validation papers while that critic's anchor accuracy sits at <strong>78.2%</strong> — textbook reward hacking. Replacement alone escapes the plateau (91.2%); the full mechanism reaches 95.0%. Separately: validation is <strong>65–69%</strong> of blended tokens, expansion only 18–23%.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/darwin-godel-machine.html">Darwin Gödel Machine</a></strong> — the origin of the archive-of-self-modifying-variants design RQGM assumes; read it first if the expand/evaluate loop is unfamiliar. The lineage is four deep: DGM built the archive, Huxley made archive <em>sampling</em> efficient, <a href="../tutorials/hyperagents.html">Hyperagents</a> turned each node into a multi-agent workspace, and RQGM makes the <em>evaluator</em> a first-class occupant of that workspace. Its baseline throughout is "Hyperagents with Huxley search and a frozen evaluator" — the cleanest possible isolation of the co-evolution variable.</li>
+<li><strong><a href="../tutorials/mendel-godel-machine.html">Mendel Gödel Machine</a></strong> — the complement and the sharpest contrast. MGM holds the evaluator fixed and upgrades the <em>evidence</em> each self-edit sees; RQGM holds the edit operator fixed and upgrades the <em>evaluator</em>. Both are single-variable interventions on the same Huxley substrate, both claim the win comes from information quality rather than search intensity, and nothing prevents composing them.</li>
+<li><strong><a href="../tutorials/evolving-benchmarks.html">Evolving Benchmarks</a></strong> — the direct thematic sibling: what happens when the measuring instrument is part of the system being measured. RQGM's answer is unusually concrete (freeze within epochs, anchor replacements to something fixed, erase what the old instrument measured), and the erasure ablation is the strongest evidence yet that co-evolving evaluation only works if you are willing to throw evidence away.</li>
+<li><strong><a href="../tutorials/ouroboros-reviewed-core-evolution.html">Ouroboros: Reviewed Core Evolution</a></strong> — puts a reviewing step inside the evolution loop, but with a <em>fixed</em> reviewer. RQGM's fixed-critic ablation (writer saturates at 75/75 while the critic is 78% accurate on reality) is precisely the failure mode that design is exposed to.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> and <strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE² / RSI evidence</a></strong> — the sceptics' corner. RQGM's coding result (+1.8pp held-out at 1.35–1.72× lower cost) is exactly the small-but-cheaper datapoint that matched-budget argument needs.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong>, <strong><a href="../tutorials/living-harness.html">Living Harness</a></strong> and <strong><a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a></strong> — all three optimise a scaffold against a fixed reward. RQGM argues the reward is the next thing to make learnable, and its epoch machinery is a ready-made recipe for doing so without losing the ability to compare runs.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline the thread ran with — NVIDIA, terrifying, holy grail — is not what the paper says. The paper calls itself "a preliminary empirical investigation," is Cambridge-led, and its coding result is <strong>three additional tasks out of 166</strong>. Reporting is single-run with no seed variance, so that margin sits inside the noise of one evolutionary search; the token-efficiency half is the defensible half. The large numbers all come from domains where the metric is another LLM's opinion. The writer panel is a fair test — four judges, none of which the RQGM writer trained against — but the proof-grading table has a wrinkle the paper does not discuss: the RQGM grader scores the RQGM specialist prover <strong>4.95</strong> where the two static graders give it 3.85 and 4.20, while scoring the hand-built IMO prover at 4.05, the same as everyone else. The grader is uniquely generous to exactly one prover, the one it co-evolved with <em>(my reading of the appendix's per-grader table — the paper argues graders are insulated from self-preference bias because they see a reference solution, and does not address this asymmetry)</em>. Elsewhere the reporting is honest: the generalist prover ties the baseline at nearly twice the cost; Pass@7 loses to a hand-built pipeline; the adversarial reviewer buys calibration with 8 points of anchor accuracy. The mechanism ablations run on a <em>different, smaller backbone</em>, so "erasure matters" is established somewhere the main results were not. And the deepest limitation is the authors' own: anchoring every replacement to fixed ground truth means the evaluator can never exceed the anchor's decision boundary, so a framework sold as escaping the evaluation ceiling has for now replaced one ceiling with a slightly higher one — the adversarial pool being the sole demonstrated way past it. What will outlast these numbers is the bookkeeping: epochs, anchor-gated replacement, selective erasure, exponential checkpoints.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The objective can move if you pay for it honestly.</strong> Freeze the evaluator within an epoch, change it only at exponentially spaced checkpoints, and <strong>erase every score the displaced evaluator produced</strong>. Each epoch is then a fixed-criterion search, so existing guarantees apply per epoch at linear rather than quadratic bookkeeping cost. The no-erasure control (rank correlation stuck at ρ ≥ 0.90) shows erasure is what makes the new criterion bite.</li>
+<li><strong>An anchor is what separates co-evolution from drift.</strong> Evaluators are promoted only by beating the incumbent's <em>lower-bound</em> score on fixed ground truth, never on how they scored the generators. Remove that and you get the fixed-critic ablation: a writer saturating at 75/75 under a critic 78% accurate on reality.</li>
+<li><strong>The size of the win tracks how badly you needed a learned judge.</strong> Where a verifier exists, co-evolution buys +1.8pp and a 1.35–1.72× token discount, largely because 90% of edits improve both roles at once. Where nothing can score the artifact, it buys 1.86× the acceptance rate — plus the ability to state an objective ("be as harsh on machine text as on human text") that no fixed benchmark can express.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 20:46 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The RSI Ceiling in 1,338 Runs: Agents Post-Train Competently but Never Revise Their Strategy</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>The RSI Ceiling in 1,338 Runs: Agents Post-Train Competently but Never Revise Their Strategy</h1><p class="meta">17 min read · <a href="https://arxiv.org/abs/2608.19072">arXiv:2608.19072</a> · <a href="https://arxiv.org/abs/2608.19072">arXiv</a> · <a href="https://x.com/omarsar0/status/2090466402809561334">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.19072v1">alphaxiv.org</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"What is Missing from AI Post-Training AI: An Empirical Analysis" (arXiv 2608.19072, 19 August 2026; Joy Jia Yin Lim, Xin Huang, Hao Peng, Yaxi Lu, Xin Cong, Zhong Zhang, Maosong Sun, Yankai Lin — Tsinghua-led, with co-authors at UESTC and Renmin) reads <strong>1,338 published agent trajectories</strong> in which frontier agents post-trained an LLM end-to-end, and finds one thing everywhere: the training strategy is chosen before the first line of code and then never revised.</li>
+<li>The lock-in tracks the <em>agent</em>, not the task. <strong>80.7%</strong> of Claude Code trajectories anchor on full-parameter SFT; <strong>89.6%</strong> of Codex CLI trajectories anchor on PEFT — on the same benchmarks. Across 3,557 adjacent training pairs, only <strong>74 (2.1%)</strong> ever probe a different strategy.</li>
+<li>Three escalating fixes all fail in the same way. An experience scaffold (journal + skill library + evaluator agent) lifts execution hugely (<strong>+12.6</strong> on GSM8K, <strong>+40.8</strong> on HumanEval) and moves the strategy not at all. Human plan review redirects the opening choice, then the run decays back into local tuning. Extra inference compute buys refinement, not better decisions — <strong>7.9×</strong> the tokens on AIME for one extra problem, inside the noise. The diagnosis: agents <em>can</em> execute a strategy they did not pick; they never <em>initiate</em> picking a different one.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This tracker's self-improvement thread is built on a loop: propose, run, measure, revise, repeat. The <a href="../tutorials/darwin-godel-machine.html">Darwin</a> and <a href="../tutorials/mendel-godel-machine.html">Mendel</a> Gödel Machines run it over agent source code; <a href="../tutorials/aide2-rsi-evidence.html">AIDE²</a> runs it over optimisation code and calls the nesting level-1 RSI. Every one of them assumes the "revise" arrow closes. This paper is the first large-scale measurement of whether it actually does when the artifact being improved is a <em>model</em> rather than a scaffold — and the answer is that it closes at one level and hangs open at the level above.</p>
+<p>That distinction matters more than a headline about agents being bad at research. The paper is emphatic that agents are <em>good</em> at the part everyone worries about: they build pipelines, diagnose format mismatches, repair EOS handling, select checkpoints, and produce real gains on every benchmark. What they do not do is look at ten hours of flat results and conclude they were solving the wrong problem. If that is the binding constraint, then almost everything the field is currently buying — bigger context, better memory, more inference tokens, richer scaffolds — is being spent on the wrong side of the bottleneck. Which is exactly what this paper demonstrates, one intervention at a time.</p>
+<h2>The core idea</h2>
+<p>The paper's contribution is a distinction that most discussion of "AI improving AI" runs together. Split what a post-training agent does into two levels:</p>
+<p><strong>Execution-level capability</strong> — everything you can do while keeping the plan fixed. Building and cleaning data, tuning learning rates, shaping rewards, choosing checkpoints, debugging the training script. This determines how reliably a chosen plan becomes a working pipeline.</p>
+<p><strong>Strategy-level capability</strong> — changing the plan itself. Switching training paradigm (SFT to RL), adding or removing a stage, redirecting the remaining budget. This determines whether the agent updates its judgement as evidence piles up.</p>
+<p>Formally the plan is a <strong>strategy state</strong> with three components: which training paradigm, which kind of data source, and what stage structure. A move that changes any of the three is a strategy revision; everything else — however substantive — is execution. That annotation rule is the whole methodology, and it is deliberately generous to the agents: launching a training run counts as an experiment only when a command actually updates model parameters, so writing scripts, building data, installing packages and running evaluations are all excluded from the denominator.</p>
+<p>With the distinction in hand the empirical claim is sharp. Agents score high on the first level and near zero on the second, and the gap does not close under any of the three obvious remedies.</p>
+<p><img alt="Two diagrams of the post-training loop. Top: the assumed globally closed loop, where Analyze feeds Revise the plan which feeds back into Plan/Hypothesis. Bottom: what agents actually do, a locally closed loop where Revise the plan feeds back only into Execute, leaving a linear path from the initial plan to the final checkpoint" src="assets/rsi-limit-1338-runs/fig1.png" /></p>
+<p><em>Figure 7 from the paper. Top: the loop everyone assumes — revision feeds back into the plan. Bottom: the loop that actually runs — revision feeds back only into execution, so the trajectory from initial plan to final checkpoint is a straight line.</em></p>
+<h2>How it works</h2>
+<p><strong>The loop in one sentence.</strong> The paper labels every training run in a trajectory with its strategy state, then asks whether consecutive runs differ in that state — and if they never do, escalates through three interventions to find out why. Everything else is detail about how the label is assigned and what each intervention changed.</p>
+<h3>One trajectory, start to finish</h3>
+<p>This is the AIME 2025 run under the paper's own experience-driven scaffold — the strongest setup they built, given a journal, a skill library and a dedicated evaluator agent, with ten hours on four GPUs. It is the concrete form of the abstract finding.</p>
+<p><strong>Step 1 — Before any code, the agent commits.</strong>
+It reads the workspace, pulls three skills from the library (data schema, training monitoring, known framework pitfalls), and writes one line in its journal: reinforcement learning on competition-maths data. That single line is the strategy, and nothing in the next ten hours will change it. Note what it is <em>not</em> — it is not a response to evidence, because no evidence exists yet.</p>
+<p><strong>Step 2 — First run, first real diagnosis.</strong>
+Training runs; reward climbs from 0.11 to 0.19, entropy falls from 0.40 to 0.34. The evaluator scores the checkpoint: <strong>0 of 30 problems, 60% of answers unparseable</strong>. The diagnosis is genuinely good — training teaches the model to wrap answers one way while the evaluation harness extracts them another way. Format mismatch, not a maths failure. This is exactly the competent-executor behaviour the paper credits.</p>
+<p><strong>Step 3 — Fix the format; discover a new leak.</strong>
+The reward is rewritten to prioritise the harness's extraction pattern. Score ticks to <strong>1 of 30</strong>, but unparseable answers rise to <strong>83%</strong> — the reward still contains a fallback that rewards the old format. Continue and submit anyway: back to <strong>0 of 30, 100% invalid</strong>. Journal entry: remove the fallback.</p>
+<p><strong>Step 4 — Format solved, stability broken.</strong>
+Fallback removed, small format bonus added. Unparseable answers drop to <strong>33%</strong> and the score returns to <strong>1 of 30</strong>: the format problem is genuinely fixed. But entropy now explodes. Journal entry: lower the entropy coefficient.</p>
+<p><strong>Step 5 — Two versions spent chasing the instability.</strong>
+Remove the format bonus, lower the entropy coefficient — but resuming from the previous checkpoint inherits the instability, so the run is aborted. Reinstate a small format bonus, lower the coefficient again: <strong>0 of 30, 100% invalid</strong>.</p>
+<p><strong>Step 6 — Triple the bonus, reverse the coefficient, resume from an older checkpoint.</strong>
+Every knob turned is inside the same box: reward shaping and an optimiser coefficient. The journal records "reward climbing, best performance." Then the ten hours run out.</p>
+<p><strong>Step 7 — What the agent was told, repeatedly, and never did.</strong>
+Throughout, the evaluator agent proposed adding a supervised warm-up stage before the RL — a <em>strategy</em> change — in almost every evaluation cycle. It was never adopted. On the parallel HumanEval run the same asymmetry is starker: the agent produced <strong>14 consecutive</strong> variants of one approach against a recorded plateau, the evaluator repeatedly recommended switching paradigms, and the agent went as far as <em>writing the training script for the alternative</em> and then never launched it. Aggregated across the runs, the agent adopted <strong>every</strong> execution-level suggestion and <strong>none</strong> of the strategy-level ones. It also created zero new skills in any run, despite having a skill-creation tool and being explicitly prompted to use it.</p>
+<p><img alt="An annotated six-version AIME trajectory showing setup and planning, then v1 first GRPO run with format mismatch, v2 format alignment producing reward hacking, v3 removing the fallback so format is fixed but entropy explodes, v4/v5 stabilisation attempts that abort or score zero, and v6 local repair with no strategy switch, ending in timeout" src="assets/rsi-limit-1338-runs/fig2.png" /></p>
+<p><em>Figure 10 from the paper: the trajectory above, as the authors annotate it. Every revision — reward terms, entropy coefficient, which checkpoint to resume from — sits inside the strategy chosen in the planning box at top left.</em></p>
+<h3>The machinery behind steps 1–7</h3>
+<p>Three definitions turn that story into a number you can compute over 1,338 trajectories.</p>
+<p><strong>What a "strategy" is.</strong> For trajectory <span class="arithmatex">\(i\)</span>, let <span class="arithmatex">\(t=1,\ldots,m_i\)</span> index its verified training experiments. The strategy state of experiment <span class="arithmatex">\(t\)</span> is</p>
+<div class="arithmatex">\[s_{i,t}=(k_{i,t},\,d_{i,t},\,g_{i,t})\]</div>
+<p>where <span class="arithmatex">\(k_{i,t}\in\mathcal{K}\)</span> is the training paradigm (full SFT, PEFT, DPO, GRPO, …), <span class="arithmatex">\(d_{i,t}\)</span> is the data-source type, and <span class="arithmatex">\(g_{i,t}\)</span> is the stage structure — how many training stages and in what order. Everything that experiment actually optimises is</p>
+<div class="arithmatex">\[J_{i,t}(\theta)=\mathbb{E}_{z\sim D_{i,t}}\left[\ell_{k_{i,t}}(\theta;z,\lambda_{i,t})\right]\]</div>
+<p>with <span class="arithmatex">\(\theta\)</span> the model parameters, <span class="arithmatex">\(z\)</span> a training example drawn from the distribution <span class="arithmatex">\(D_{i,t}\)</span>, <span class="arithmatex">\(\ell_{k_{i,t}}\)</span> the loss that the chosen paradigm <span class="arithmatex">\(k_{i,t}\)</span> specifies, and <span class="arithmatex">\(\lambda_{i,t}\)</span> all remaining hyperparameters. The split the paper cares about is visible right here: <strong>execution</strong> moves <span class="arithmatex">\(D_{i,t}\)</span> and <span class="arithmatex">\(\lambda_{i,t}\)</span> while holding <span class="arithmatex">\(s_{i,t}\)</span> fixed; a <strong>strategy revision</strong> is any executed change with <span class="arithmatex">\(s_{i,t}\neq s_{i,t-1}\)</span>. Everything the AIME agent did across six versions moved <span class="arithmatex">\(\lambda\)</span> and left <span class="arithmatex">\(s\)</span> untouched.</p>
+<p><strong>How locked-in the <em>opening</em> choice is.</strong> For a group <span class="arithmatex">\(G\)</span> of trajectories with at least one identifiable strategy,</p>
+<div class="arithmatex">\[C_{G}=\max_{k\in\mathcal{K}}\frac{1}{|G|}\sum_{i\in G}\mathbf{1}[k_{i,1}=k]\]</div>
+<p>Here <span class="arithmatex">\(k_{i,1}\)</span> is the paradigm of trajectory <span class="arithmatex">\(i\)</span>'s <em>first</em> training run, <span class="arithmatex">\(\mathbf{1}[\cdot]\)</span> is 1 when the condition holds and 0 otherwise, <span class="arithmatex">\(|G|\)</span> is the number of trajectories in the group, and <span class="arithmatex">\(C_G\in[0,1]\)</span> is the share taken by the single most common opening. <span class="arithmatex">\(C_G=1\)</span> means every trajectory in the group started the same way regardless of task. Grouped by scaffold, the numbers come out near that limit: 0.807 for Claude Code (full SFT), 0.896 for Codex CLI (PEFT).</p>
+<p><strong>How locked-in the run is afterwards.</strong> Let <span class="arithmatex">\(\mathcal{P}_G\)</span> be the set of adjacent training-experiment pairs whose strategy states are both recognised. Then</p>
+<div class="arithmatex">\[R_{\mathrm{change}}(G)=\frac{\sum_{(i,t)\in\mathcal{P}_{G}}\mathbf{1}[s_{i,t}\neq s_{i,t-1}]}{|\mathcal{P}_{G}|},\qquad R_{\mathrm{persist}}(G)=1-R_{\mathrm{change}}(G)\]</div>
+<p><span class="arithmatex">\((i,t)\)</span> ranges over consecutive pairs of training runs within a trajectory, <span class="arithmatex">\(|\mathcal{P}_G|\)</span> counts those pairs, <span class="arithmatex">\(R_{\mathrm{change}}\)</span> is the fraction where any strategy component moved, and <span class="arithmatex">\(R_{\mathrm{persist}}\)</span> its complement. Over the whole corpus <span class="arithmatex">\(R_{\mathrm{change}}\)</span> is <strong>0.021</strong> — 74 of 3,557 pairs, concentrated in 44 trajectories. Per scaffold it ranges from 4.7% (Claude Code) down to <strong>0.4%</strong> (OpenCode: 5 changes in 1,411 pairs).</p>
+<p>Those two numbers are the paper's core evidence, and they are complementary: <span class="arithmatex">\(C_G\)</span> says the opening is a property of the agent rather than the problem, <span class="arithmatex">\(R_{\mathrm{change}}\)</span> says nothing afterwards dislodges it.</p>
+<h3>The three interventions, and what each ruled out</h3>
+<table>
+<thead>
+<tr>
+<th>Hypothesis</th>
+<th>Intervention</th>
+<th>Effect on execution</th>
+<th>Effect on strategy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Missing experience</td>
+<td>Journal + skill library + evaluator agent</td>
+<td><strong>+12.6</strong> GSM8K, <strong>+40.8</strong> HumanEval</td>
+<td>none — all execution suggestions adopted, no strategy ones</td>
+</tr>
+<tr>
+<td>Missing guidance</td>
+<td>Human revises the plan before training starts</td>
+<td>Best AIME pass@8 of any setting (13.33%)</td>
+<td>opening redirected, then decays into local tuning</td>
+</tr>
+<tr>
+<td>Insufficient reasoning</td>
+<td>2–8× more inference tokens</td>
+<td>large gains on easy tasks</td>
+<td><strong>7.9×</strong> tokens on AIME for one extra problem</td>
+</tr>
+</tbody>
+</table>
+<p>The guidance experiment is the one that settles the diagnosis. A human reviewer told the agent that supervised fine-tuning should be a minimal formatting warm-up only, because overtraining it damages the base model's reasoning, and that the main budget belongs to RL. The agent absorbed the rationale, rewrote its plan — and then, once running, inspected the base model, determined the required output format was already achievable without any warm-up, and <strong>skipped the SFT stage entirely on its own initiative</strong>, allocating the full budget to RL. That is strategy-level reasoning, unprompted, going further than the guidance it was given. So the capability is present. But the same run then peaks early, never surpasses its best intermediate checkpoint, never restores it, and spends its remaining versions moving the entropy coefficient and learning rate back and forth.</p>
+<pre><code class="language-text"># What the paper measures, over 1,338 released trajectories
+for each trajectory i:
+    runs &lt;- executed commands that actually update model parameters
+            # writing scripts, building data, evaluating: NOT counted
+    for each run t in runs:
+        s[i][t] &lt;- (paradigm, data_source_type, stage_structure)   # LLM-labelled,
+                                                                   # authors audit
+    for t in 2..len(runs):
+        if s[i][t] != s[i][t-1]: mark pair as STRATEGY change
+        else:                    mark pair as EXECUTION change
+
+C_G        &lt;- share of trajectories in group G opening with the modal paradigm
+R_change   &lt;- STRATEGY pairs / all adjacent pairs        # -&gt; 74 / 3557 = 2.1%
+
+# then, on fresh controlled runs (3 seeds, 10h, Qwen3-1.7B-Base):
+for intervention in [experience_scaffold, human_plan_review, more_compute]:
+    run the agent; record benchmark score AND R_change
+    # every intervention moves the score; none moves R_change
+</code></pre>
+<h3>Caveats</h3>
+<p><strong>Low switching is not the same as bad switching.</strong> The authors audit the 16 trajectories that did change objective family and find both wins and losses: one ArenaHardWriting run roughly doubles its win rate after switching, another regresses on the external metric while its internal reward accuracy improves. Fourteen of the sixteen begin with SFT, eleven switch at least twice, and 15 of 35 transitions return to SFT — churn, not insight. The claim is not "switch more"; it is that agents rarely run the evidence-based comparison that would tell them whether to.</p>
+<p><strong>The strongest single number is soft.</strong> AIME 2025 has 30 problems, so one problem is inside evaluation variance. The authors say so explicitly, evaluate every submitted AIME checkpoint at pass@8 rather than pass@1, and rest the human-guidance conclusion on the qualitative redirection rather than the 13.33%.</p>
+<p><strong>Scale and scope.</strong> The corpus is 1.7B–4B base models under a 10-hour single-GPU budget; the controlled runs are one base model on three benchmarks with three seeds each, all interventions built on one agent (Claude Code with Opus 4.6). Whether a 30B model, a 100-hour budget, or a scaffold explicitly built around strategy checkpoints behaves the same way is untested. Strategy labels are assigned by an LLM from executed commands with author review — a reasonable protocol, not a perfect one.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Execution is genuinely competent.</strong> Across 1,338 trajectories: <strong>5,111</strong> training runs (3.82 per trajectory), 13.80 evaluations per trajectory, <strong>1,104</strong> final checkpoints submitted. Mean measured gain over the base model, pooled: <strong>10.41% → 23.0%</strong>. Per benchmark: BFCL 17.5→42.5, GSM8K 24.5→44.0, HumanEval 22.0→41.4, GPQA Main 8.9→17.5, HealthBench 0.0→11.6, ArenaHardWriting 0.0→2.6, AIME 2025 0.0→1.4.</li>
+<li><strong>The opening is the agent's prior, not the task's demand.</strong> Claude Code: full SFT in <strong>163/202</strong> identifiable openings (80.7%). Codex CLI: PEFT in <strong>268/299</strong> (89.6%). OpenCode: full SFT 66.3%. The authors replicate the divergence in their own runs under a different resource budget — GLM-5.2 in Claude Code uses full SFT in <strong>all 24</strong> trainings; GPT-5.2 in Codex CLI uses PEFT in <strong>28 of 35</strong>.</li>
+<li><strong>Nothing dislodges it.</strong> Strategy changes per scaffold: Claude 53/1,132 (4.7%), Codex 15/943 (1.6%), OpenCode <strong>5/1,411 (0.4%)</strong>, Qwen3Max 0/68.</li>
+<li><strong>The experience scaffold is a real execution upgrade.</strong> On Qwen3-1.7B-Base with three seeds: GSM8K <strong>64.70% → 77.30%</strong>, HumanEval <strong>22.00% → 62.80%</strong> (against the official instruct model's 66.46% — most of the remaining gap closed), AIME 3.33% → 5.56%. Component ablations: removing the evaluator agent costs the most (68.20 / 42.60), then the journal (74.50 / 50.20), then the skill library (73.10 / 54.50). The agent consults skills 18–60 times per run.</li>
+<li><strong>And it changes nothing above execution.</strong> Zero strategy-level suggestions adopted; zero new skills written in any run, even when prompted.</li>
+<li><strong>Compute has a visible ceiling.</strong> The scaffold spends 2–8× the baseline's tokens. On GSM8K and HumanEval that converts to large gains. On AIME it spends <strong>7.9×</strong> — roughly <strong>66.7M tokens</strong> — for one additional problem in the best run, inside the benchmark's variance. The extra tokens are not idle; they buy denser local search inside the locked strategy.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE² / RSI evidence</a></strong> — the direct counterweight. AIDE²'s level-1 RSI claim rests on an outer loop improving an inner one; this paper measures exactly that outer loop in a comparable setting and finds it flat. Read together, they bracket the question: nested improvement demonstrably works when the outer loop searches over <em>code</em>, and demonstrably stalls when it must search over <em>judgement about what to try next</em>.</li>
+<li><strong><a href="../tutorials/darwin-godel-machine.html">Darwin</a></strong> and <strong><a href="../tutorials/mendel-godel-machine.html">Mendel Gödel Machine</a></strong> — the constructive answer to this paper's diagnosis, arriving from the other direction. Both externalise strategy revision into search machinery the agent does not have to initiate: an archive keeps alternatives alive, a scheduler decides when to expand a different branch, and Mendel's comparative operators <em>force</em> an agent to look at two runs before editing itself. That is a mechanism for reopening a committed choice, which is precisely what these post-training agents lack.</li>
+<li><strong><a href="../tutorials/red-queen-godel-machine.html">Red Queen Gödel Machine</a></strong> — the sharper version of the same worry. If an agent will not revise its strategy under a fixed evaluator, an evaluator that gets stricter over time is one of the few forces that could make persistence untenable. RQGM's own fixed-critic ablation (a writer saturating its frozen judge at 75/75) is this paper's lock-in phenomenon in a different domain.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> — the matched-budget sceptic. This paper supplies its cleanest datapoint: 7.9× the tokens for one AIME problem, with the extra compute demonstrably going into denser search inside the wrong box.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> and <strong><a href="../tutorials/jit-agent-harness.html">JIT-Agent</a></strong> — both are bets that a better scaffold unlocks better behaviour. This paper is the boundary condition on that bet: the experience scaffold here is a good one, it moves HumanEval by 40.8 points, and it moves strategy revision by zero. Scaffolds buy execution.</li>
+<li><strong><a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a></strong> and <strong><a href="../tutorials/fragility-self-improving-agents.html">Fragility of Self-Improving Agents</a></strong> — the same failure viewed as compounding risk. If the initial choice sets the ceiling and iteration cannot lift it, then a recursive stack inherits its first bad decision all the way up.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The measurement is the contribution and it is well done: a large corpus, an annotation rule chosen to be conservative in the agents' favour, a metric anyone can recompute, and an interventional arm that goes well beyond observation. The interpretation is where I would push. "Missing spontaneity, not capability" rests almost entirely on one run — the human-guided AIME trajectory where the agent skipped a stage on its own initiative. That is a lovely observation and thin evidence for a claim about what agents <em>can</em> do; the alternative reading, that strategy revision mid-run requires a kind of counterfactual reasoning over one's own accumulated sunk work that these models simply lack, fits the same data. The paper's own audit also undercuts the strongest version of its framing: switching is not reliably good, and among the trajectories that did switch, most churned back to where they started. So the ceiling may be less "agents fail to revise" than "nobody, including humans, can cheaply tell from a 10-hour run whether a different paradigm would have been better" — a statement about the evidential poverty of the setting as much as about the agents. AIME as the hard task compounds this: 30 problems, near-zero base rate, and a headline compute-scaling result that hinges on a single problem. I would also want the interventions run on more than one agent — everything is Claude Code with Opus 4.6, on a corpus that shows scaffold identity is the single strongest predictor of behaviour, which makes generalising from one scaffold uncomfortable. None of that dents the central finding. Two percent of adjacent training pairs change strategy; an experience scaffold worth 40 points of HumanEval changes it by nothing; and the remedy the paper proposes — make strategy revision an explicit, rewarded decision point rather than an implicit option buried in a long context — is both cheap to try and, notably, exactly what the Gödel-machine archive architectures already implement by accident.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The loop closes locally and hangs open globally.</strong> Agents produce results, diagnose failures and repair pipelines all day; they never step back and change the plan. Only <strong>2.1%</strong> of adjacent training runs differ in paradigm, data-source type or stage structure, and in one scaffold it is 0.4%.</li>
+<li><strong>The lock-in is a property of the agent, not the problem.</strong> 80.7% of Claude Code runs open with full SFT, 89.6% of Codex CLI runs open with PEFT, on the same benchmarks. Whatever the ceiling of a run is, it was set before any evidence existed.</li>
+<li><strong>Every obvious remedy buys execution and nothing else.</strong> Experience: +40.8 HumanEval, zero strategy changes, zero new skills written. Guidance: redirects the opening, then decays. Compute: 7.9× tokens for one AIME problem. If strategy revision is the bottleneck, it needs a mechanism — a rewarded decision point, or an archive that keeps alternatives alive — not more of any resource.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-28 20:46 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
