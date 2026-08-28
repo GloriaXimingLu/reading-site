@@ -87,8 +87,8 @@ Depth is not set in advance. The stack grows until the improver returns nothing,
 </tr>
 </tbody>
 </table>
-<p>The categorical result is the rollback role: <strong>zero at depth 2 in both substrates under both raters, 55% (code) and 33% (prompt) at depth 3</strong>. A layer cannot roll anything back until there is something above the solver to roll back — this is what a genuinely new level looks like rather than a louder version of the old one. Inter-rater agreement averages Cohen's <span class="arithmatex">\(\kappa=0.59\)</span>, weakest (0.30–0.37) on the two most abstract categories.</p>
-<p>Depth stops paying on average while continuing to pay in the tail: mean score per depth peaks at depth 3 (0.726) and falls to 0.602 by depth 6, yet depth-≥4 candidates win <strong>31% of CO-Bench tasks, 80% of SR-matsci, 70% of SR-phys-osc</strong>, and <code>constrained_guillotine_cutting</code> first opens at depth 5 with every ancestor scoring 0. A per-depth mean is not what an archive optimizes.</p>
+<p>The categorical result is the rollback role: <strong>zero at depth 2 in both substrates under both raters, 55% (code) and 33% (prompt) at depth 3</strong>. A layer cannot roll anything back until there is something above the solver to roll back — that is what a genuinely new level looks like. Inter-rater agreement averages Cohen's <span class="arithmatex">\(\kappa=0.59\)</span>, weakest (0.30–0.37) on the two most abstract categories.</p>
+<p>Depth stops paying on average while continuing to pay in the tail: mean score per depth peaks at depth 3 (0.726) and falls to 0.602 by depth 6, yet depth-≥4 candidates win <strong>31% of CO-Bench tasks, 80% of SR-matsci, 70% of SR-phys-osc</strong>. A per-depth mean is not what an archive optimizes.</p>
 <pre><code class="language-text"># Evolutionary meta-recursion (Algorithm 1), LawBench run in the margin
 A &lt;- {(S1, base mean)};  S* &lt;- base mean;  p &lt;- 0   # archive, archive-best, patience
 while p &lt; P:
@@ -142,6 +142,6 @@ return best chain by mean score, and S*
 <li><strong>Depth is structurally real, and rollback proves it.</strong> Across 596 emissions scored by two independent raters, the rollback role is exactly <strong>zero at depth 2</strong> and appears at depth 3 (55% code, 33% prompt): a layer cannot correct a layer that does not exist. ARC-AGI-2 is the outcome version — <strong>0.331</strong> for the full stack against 0.123 for its own best single chain and ≈0 for both baselines.</li>
 <li><strong>The gain is in the conditioning, not the code.</strong> Removing the inter-layer context string costs 0.094 of the 0.131 recursion gain (~72%); removing the code library costs 0.020 (~15%). The architecture is built around code transfer between layers and the measurement says the string matters more — either the paper's most useful finding or the crack in its own story, depending on which control you run next.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-08-28 21:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-08-28 21:04 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
