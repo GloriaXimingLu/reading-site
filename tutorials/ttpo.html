@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTPO: Test-Time Policy Optimization from Majority-Vote Pseudo-Labels</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>TTPO: Test-Time Policy Optimization from Majority-Vote Pseudo-Labels</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.27448">arXiv:2608.27448</a> · <a href="https://arxiv.org/abs/2608.27448">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2093479756821934499">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.27448">alphaxiv.org</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>TTPO (arXiv 2608.27448; Aozhe Wang, Zhengxi Lu et al., Zhejiang University + Alibaba) makes test-time training work on problems where the majority vote is <em>usually wrong</em>: on AIME 2026 with Qwen3-1.7B the majority-vote pseudo-label is wrong on ~85% of prompts, yet label-free TTPO lifts that model's three-benchmark TTT average from 38.0% to 45.2%, beating TTRL (40.2) and a self-distillation baseline (41.9).</li>
+<li>The trick is an <strong>asymmetric split of the pseudo-label's blast radius</strong>: rollouts that <em>agree</em> with the vote get dense on-policy self-distillation (OPSD) from a teacher conditioned on that same answer — safe even when the answer is wrong, because it degenerates into thinking→non-thinking distillation; rollouts that <em>disagree</em> get a GRPO penalty that uses only the fact of disagreement, never the vote's content — and ~79% of disagreeing rollouts are wrong regardless of whether the vote is.</li>
+<li>The surprise result: with the asymmetric objective in place, majority-vote pseudo-labels <em>outperform ground-truth labels</em> for TTT — correct labels on hard problems produce almost no agreeing rollouts, starving the distillation branch, while the vote always splits the group into two usable halves. Self-supervision that tracks the model's current ability beats supervision the model can't yet reach.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every strong post-training signal this tracker follows — RLVR, on-policy self-distillation, their hybrids — assumes a ground-truth answer exists: the verifier needs it to score, the OPSD teacher needs it as privileged context. Test-time training is exactly the setting where that assumption breaks: the model must improve on the very problems it is being asked to solve, and no label ever arrives.</p>
+<p>The known label-free fallback is TTRL: sample a group, take the majority answer as a pseudo-reward, run GRPO. But a scalar reward is one bit per trajectory, and dense distillation — the thing that makes OPSD so sample-efficient — seemed too dangerous to port over: a wrong reward misleads once per trajectory, a wrong <em>teacher</em> misleads at every token. Since pseudo-labels on competition math are wrong for the vast majority of prompts, dense label-free supervision looked infeasible.</p>
+<p>TTPO's contribution is showing that the danger is not symmetric across the two halves of the rollout group, and that routing each half to the signal that stays correct under label noise recovers nearly everything: trained <em>without labels</em>, TTPO matches or slightly beats <em>label-supervised</em> OPSD on five competition benchmarks (40.1 vs 39.7 on 1.7B, 58.6 vs 58.4 on 4B, 62.6 vs 61.7 on 8B). For anyone thinking about agents or models that improve during deployment — the core concern of this tracker — that is the interesting boundary being moved: dense self-supervision without any external verifier.</p>
+<h2>The core idea</h2>
+<p>Sample K rollouts for a problem, cluster the final answers, call the largest cluster the pseudo-label <span class="arithmatex">\( \hat{a} \)</span>. This partitions the group into positives <span class="arithmatex">\( \mathcal{P} \)</span> (answer ≡ <span class="arithmatex">\( \hat{a} \)</span>) and negatives <span class="arithmatex">\( \mathcal{N} \)</span> (answer ≢ <span class="arithmatex">\( \hat{a} \)</span>).</p>
+<p>Now ask: what update stays <em>correct</em> on each side when <span class="arithmatex">\( \hat{a} \)</span> is wrong — the common case?</p>
+<p><strong>Negatives:</strong> the paper's key measurement is that even when the vote is wrong, ~79% of disagreeing rollouts have answers that are neither the vote nor the truth — they are simply wrong. A penalty on a disagreeing rollout uses only "you are not in the majority cluster"; it never consults the vote's content. So penalizing <span class="arithmatex">\( \mathcal{N} \)</span> with GRPO is usually right no matter how bad the vote is. This is the negative-learning-from-noisy-labels insight ("what this sample is <em>not</em>" survives label errors) transplanted into RLVR.</p>
+<p><strong>Positives:</strong> distillation toward the pseudo-label seems doomed when the label is wrong — but the positives, by definition, <em>already produced that answer</em>. The OPSD teacher is the same model conditioned on <span class="arithmatex">\( \hat{a} \)</span> as privileged context; for an agreeing rollout, that context matches the rollout's own conclusion, so even under a wrong vote the update reduces to distilling the model's careful (thinking, answer-in-hand) distribution into its unconditioned one — not steering it toward an arbitrary error. The paper's ablation quantifies the floor: pure thinking→non-thinking distillation alone scores 45.7 on AIME26 TTT, so the "corrupted" positive branch never falls below a genuinely useful signal.</p>
+<p>The asymmetry, in the authors' framing, minimizes the blast radius: distill everything and one wrong vote corrupts all K trajectories; distill only <span class="arithmatex">\( \mathcal{P} \)</span> and penalize <span class="arithmatex">\( \mathcal{N} \)</span>, and the corruption is confined to the (small, and mostly self-consistent) positive set.</p>
+<p><img alt="Figure 1 from the paper: (a) when pseudo-labels are wrong, most disagreeing rollouts are wrong too; (b) TTPO overview; (c) Qwen3-1.7B average accuracy on AIME 2026, HMMT 2026, BRUMO 2025" src="assets/ttpo/fig1.png" /></p>
+<p><em>Figure 1 from the paper: the motivating measurement (wrong votes, but disagreeing rollouts wrong anyway), the method sketch, and the headline TTT accuracy.</em></p>
+<h2>How it works</h2>
+<p>The teacher and student are the same policy <span class="arithmatex">\( \pi_\theta \)</span> with different prompt prefixes — the teacher sees the pseudo-label, the student does not:</p>
+<div class="arithmatex">\[ q_{t}^{(\hat{a})}=\pi_{\theta}(\cdot\mid[x;\hat{a}]_{\text{teacher}},y_{&lt;t}) \;\text{(no grad)}, \qquad p_{t}=\pi_{\theta}(\cdot\mid x_{\text{student}},y_{&lt;t}) \;\text{(with grad)} \]</div>
+<p>where <span class="arithmatex">\( x \)</span> is the problem, <span class="arithmatex">\( y_{&lt;t} \)</span> the shared rollout prefix, and <span class="arithmatex">\( q_t, p_t \)</span> the teacher/student next-token distributions.</p>
+<p><strong>Positive branch — weighted forward KL.</strong> Each positive rollout is distilled token-by-token, but not uniformly:</p>
+<div class="arithmatex">\[ \mathcal{L}_{\text{OPSD}}(k)=\frac{1}{T_{k}}\sum_{t=1}^{T_{k}}w(t)\cdot\text{KL}\left(q_{t}^{(\hat{a})}\,\|\,p_{t}\right), \qquad w(t)=\hat{H}(t)+\hat{\Delta}(t)-\hat{H}(t)\cdot\hat{\Delta}(t) \]</div>
+<p>Here <span class="arithmatex">\( \hat{H}(t) \)</span> is the student's (min-max normalized) entropy and <span class="arithmatex">\( \hat{\Delta}(t) \)</span> the normalized teacher–student KL; the Soft-OR gives weight when <em>either</em> the student is uncertain <em>or</em> confidently disagrees with the teacher, and goes to zero only where the student has already converged.</p>
+<p><strong>Negative branch — masked GRPO penalty.</strong> Binary rewards (1 if answer matches <span class="arithmatex">\( \hat{a} \)</span>, else 0) with group-relative advantages make <span class="arithmatex">\( A_k&lt;0 \)</span> for negatives:</p>
+<div class="arithmatex">\[ \mathcal{L}_{\text{GRPO}}(k)=-\frac{A_{k}}{T_{k}}\sum_{t=1}^{T_{k}}m(t)\cdot\log\pi_{\theta}(y_{k}^{(t)}\mid x,y_{k}^{(&lt;t)}), \qquad s(t)=-\log\pi_\theta(y_{k}^{(t)}\mid\cdot)\cdot(1-\hat{H}(t)) \]</div>
+<p>with mask <span class="arithmatex">\( m(t)=\mathbf{1}[s(t)\geq\text{median}] \)</span>: only the top-50% of tokens by <span class="arithmatex">\( s(t) \)</span> — low-probability <em>and</em> low-entropy, i.e. the model confidently produced something it considers unlikely — get penalized. Because GRPO here acts only on negatives, there is no positive-advantage counterweight to cancel false penalties on locally correct steps, so masking is doing real work (removing it costs up to 4.7 points on BRUMO25).</p>
+<p><strong>Combined:</strong> <span class="arithmatex">\( \mathcal{L}_{\text{TTPO}}=\frac{1}{|\mathcal{B}|}\left(\sum_{k\in\mathcal{P}}\mathcal{L}_{\text{OPSD}}(k)+\lambda\sum_{k\in\mathcal{N}}\mathcal{L}_{\text{GRPO}}(k)\right) \)</span> with <span class="arithmatex">\( \lambda=0.1 \)</span>.</p>
+<p><img alt="Figure 2 from the paper: K rollouts are majority-voted into positive and negative sets; positives get per-token forward KL with token weighting, negatives get group advantages with token masking" src="assets/ttpo/fig2.png" /></p>
+<p><em>Figure 2 from the paper: the two branches and their token-level selection mechanisms.</em></p>
+<pre><code class="language-text">Algorithm: TTPO training (per iteration)
+  for each unlabeled problem x:
+    sample K=64 rollouts y_1..y_K ~ π_θ(·|x); extract answers a_k
+    â ← plurality answer (by mathematical equivalence)
+    P ← {k : a_k = â};  N ← {k : a_k ≠ â}
+    select K_train=8 rollouts (50% from P, 50% from N)
+  teacher forward: q_t ← π_θ(·|[x; â], y_&lt;t)   (no grad)
+  student forward: p_t ← π_θ(·|x, y_&lt;t)        (with grad)
+  # positive branch (OPSD)
+  w(t) ← Ĥ(t) + Δ̂(t) − Ĥ(t)·Δ̂(t)              # soft-OR of entropy &amp; divergence
+  L_OPSD ← mean over P of (1/T_k) Σ_t w(t)·KL(q_t ∥ p_t)
+  # negative branch (GRPO)
+  s(t) ← −log p_t(y_t) · (1 − Ĥ(t));  m(t) ← 1[s(t) ≥ median]
+  L_GRPO ← −mean over N of (A_k/T_k) Σ_t m(t)·log π_θ(y_t | x, y_&lt;t)
+  θ ← θ − η ∇(L_OPSD + 0.1·L_GRPO)             # LoRA r=64 on all linear layers
+</code></pre>
+<p>Practical footprint: K=64 rollouts per problem (needed for reliable votes at low pass rates), 16k-token generation cap, LoRA-only updates, 100 training steps.</p>
+<h2>Results</h2>
+<p><strong>Against labeled methods (OpenThoughts training set, Avg@12 over five competition benchmarks):</strong> TTPO without labels vs OPSD/GRPO with labels — 40.1 vs 39.7 (OPSD) and 35.7 (GRPO) on Qwen3-1.7B; 58.6 vs 58.4 on 4B; 62.6 vs 61.7 on 8B. Label-free matches label-supervised, consistently.</p>
+<p><strong>Pure TTT (train = test, no labels for anyone):</strong> on the AIME26/HMMT26/BRUMO25 average — 1.7B: base 38.0 → TTRL 40.2 → OPSD-TTT 41.9 → <strong>TTPO 45.2</strong>; 4B: 57.4 → <strong>61.1</strong>; 8B: 60.7 → <strong>65.3</strong>. TTPO on 4B (61.1) beats the untouched 8B (60.7). With thinking mode disabled at eval, gains reach +25.2 to +36.4 points — the distillation branch is literally installing the thinking-mode behavior into the non-thinking mode.</p>
+<p><strong>The ablations tell the story cleanly.</strong> Swapping branch assignments: full TTPO 48.9 on AIME26; positive-only FKL 46.7; FKL on everything 46.3; FKL on negatives 43.9; GRPO on positives 37.2; the fully reversed assignment 37.2. Every deviation from "distill agreement, penalize disagreement" loses points, and the reversed design — reinforce what agrees with a mostly-wrong vote, distill the disagreers toward it — is worst.</p>
+<p><strong>Ground truth loses to the vote.</strong> Replacing pseudo-labels with real answers (same objective) <em>hurts</em>: hard problems yield few or zero agreeing rollouts, so the distillation branch starves and group advantages flatten toward zero. And the self-evolution plot shows why the ceiling is soft: as training proceeds, Avg@12 climbs toward the base model's Maj@12, and Maj@12 itself rises — better single samples produce better votes, which raise the training signal for the next step.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Demystifying RL Post-Training</strong> (2608.24949, also tracked this week) argues sparse RLVR mostly amplifies behaviors the base model can already sample and dense process rewards are needed to escape the exploration bottleneck. TTPO is the label-free version of the same conclusion: its dense branch (OPSD) does the heavy lifting, and its self-evolution loop is exactly "amplify what the model can already sample" — which is why it works <em>within</em> the majority-vote regime rather than learning genuinely unreachable behaviors.</li>
+<li><strong>Self-OPD</strong> (tracked today): on-policy distillation without a teacher for flow-matching models — the same "manufacture privileged supervision from your own exploration" move in a different modality.</li>
+<li><strong>CLR: Test-Time Scaling via Solve/Falsify Asymmetry</strong> (2608.11994): another method built on an asymmetry between confirming and rejecting candidate answers; TTPO's "disagreement is reliable even when the vote isn't" is the training-time cousin.</li>
+<li><strong>MOPD / Open-MOPD / OPD-Dual-Nature</strong> (tracked): the OPD line this branch borrows its forward-KL machinery from; TTPO shows that line survives losing the ground-truth conditioning.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The evaluation protocol is generous: peak performance across checkpoints, on benchmarks that in the TTT setting <em>are</em> the training set, with Avg@12 at temperature 1.0 — some of the headline gap over baselines (which get the same treatment) is fine, but the absolute numbers carry selection noise. The Table-1 gains on 4B/8B over labeled OPSD (58.6 vs 58.4, 62.6 vs 61.7) are within what I'd expect from checkpoint selection alone; the TTT-setting gaps are the real evidence.</p>
+<p>The 79% statistic is doing all the load-bearing work, and it is a property of <em>competition math with a small model</em> — a regime where most rollouts are wrong. On easier distributions the negative set shrinks and contains proportionally more genuinely-correct rollouts penalized for disagreeing with a wrong vote (the correct-answer-extinction failure mode the paper itself cites via Lin et al.). TTPO has no mechanism to detect that regime; <span class="arithmatex">\( \lambda \)</span> is fixed. Cost is also nontrivial: 64 rollouts per problem is a big multiple of inference — the payoff only amortizes because the improved model then answers in one sample (and eventually beats its own starting Maj@12, which pure voting cannot).</p>
+<p>What I like most is the diagnosis, not the recipe: the paper localizes <em>where</em> pseudo-label noise enters each objective (teacher content vs membership bit) and routes updates accordingly. That analysis style should transfer to agentic TTT — where "majority vote" becomes "majority outcome across trajectories" and the same asymmetry plausibly holds. Nobody has done that paper yet; it's an obvious next thing to watch for.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Wrong votes still supervise:</strong> ~85% wrong pseudo-labels, but ~79% of vote-disagreeing rollouts are wrong regardless — so penalize disagreement (content-free) and distill agreement (self-consistent), and both updates survive label noise.</li>
+<li><strong>Label-free matches labeled:</strong> TTPO ≈ ground-truth OPSD on five competition benchmarks, and in pure TTT lifts Qwen3-1.7B 38.0→45.2, with the 4B model overtaking the 8B base.</li>
+<li><strong>The vote beats the truth for TTT:</strong> ground-truth labels starve both branches on problems the model can't yet solve; majority votes track current ability, keep both branches fed, and rise as the model improves — supervision difficulty auto-calibrated to capability.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-30 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
