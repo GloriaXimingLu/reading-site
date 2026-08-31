@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sliding-Window Beats Linear Attention: The Missing Baseline for Linearization</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Sliding-Window Beats Linear Attention: The Missing Baseline for Linearization</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.28444">arXiv:2608.28444</a> · <a href="https://arxiv.org/abs/2608.28444">arXiv</a> · <a href="https://x.com/jm_alexia/status/2094414735408050687">X post</a> · <a href="../index.html#architecture">Architecture &amp; Efficiency</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Sliding-window beats linear attention" (arXiv 2608.28444; Alexia Jolicoeur-Martineau, Rhea Sanjay Sukthanker, Pashmina Cameron — Microsoft ASG; Emy Gervais) makes a baseline argument: before post-training a pretrained LLM into linear attention (LoLCATs, Liger-GLA, SUPRA, MOHAWK, QRWKV…), you should compare against just <em>changing the attention mask</em> to a sliding window with 4 attention sinks — zero training tokens, standard FlashAttention kernels.</li>
+<li>Across 11 model settings (1.3B–72B, Phi/Mistral/Llama/Qwen), SWA(64, 4 sinks) recovers 93.2% of teacher MMLU and 99.0% of the 6-benchmark average — best or tied-best in 9 of 11 cases, beating linearization methods that spent 20M–20B post-training tokens.</li>
+<li>On long-context tasks the gap is dramatic: at 4K context, SWA recovers 17–23% of full-attention S-NIAH accuracy vs ≤5.8% for LoLCATs and ≤0.8% for Liger-GLA; on BABILong-4K, 15% vs 3%. The recommendation: for fixed-memory inference, use training-free SWA+sinks; linear attention likely needs from-scratch pretraining to even match it.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>A whole research line sells linearization as "quadratic → linear at low cost": take a pretrained softmax transformer, swap attention for a linear/recurrent form, recover performance with modest post-training. The pitch matters because the KV cache is the binding constraint on serving long contexts and long reasoning traces. This paper's charge is that the line has been benchmarked against the wrong control. Most linearization papers compare against <em>sink-free</em> SWA — which is known to collapse catastrophically once the first tokens leave the window (the attention-sink phenomenon, Xiao et al. 2024). Add the 4 sink tokens back and the "simple baseline" stops being a strawman: it is training-free, runs on FlashAttention (no exotic kernels), gives a fixed-size cache, and — per this paper — matches or beats the linearized models those methods produce, especially anywhere retrieval over context is involved.</p>
+<p>For this tracker the meta-lesson is as valuable as the result: an evaluation-hygiene paper that reorders a subfield's cost-benefit table without training anything. Every linearization result now needs a "vs SWA+sinks" row, the same way every RAG paper needs a BM25 row.</p>
+<h2>The core idea</h2>
+<p>Standard causal self-attention computes, for each position <span class="arithmatex">\( t \)</span>:</p>
+<div class="arithmatex">\[ \mathbf{x}_{t}=\frac{\sum_{i=1}^{t}\exp(\mathbf{q}_{t}\mathbf{k}_{i}^{\top}/\sqrt{d})\,\mathbf{v}_{i}}{\sum_{i=1}^{t}\exp(\mathbf{q}_{t}\mathbf{k}_{i}^{\top}/\sqrt{d})} \]</div>
+<p>with <span class="arithmatex">\( \mathbf{q}, \mathbf{k}, \mathbf{v} \)</span> the query/key/value projections and <span class="arithmatex">\( d \)</span> the head dimension — <span class="arithmatex">\( \mathcal{O}(DL^2) \)</span> compute and an ever-growing KV cache. SWA(<span class="arithmatex">\(w\)</span>, <span class="arithmatex">\(s\)</span>) restricts the sum to the last <span class="arithmatex">\( w \)</span> tokens plus the first <span class="arithmatex">\( s{=}4 \)</span> sink tokens:</p>
+<div class="arithmatex">\[ \mathbf{x}_{t}=\frac{\sum_{i=\max(1,\,t-w+1)}^{t}\exp(\mathbf{q}_{t}\mathbf{k}_{i}^{\top}/\sqrt{d})\,\mathbf{v}_{i}}{\sum_{i=\max(1,\,t-w+1)}^{t}\exp(\mathbf{q}_{t}\mathbf{k}_{i}^{\top}/\sqrt{d})} \;+\; \text{(sink tokens } i\le s\text{)} \]</div>
+<p>(the sink extension of the window sum is my compression of the paper's mask description — the paper writes the pure-window form and specifies sinks in the mask). The receptive field still grows with depth (~<span class="arithmatex">\( lw \)</span> after <span class="arithmatex">\( l \)</span> layers), and the sinks absorb the "parked" attention mass that pretrained LLMs dump on early tokens; without them, performance is "horrendous" the moment sinks scroll out of the window.</p>
+<p>Linear attention instead replaces the exponential with a factorized kernel <span class="arithmatex">\( \exp(\mathbf{q}_t\mathbf{k}_i^\top)\approx\phi(\mathbf{q}_t)\phi(\mathbf{k}_i)^\top \)</span>, collapsing history into a fixed-size recurrent state:</p>
+<div class="arithmatex">\[ \mathbf{s}_{t}=\mathbf{s}_{t-1}+\phi(\mathbf{k}_{t})^{\top}\mathbf{v}_{t},\qquad \mathbf{z}_{t}=\mathbf{z}_{t-1}+\phi(\mathbf{k}_{t})^{\top},\qquad \mathbf{x}_t=\frac{\phi(\mathbf{q}_t)\mathbf{s}_t}{\phi(\mathbf{q}_t)\mathbf{z}_t} \]</div>
+<p>— <span class="arithmatex">\( \mathcal{O}(1) \)</span> per token, but the state must continuously decide what to overwrite, and retrofitting it onto a softmax-pretrained model requires post-training (Hedgehog's learnable kernel <span class="arithmatex">\( \phi(x)=(\exp(f(x)), \exp(-f(x))) \)</span>, LoRA in LoLCATs, multi-stage distillation in MOHAWK/Llamba…).</p>
+<p><img alt="Attention masks compared: full causal attention; LoLCATs' mixture of linear attention everywhere plus a small softmax sliding window; SWA with sinks — softmax attention on the first 4 tokens and a sliding window" src="assets/swa-sinks-vs-linear-attention/fig1.png" /></p>
+<p><em>Figure 1 from the paper: full attention, LoLCATs(+SWA) (linear attention backfilling everything outside the window), and SWA with sinks — the paper's claim is the green region isn't earning its post-training cost.</em></p>
+<h2>How it works</h2>
+<p>There is no training loop; the "method" is an evaluation protocol:</p>
+<pre><code class="language-text">Protocol: linearization vs the training-free control
+  for each base LLM (Phi-1.5, Mistral-7B, Llama-2/3.0/3.1 (8B,70B),
+                     Qwen2.5 (7B,32B,72B), QwQ-32B):
+    teacher     = full attention (upper bound)
+    control     = same weights, mask switched to SWA(w=64..512, s=4)   # 0 tokens
+    competitors = published linearized versions of the same base
+                  (SUPRA, Hedgehog, LoLCATs, Liger-GLA, MOHAWK,
+                   Mamba-in-the-Llama, DiJiang, ARWKV, Llamba, QLinAtt, QRWKV6/7)
+    evaluate:
+      short-context: MMLU-5shot, ARC-C/E, HellaSwag, PIQA, WinoGrande
+      long-context:  S-NIAH-1/2/3 at 0.5K–4K (Llama-3.1-8B base, w=128/256/512)
+                     BABILong QA1–5 at 0K–4K (w=256)
+      systems:       decode throughput + cache/state memory, 128→256K ctx
+    report recovery = student score / teacher score
+  exclusions: hybrid models with full-attention layers (fairness)
+</code></pre>
+<p>Notation: SWA(<span class="arithmatex">\(w\)</span>, <span class="arithmatex">\(s\)</span>) = window <span class="arithmatex">\( w \)</span> (64–512 across experiments), sinks <span class="arithmatex">\( s{=}4 \)</span> always. FA and SWA use FlashAttention backends; linear attention uses ThunderKittens kernels; LoLCATs uses the fused SWA+linear kernel at <span class="arithmatex">\( w{=}256 \)</span>.</p>
+<h2>Results</h2>
+<p><strong>Short-context knowledge/reasoning (Table 1–2).</strong> SWA(64, 4) — a 64-token window! — recovers 99.0% of the average teacher score and 93.2% on MMLU, the best MMLU recovery of any method; QRWKV6 is the only serious rival (99.1% average) and it costs 350–700M post-training tokens across 3 stages. LoLCATs at 40M tokens recovers just 83.2% of MMLU. SWA takes the best non-teacher average in 9/11 settings; the exceptions are LoLCATs on Phi-1.5 (62.5 vs 62.4 — a rounding-level win) and QRWKV6 on Qwen2.5-32B. On QwQ-32B, SWA loses <em>nothing</em> (75.2 = teacher).</p>
+<p><strong>Long-context (Tables 3–4).</strong> This is the demolition. S-NIAH at 4K context, window 512: SWA scores 19.0/23.0/23.0 across the three needle tasks; LoLCATs manages 8.8/16.6/5.8; Liger-GLA ≤0.8 essentially everywhere past 1K. BABILong at 4K: SWA 15 vs LoLCATs 3 (full attention: 60). The post-trained linear models don't degrade gracefully — they fall off a cliff as soon as retrieval must reach beyond the softmax window, because the recurrent state has already overwritten it.</p>
+<p><strong>Speed/memory (Figure 2).</strong> SWA is the fastest method at every context length (flat throughput while FA decays past 1K), and at <span class="arithmatex">\( w{=}64 \)</span> has the lowest memory of all — below the linear-attention state. At <span class="arithmatex">\( w{=}512 \)</span> its cache exceeds linear attention's state; the crossover is the honest price of the approach.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Prefix Sliding for Efficient Test-Time Scaling (prefix-sliding)</strong>: the same mask philosophy applied to reasoning traces — keep the prefix (≈ the sinks + instructions/tools, semantically load-bearing) plus a recent window, discard the middle. Together they suggest "prefix + recent window" is a robust default at both the architecture and the trace level.</li>
+<li><strong>Learning How to Forget (tracked today, Amazon)</strong>: the complement. This paper is training-free SWA at inference; that one shows fine-tuning <em>matched to the inference cache policy</em> removes the degenerate behaviors that appear when training assumes full attention. The two bracket the obvious next experiment: SWA+sinks with a small amount of policy-matched post-training (the paper cites Yu et al. 2025 that post-training boosts SWA further).</li>
+<li><strong>How Pretraining Choices Hurt Long-Context Extension (tracked)</strong>: found SWA-pretrained models extend worse to long contexts — a caution that SWA-as-mask at inference and SWA-as-pretraining-choice have different failure modes; don't conflate this paper's recommendation with "pretrain with SWA."</li>
+<li><strong>Maglev: Sliding Recurrent Memory via Teacher-Provided States (tracked)</strong> and the retrofit-TTT line: attempts to get the best of both — recurrent compression <em>plus</em> softmax locality. This paper's tables are the baseline those hybrids must now clear.</li>
+<li><strong>Qwen3.8-Flash Tech Report (tracked today)</strong>: production reality check — frontier efficient models are going <em>hybrid</em> (3 GDN layers : 1 sparse-softmax layer), which this paper deliberately excluded from comparison. The paper's claim is about pure linearization retrofits, not about linear-attention components inside architectures pretrained for them.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline verb ("beats") is doing marketing work; the precise claim is narrower and stronger: <em>post-hoc linearization of softmax-pretrained models has been beating a strawman control</em>. Oliver Sieberling's commentary (quoted in the tracked thread) puts the sharpest frame on it: when you adapt a strong pretrained model with little data, the least-invasive modification wins almost by construction — swapping a mask is minimally invasive, swapping the attention operator is maximally so. Read that way, the paper doesn't show sliding windows are <em>better than</em> linear attention as a mechanism; it shows retrofit cost scales with invasiveness, so "if you want linear attention, pretrain on linear attention." The authors basically agree (their conclusion says linear models "likely require to be trained from scratch").</p>
+<p>Second caveat: don't let "2–10× higher than linear attention" hide that <em>both are bad</em> at long context — SWA-4K recovers 15–25% of full attention on BABILong/S-NIAH. SWA+sinks is a fixed-memory <em>degradation policy</em>, not a long-context solution; nothing here touches the 128K-agent-trace regime, where you'd still need hybrid layers, retrieval, or cache policies with content-aware selection (cf. Qwen's QSA indexer). Third: the strongest linearization competitor (QRWKV6) actually ties or wins twice, and hybrids with a few full-attention layers — the configuration practitioners actually deploy — were excluded for fairness; the practically relevant table (hybrid-linear vs SWA vs sparse) is still unwritten. Finally, evaluations stop at 4K context and skip instruction-following/generation-heavy and agentic tasks (the authors flag this); a 64-token window recovering 99% of <em>multiple-choice</em> averages partly reflects how local those benchmarks are (inferred — the paper doesn't decompose benchmark locality; verify in the paper).</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>The control group for every linearization paper was broken: sink-free SWA collapses by construction, and adding 4 sink tokens turns the "trivial baseline" into one that matches (99% average recovery) or beats post-trained linear attention at zero training cost, on standard kernels.</li>
+<li>Retrieval is where retrofitted linear attention actually dies: at 4K, SWA recovers 17–25% of full-attention needle/BABILong performance while LoLCATs/Liger-GLA recover ≤6% — a fixed-size recurrent state that overwrites history loses exactly what a (window + sinks) cache keeps reachable.</li>
+<li>The fair reading is about invasiveness, not mechanisms: minimal-change adaptations win under small post-training budgets, so linear attention's real test is pretraining-native (or hybrid) designs — and any future retrofit claim owes you a SWA+sinks row.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-31 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

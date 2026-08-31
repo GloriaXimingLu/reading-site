@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PILOT in the Loop: Live Self-Improvement for Long-Horizon Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>PILOT in the Loop: Live Self-Improvement for Long-Horizon Agents</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.26530">arXiv:2608.26530</a> · <a href="https://arxiv.org/abs/2608.26530">arXiv</a> · <a href="https://github.com/XiaoYang66/Pilot">GitHub</a> · <a href="https://x.com/rohanpaul_ai/status/2094260136457982023">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>PILOT (arXiv 2608.26530; Yang Xiao, Yusong Sun et al., "AllSpark Team") argues self-improvement should be <strong>live</strong>: a frozen supervisor stays connected to an active worker through a two-way channel, can steer or abort it mid-run, and distils procedures and failure modes into persistent skills/memory <em>while the run is still going</em> — instead of reflecting only after the trajectory ends.</li>
+<li>With the same frozen backbone in both roles, PILOT ranks first in 5 of 6 backbone×benchmark configurations (Terminal-Bench 2.0, SWE-bench Multilingual, SWE-bench Pro; GLM-5.1 and Kimi-K2.6), beating the strongest single-agent harness (Pi) by 5.3 points on TB2.0 average (71.6 vs 66.3) and 4.4 on SWE-bench Pro (59.9 vs 55.5).</li>
+<li>Over 20 self-improvement iterations on Terminal-Bench 2.0, best-observed pass rate climbs +14.6 points (GLM-5.1) and +12.4 (Kimi-K2.6) while mean output tokens per task <em>fall</em> 42.9%/47.4% — the accumulated skill library replaces repeated exploration, more than doubling successful evaluations per million output tokens (+110.3%/+134.0%).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Almost every self-improvement mechanism this tracker follows — Reflexion-style reflection, judge-based evaluation, skill-library evolution à la WikiSkill, harness optimization à la Meta-Harness — is post-hoc: the learning step begins after the trajectory that produced the lesson has ended. That has two costs the paper names precisely. First, the run that generated the lesson cannot be saved by it; a 3-hour Terminal-Bench attempt that drifts at minute 20 is simply lost. Second, a lesson extracted post-hoc cannot be validated until some <em>later</em> rollout, so bad lessons survive a full cycle before being falsified.</p>
+<p>The architectural diagnosis is the interesting part. Single-agent self-correction (ReAct + Self-Refine-style loops) is timely but structurally compromised: the same context that must hold the diagnosis is stuffed with execution detail, so the agent judging the strategy is the agent drowning in it. Subagent delegation (Magentic-One, Claude Code subagents) separates contexts but is fire-and-forget: the main agent typically sees a subagent's summary only when it returns. Neither gives you an overseer that is both <em>separate</em> and <em>live</em>. PILOT's claim is that the missing primitive is a persistent two-way channel between a supervisor context (goal, recent events, drift signals) and worker contexts (execution detail), plus permission for the supervisor to write to the persistent harness mid-run.</p>
+<p>For this tracker's core thesis — harness-level self-improvement with frozen weights — this is a clean formulation of "the supervisor is the self-improvement role," and the token-efficiency numbers are the strongest evidence yet that skill accumulation pays for its own overhead.</p>
+<h2>The core idea</h2>
+<p>Model parameters <span class="arithmatex">\( \theta \)</span> stay frozen. What evolves is the persistent harness <span class="arithmatex">\( H \)</span>, a skill library <span class="arithmatex">\( \mathcal{K} \)</span> plus memory <span class="arithmatex">\( \mathcal{M} \)</span>. A supervisor session runs the whole episode; workers are spawned as isolated sessions that load the current harness:</p>
+<div class="arithmatex">\[ W_{j}\leftarrow \mathrm{Spawn}(\theta,\tau_{j},H) \]</div>
+<p>where <span class="arithmatex">\( \tau_j \)</span> is the objective given to worker <span class="arithmatex">\( j \)</span>, and each worker produces a trajectory <span class="arithmatex">\( \xi_j \)</span> of actions/observations in the environment. When the supervisor spots reusable knowledge (or a failure mode worth recording) in a <em>live</em> trajectory, it refines the harness immediately:</p>
+<div class="arithmatex">\[ H^{\prime}\leftarrow \mathrm{Update}(H,\xi_{j}), \qquad H \leftarrow H^{\prime} \]</div>
+<p>so any worker spawned after the update — in the same episode or a later one — loads <span class="arithmatex">\( H' \)</span>. (Notation as in the paper's §2/Appendix A.2.)</p>
+<p>Two coupled mechanisms operate over this state:</p>
+<ol>
+<li><strong>Live steering</strong> — the channel supports three worker→supervisor events (<em>Notification</em>: progress/risk report, execution continues; <em>Question</em>: worker pauses for input; <em>Result</em>: runtime auto-delivers final output) and two supervisor→worker actions (<em>Steer</em>: queue guidance for the worker's next turn; <em>Abort</em>: kill a worker whose continuation is useless). Crucially, the supervisor reads the relevant slice of <span class="arithmatex">\( \xi_j \)</span> only when diagnosis is needed — its own context stays clean.</li>
+<li><strong>Live self-evolution</strong> — the same supervision stream feeds <span class="arithmatex">\( \mathcal{K} \)</span> and <span class="arithmatex">\( \mathcal{M} \)</span>, closing the loop: correction improves this run, distillation improves the next one.</li>
+</ol>
+<p><img alt="PILOT architecture: ReAct has no independent oversight, subagent delegation only reports after the run ends; PILOT's supervisor receives notifications/questions/results from a worker in an isolated context, can steer or abort within a correction window, and updates the harness (skills+memory) that later workers load" src="assets/pilot-live-self-improvement/fig1.png" /></p>
+<p><em>Figure 2 from the paper: the architectural gap. A ReAct loop has no oversight separate from the work; a main agent gets a subagent's output only post-hoc. PILOT's supervisor is both separate and live, and its harness update <span class="arithmatex">\( H \to H' \)</span> happens during execution.</em></p>
+<h2>How it works</h2>
+<p>PILOT is implemented as an extension of the Pi coding-agent runtime; supervisor and workers are all sessions of the <em>same frozen model</em> (deliberately, to isolate orchestration effects from capability gaps). The coupled loops:</p>
+<pre><code class="language-text">Supervisor loop(τ, θ, H = (K, M)):
+  repeat:
+    if another worker is needed:
+      choose objective τ_j;  W_j ← Spawn(θ, τ_j, H)
+    receive event (j, e) from any active worker
+    if e is a Question:  reply to W_j
+    if redirection of W_j is warranted:
+      inspect relevant portion of ξ_j
+      Steer: queue guidance for W_j's next turn
+    else if continuing W_j is no longer useful:
+      Abort: interrupt W_j
+    if reusable knowledge found in ξ_j:
+      H ← Update(H, ξ_j)          # live self-evolution
+    if e is a result/error/abort:  mark W_j settled
+  until task resolved
+
+Worker loop(τ_j, θ, H at spawn):
+  repeat:
+    incorporate queued supervisor guidance
+    reason, act in environment, extend ξ_j
+    optionally Notification (continue) or Question (pause)
+  until completion / error / abort
+  Result: runtime sends (j, result) to supervisor
+</code></pre>
+<p><strong>Evaluation protocol details that matter.</strong> In the self-improvement setting, Terminal-Bench 2.0's 89 tasks are swept in iterations; every run in iteration <span class="arithmatex">\( i \)</span> starts from an isolated copy of shared state <span class="arithmatex">\( H_i \)</span>. Skills/memory are created <em>during</em> runs, before any verifier outcome exists — no benchmark signal reaches supervisor or worker mid-run. Verifier outcomes are used only as a retention gate between iterations: updates from passing runs are merged into <span class="arithmatex">\( H_{i+1} \)</span>, updates from failing runs are dropped, and outcomes never edit update content. All compared harnesses (PILOT, Pi, OpenCode) get the same self-improvement instruction and the same initial skill library.</p>
+<p><strong>Two representative steering cases</strong> (from Figure 4): in a CoreWars task, the worker burned 20+ minutes tuning synthetic-opponent variants until the supervisor ordered a full strategy change ("find a published warrior source… test against the actual five opponents"); the worker adapted Silk Warrior 1.3 and passed every threshold. In a torch tensor-parallelism task, the supervisor caught a subtle correctness bug — bias added before <code>all_reduce</code>, hence multiplied by world size — and the corrected implementation passed all 13 verifier tests.</p>
+<h2>Results</h2>
+<p><strong>One-shot (fresh harness per task).</strong> On Terminal-Bench 2.0, PILOT hits 71.9% with GLM-5.1 (best baseline: OpenCode 66.9%) and 71.3% with Kimi-K2.6 (best baseline: Pi 66.9%); on Hard tasks it reaches 55.0% with both backbones, +5.0/+6.7 over Pi. On SWE-bench Pro it averages 59.9% vs Pi's 55.5%, with a striking 65.1% on Kimi-K2.6 (Pi: 59.1%). The one miss: second place on SWE-bench Multilingual with Kimi-K2.6.</p>
+<p><strong>Self-improvement (20 iterations).</strong> Best-observed pass rate: 66.3% → 80.9% (GLM-5.1), 68.5% → 80.9% (Kimi-K2.6). Under identical conditions and the same initial skill library, PILOT gains +14.6 vs OpenCode's +7.9 and Pi's +2.3 — the harness architecture, not just the instruction, determines how well experience converts into later performance. Skill counts grow 62→83 (GLM) and 50→81 (Kimi); gains concentrate on Hard tasks (+8 and +12 additional passes). Mean output tokens per task drop from 28.5K→16.3K and 41.9K→22.1K <em>including all supervisor turns</em> — oversight pays for itself.</p>
+<p><strong>Where steering actually helps.</strong> Manual trace inspection classifies a successful run as steering-aided only under strict criteria (supervisor identifies a concrete error/stall, worker follows the correction, success comes via the corrected path). Result: 0% of Easy successes, rising to 6.1% (GLM) and 19.7% (Kimi) of Hard successes. Live steering is a tail-risk mechanism for long fragile execution chains, not a constant companion.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>WikiSkill (skill-library-google)</strong> and <strong>Maintaining Skill Libraries for Long-Horizon Agents (skill-library-long-horizon)</strong>: the same skill-accumulation thesis, but both operate post-hoc from completed runs. PILOT's differentiator is <em>when</em> distillation happens and that a dedicated role does it; its verifier-gated retention (keep updates only from passing runs) is a cruder filter than WikiSkill's wiki curation — the two are complementary.</li>
+<li><strong>Harness Continual Learning (harness-continual-learning)</strong> and <strong>Self-Harness / Meta-Harness line</strong>: PILOT explicitly positions against these — they generate and select improved harness components <em>across</em> completed work; PILOT additionally acts on the current run.</li>
+<li><strong>Automata from Agent Traces (automata-from-agent-traces)</strong>: that paper showed agent trajectories compress into small FSMs whose states predict failure early enough to abort at ~32% of trajectory cost. PILOT's supervisor is the model-driven version of that monitor, with Steer added to Abort. An FSM-informed supervisor prompt seems like an obvious hybrid.</li>
+<li><strong>EdgeBench (tracked today)</strong>: cited by PILOT as the 12-hour-horizon frontier. EdgeBench's log-sigmoid learning curves describe <em>what</em> improvement over long interaction looks like; PILOT is a concrete mechanism for steepening the curve.</li>
+<li><strong>Shadow Evaluation (Can Agents Do Unpublished NeurIPS Research?)</strong>: those agents failed on judgment — never redesigning after negative reviews. A separate supervisor context whose whole job is "is this strategy working?" is exactly the missing organ that post-mortem identified, though PILOT only demonstrates it on verifiable engineering tasks.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline self-improvement numbers deserve a careful read. Iterations sweep the <em>same 89 Terminal-Bench tasks</em>, and the self-improvement instruction mandates exactly one skill named <em>exactly after the task</em> ("chess-best-move" → skill "chess-best-move"). So the +14.6-point climb is substantially "solve the same task again with your saved procedure" — verifier-gated task memoization, not generalization to unseen tasks. The paper is upfront that this mirrors a real scenario (developers returning to related work), and the token-efficiency gains are real regardless, but a transfer split (skills learned on tasks A–M, evaluated on N–Z) is the missing experiment. Also, "best observed pass rate" is a max over 20 iterations × 2 runs — a statistic that drifts upward under noise; mean-per-iteration curves would be more honest (Figure 1(c) suggests the trend is real, but endpoint labels quote the max).</p>
+<p>The steering analysis cuts both ways: it is admirably strict, but the resulting rates (2.3% of GLM-5.1 successes) mean the one-shot gains over Pi (+5 points) cannot be mostly explained by trace-confirmed steering — the residual is unexplained architecture effects (worker context isolation? notification cadence?), and the classification is manual and unblinded. Finally, supervisor = worker = same frozen model is a clean ablation choice but leaves the most interesting question open: is a cheap supervisor over a strong worker enough (cf. weak-to-strong supervision), or does steering quality bind on supervisor capability? The paper flags this as future work. (One more inference from the setup — the supervisor also holds multi-worker orchestration powers, but experiments don't isolate concurrent-worker benefits; verify in the repo — inferred from the thread and paper text.)</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Self-improvement has a <em>when</em> axis, not just a <em>what</em> axis: PILOT moves both correction (steer/abort) and distillation (skills/memory) inside the active run, so a lesson can rescue the trajectory that taught it.</li>
+<li>The architecture is two coupled loops over frozen weights: <span class="arithmatex">\( W_j \leftarrow \mathrm{Spawn}(\theta, \tau_j, H) \)</span> workers in isolated contexts, a supervisor that reads trajectories on demand, and mid-run <span class="arithmatex">\( H \leftarrow \mathrm{Update}(H, \xi_j) \)</span> gated later by verifier outcomes.</li>
+<li>Accumulated harness knowledge is a compression technology: pass rate +14.6/+12.4 while output tokens fall ~43–47% — but on repeated tasks; demand a transfer split before believing it generalizes.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-08-31 16:03 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
