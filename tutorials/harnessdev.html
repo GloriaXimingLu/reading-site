@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HarnessDev: Can LLMs Create and Evolve Their Own Agent Harness? (ByteDance Seed)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>HarnessDev: Can LLMs Create and Evolve Their Own Agent Harness? (ByteDance Seed)</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.01437">arXiv:2609.01437</a> · <a href="https://arxiv.org/abs/2609.01437">arXiv</a> · <a href="https://x.com/omarsar0/status/2095170896407548190">X post</a> · <a href="https://academy.dair.ai/papers/harnessdev-can-llms-create-and-evolve-their-own-agent-harness-2609.01437">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>HarnessDev (Wu, Zhang, Shi et al., ByteDance Seed + collaborators) shifts the unit of evaluation from <em>task outputs</em> to <em>runnable infrastructure</em>: the model's submitted artifact is a frozen, reusable agent harness, scored by executing it on 2,207 held-out downstream instances across code (SWE-bench Pro, Terminal-Bench 2.1), data/ML (MLE-bench), writing (EQ-Bench3), and search/research (BrowseComp).</li>
+<li>In <strong>Creation</strong>, six frontier creators build harnesses from a deliberately weak seed that scores 0 unmodified. Best overall is Opus 4.8 at 67.8 vs 86.2 for mature human-engineered references — far behind on code and search, but <em>matching or beating humans</em> on writing (84.6 vs 83.7) and ML experimentation (32.9 vs 24.0 medal rate on MLE-bench).</li>
+<li>In <strong>Evolution</strong>, every creator improves its harness on the visible feedback set (+1.1 to +13.9 points), but held-out gains shrink to at most +4.44 (Opus), and under a fixed non-native executor three of four lineages <em>regress</em> (GPT-5.5: −10.32). Self-evolved harness gains are real but unstable, and heavily entangled with which model runs the harness.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The recurring result of the last year — see the harness-variance study tracked today ("Stop Comparing LLM Agents Without Disclosing the Harness", 7.8× more variance from harness than from model) and <a href="../tutorials/jit-agent-harness.html">JIT-Agent</a> — is that the model-external execution layer is now a first-class capability driver. If the harness matters that much, the natural RSI question is: <strong>can the model build and improve that layer itself?</strong> That is exactly the recursive-self-improvement bottleneck: a model that can only improve <em>within</em> a fixed scaffold is capped by scaffold quality; a model that can improve the scaffold closes the loop.</p>
+<p>HarnessDev is the first serious attempt I've tracked to <em>benchmark</em> this ability with hygiene: a common zero-scoring seed (so no credit for boilerplate), hidden evaluation tasks, frozen artifacts, a score path isolated from the harness's self-reports (SWE-Pro credit comes only from the actual repo diff; Terminal-Bench credit only from final environment state), and a post-hoc audit that found no harness gaming the scorer. It also cleanly separates <em>creating</em> infrastructure from <em>evolving</em> it under feedback — the two halves of the self-improving-harness loop that papers like <a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a> and <a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a> usually blur together.</p>
+<h2>The core idea</h2>
+<p>Formally, a creator LLM <span class="arithmatex">\( L_C \)</span> works inside a development environment <span class="arithmatex">\( D \)</span> to produce a runnable harness <span class="arithmatex">\( H \)</span>; after freezing, an executor LLM <span class="arithmatex">\( L_E \)</span> runs inside <span class="arithmatex">\( H \)</span> on downstream task <span class="arithmatex">\( x \)</span>, and an evaluator <span class="arithmatex">\( J \)</span> scores the output:</p>
+<div class="arithmatex">\[ (L_{C},D)\rightarrow H,\qquad(H,L_{E},x)\rightarrow y\xrightarrow{J}\mathrm{score}. \]</div>
+<p>Here <span class="arithmatex">\( H \)</span> bundles the execution loop, tool policy, context management, persistent state, lifecycle/recovery control, and verification — the six control modules the seed deliberately omits. The key design choice is the <strong>weak seed</strong> <span class="arithmatex">\( H_\mathrm{seed} \)</span>: a runnable compatibility layer that parses configs, exposes passive low-level tools, and writes audit artifacts, but has <em>no agent loop, no tool policy, no context management, no state, no verifier, no stopping rule</em>. Unmodified it scores 0.0 on every benchmark, so any nonzero score is attributable to execution logic the creator wrote. This avoids both extremes: an empty repo would measure CLI plumbing skills; a mature agent would give away the planning/verification structure being tested.</p>
+<p>Two evaluation lenses disentangle harness quality from model quality: <strong>Self-Eval</strong> (<span class="arithmatex">\( L_E = L_C \)</span>) measures the complete creator–harness system, while <strong>Unified-Eval</strong> runs every harness under a fixed Gemini 3.1 Pro executor, isolating the artifact.</p>
+<p>Evolution (RQ2) starts from the creator's own frozen Creation harness <span class="arithmatex">\( H_0 \)</span> and gives it downstream execution feedback from a fixed 100-task SWE-Pro set plus all 89 Terminal-Bench tasks, a budget of ten full evaluation pairs (plus cheap 5-task probes), and tracks the equally weighted pair score across frozen versions <span class="arithmatex">\( t \)</span>:</p>
+<div class="arithmatex">\[ \bar{P}_{t}=\tfrac{1}{2}\left(P^{\mathrm{SWE100}}_{t}+P^{\mathrm{Term89}}_{t}\right), \]</div>
+<p>with generalization measured <em>afterwards</em> on 630 held-out SWE-Pro instances the creator never sees.</p>
+<h2>How it works</h2>
+<pre><code class="language-text"># Stage 1 — Creation (RQ1)
+given: weak seed H_seed (runnable, zero-scoring), task-family spec,
+       tool/permission constraints, 1–3 development cases
+repeat (creator agent inside Claude Code / Codex):
+    edit H                          # implement loop, tools, context, state,
+                                    # lifecycle, verification
+    run development cases           # public tasks only
+    inspect logs + scores           # hidden eval tasks/answers withheld
+freeze H; evaluate on hidden benchmarks (avg@3 independent creations)
+score under Self-Eval (L_E = L_C) and Unified-Eval (L_E = Gemini 3.1 Pro)
+
+# Stage 2 — Evolution (RQ2, code domain)
+H_0 = creator's frozen RQ1 harness
+evaluate H_0 on feedback pair (SWE-Pro-100, Terminal-Bench-89)
+for up to 10 charged evaluation pairs:
+    creator edits harness using visible feedback
+    (optionally ≤2 five-task probes between pairs — diagnostic only)
+    freeze candidate; run BOTH full feedback benchmarks
+    candidate enters official trajectory when both legs settle
+creator declares a final non-H_0 version
+afterwards: evaluate every official version on 630 held-out SWE-Pro
+            instances (never shown to the creator)
+</code></pre>
+<p>The compliance story deserves note: hard-coding instance-specific solutions, consulting hidden tests, or bypassing the provider-neutral LLM interface are prohibited, and the authors audited the delivered source and execution artifacts of every reported run — a null result (no harness earned score through a prohibited route).</p>
+<p><img alt="Harness architecture evidence across domains and stages" src="assets/harnessdev/fig1.png" />
+<em>Figure 5 from the paper: evidence density for the six control mechanisms (execution loop, tool policy, context management, state &amp; memory, lifecycle &amp; recovery, result verification) across creators and stages. Color shows how much of each mechanism the generated harnesses actually implement and exercise — not score.</em></p>
+<h2>Results</h2>
+<p><strong>Creation (Self-Eval, avg@3).</strong> Seed scores 0.0 everywhere. Opus 4.8 leads overall at 67.8 (SWE-Pro 69.3, Terminal-Bench 64.8, MLE-bench medal 32.9, EQ-Bench3 84.6, BrowseComp 52.4), vs the human-engineered reference row at 86.2 (80.0<em>, 88.8</em>, 24.0, 83.7, 92.2<em> — asterisks are external results not re-run). GPT-5.5 and Gemini 3.1 Pro land at 55.1/55.6; DeepSeek V4 Pro 45.2; Qwen 3.7 Max 44.0; Seed 2.0 Pro 22.8. The split by domain is the headline: generated harnesses are </em><em>far behind on search (52.6 vs 92.2) and code, but at/above the reference on writing and MLE-bench</em>* — plausibly because mature references in code/search embed years of accumulated engineering, while writing/ML-experimentation harnesses are younger artifacts. Notably, 77.8% of failed Data tasks were attributed to harness defects rather than executor capability.</p>
+<p><strong>Executor dependence.</strong> Fixing the executor to Gemini reshuffles rankings: Qwen/Seed/DeepSeek improve in several settings while Opus and GPT-5.5 prefer their own executors. One Opus code harness collapses under Gemini because it hard-coded a 120-step limit tuned to its native executor. Token costs vary ~19× on MLE-bench with no reliable cost→score relationship.</p>
+<p><strong>Evolution.</strong> All five self-runtime lineages improve on visible feedback (Qwen +13.9, DeepSeek +13.4, Gemini +8.8, GPT-5.5 +5.9, Opus +3.0 pair-score points), but held-out SWE-Pro-630 gains are much smaller: Opus +4.44, GPT-5.5 +3.81, DeepSeek +3.17, Gemini +2.70, Qwen +1.43. Under the fixed-Gemini runtime, only Opus improves held-out (+2.70); Qwen (−1.11), DeepSeek (−2.38) and GPT-5.5 (−10.32!) regress. Edit forensics: the median declared version changes 8 files (+476/−38 lines); of 64 official version switches, 58 touch execution/control flow, 37 tools, 17 lifecycle recovery, 16 context, only 4 state — and <strong>none adds a standalone verifier</strong>. Evolution behaves like local program search around runtime feedback, with overfitting to the feedback set and to the native executor as the dominant failure mode.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/jit-agent-harness.html">JIT-Agent</a></strong> claims per-task generated harnesses beat fixed ones; HarnessDev is the sober counter-measurement — generated harnesses still trail mature references on exactly the domains (code, search) where JIT-Agent reported wins. The difference in task granularity (per-task JIT vs frozen reusable artifact) is probably load-bearing.</li>
+<li><strong>"Stop Comparing LLM Agents Without Disclosing the Harness" (tracked today)</strong>: harness-induced variance dwarfs model-induced variance; HarnessDev's Self-Eval vs Unified-Eval split and the executor-transfer failures are the same phenomenon measured from the construction side.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> and <strong><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></strong>: outer-loop search over harness code with execution-trace access — Evolution is essentially one lineage of that search with a strict evaluation-pair budget. HarnessDev's held-out regressions quantify the generalization gap those systems must overcome.</li>
+<li><strong>openJiuwen and Harness-of-Harness (both tracked today)</strong>: the optimistic siblings — runtime-adaptive and wrapper-based harness improvement reporting large gains. HarnessDev's "gains depend strongly on the executing model" result is the caveat to attach to both.</li>
+<li><strong><a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a></strong> and <strong><a href="../tutorials/harness-rl-coevolution.html">Harness–Model Co-Evolution</a></strong>: if harness evolution transfers poorly across executors, co-adapting model and harness jointly (rather than freezing one side) looks more principled, at the price of losing artifact portability.</li>
+</ul>
+<h2>Critical take</h2>
+<p>This is the harness benchmark I wanted, but three caveats temper the conclusions. First, the human-reference rows are <em>verified public system results</em>, not paired controls under one executor — the 86.2 vs 67.8 headline gap mixes harness quality with whatever executor/config those public systems used (the asterisks in Table 3 do a lot of work). Second, Evolution only covers the code domain and ten evaluation pairs; "gains are unstable" with a budget of ten noisy measurements per lineage may partly be measurement noise, and the creator never gets enough signal to distinguish real improvement from feedback-set variance — arguably the benchmark under-provisions the very feedback loop it wants to study. Third, the development environments are Claude Code and Codex — themselves sophisticated harnesses — so "can a model build a harness?" is really "can a model inside a mature harness build another harness?", which is the realistic setting but flatters creators whose dev-time tooling is stronger. The most durable finding, I think, is the null on verification: across 64 evolution edits, no creator built a standalone verifier — models improve loops, tools, and recovery, but don't spontaneously invent the checking machinery that human harness engineers consider load-bearing. That's a concrete, falsifiable gap for the self-improving-harness agenda.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Harness construction is now a benchmarked capability: from a zero-scoring seed, the best frontier model reaches 67.8 vs 86.2 for mature human systems — behind on code/search, ahead on writing and ML experimentation (32.9 vs 24.0 MLE-bench medal rate).</li>
+<li>Self-evolution of harnesses overfits: +1 to +14 points on visible feedback shrinks to ≤+4.44 held-out, and mostly reverses under a non-native executor — harness gains are entangled with the model that runs them.</li>
+<li>Across all 64 evolution edits, models modified loops, tools, and recovery but never added a standalone verifier — the clearest concrete gap between model-built and human-built harnesses.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-02 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

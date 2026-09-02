@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>SKILL.state: A Constant-Size Execution State Instead of an Append-Only History</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.26263">arXiv:2608.26263</a> · <a href="https://arxiv.org/abs/2608.26263">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2093542621746794534">X post</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>SKILL.state: A Constant-Size Execution State Instead of an Append-Only History</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2608.26263">arXiv:2608.26263</a> · <a href="https://arxiv.org/abs/2608.26263">arXiv</a> · <a href="https://x.com/rohanpaul_ai/status/2093542621746794534">X post</a> · <a href="https://academy.dair.ai/papers/explicit-execution-state-replaces-append-only-history-2608.26263">academy.dair.ai</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
 <ul>
 <li>SKILL.state (arXiv 2608.26263; Sanket Badhe, Priyanka Tiwari, Jonghyun Chung, Google) throws away the conversational transcript entirely: at every step the model sees only the skill spec <span class="arithmatex">\( P \)</span>, a structured execution state <span class="arithmatex">\( \Sigma_t \)</span>, and the latest observation <span class="arithmatex">\( O_t \)</span>. The reasoning trace is used to produce a validated JSON state patch, then <strong>discarded permanently</strong> — prompt size stays flat (~1.8k tokens) no matter how long the run gets.</li>
 <li>The token math is brutal for transcripts: on a 100-step warehouse task with Gemini-3-Flash, a LangGraph-style runtime burns 1,062,387 tokens for 0.91 accuracy; SKILL.state burns 65,408 for 0.94 — a 16.2× reduction with <em>better</em> accuracy, and the gap widens to 200 steps (122k vs 6.1M for the summarization baseline).</li>
@@ -75,6 +75,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>Structure beats compression at equal budget:</strong> 0.94 vs 0.18/0.22/0.52 for truncation/LLMLingua/capped-summary at the same ~1,800 tokens — and 16.2× fewer tokens than LangGraph-style at T=100 with <em>higher</em> accuracy, +7.8 points on InterCode CTF.</li>
 <li><strong>The assumption to check before adopting it:</strong> everything future-relevant must be committable to a known schema at the moment you see it. Where that fails — emergent relevance, schema discovery, history-as-output — you need a raw log to fall back on; and small models need constrained decoding or they corrupt the merge itself.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-09-01 16:29 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-02 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ContextPilot: Teaching Agents Proactive Context Management via Fine-Grained RL (Tencent)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>ContextPilot: Teaching Agents Proactive Context Management via Fine-Grained RL (Tencent)</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.28476">arXiv:2608.28476</a> · <a href="https://arxiv.org/abs/2608.28476">arXiv</a> · <a href="https://x.com/omarsar0/status/2094505508850032852">X post</a> · <a href="https://academy.dair.ai/papers/contextpilot-teaching-agents-for-proactive-context-management-via-fine-grained-r-2608.28476">academy.dair.ai</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>ContextPilot (Pan, Pei, Lu et al. — Tencent) trains agents to <em>manage their own working context</em> as a first-class skill: it extends the proactive context-management toolset beyond search/delete/summarize to planning, structured long-term memory (<code>memorize</code>/<code>readMemory</code>), and <em>soft</em> offloading (<code>summarizeContext</code>, <code>compressContext</code>, <code>foldHistory</code> — recoverable, unlike deletion).</li>
+<li>The RL contribution is fine-grained credit assignment for context edits: instead of smearing the final trajectory reward over every edit, it scores each edit by <em>context variation + entropy variation</em>, branches extra rollouts at the most critical edits, and computes action-level advantages from all terminal trajectories passing through that edit — GRPO over trajectory <em>snapshots</em> rather than trajectories.</li>
+<li>With a 32K window, ContextPilot-8B-RL averages 69.40 across NovelQA / ∞Bench / LongMemEval-S / BrowseComp+, beating the 128K no-tools backbone (45.93), the prompt-only tools baseline (27.61 — tools <em>hurt</em> without training!), and StateLM-8B-RL (65.85), while holding per-turn input at ~8–10K tokens vs ~30K for a ReAct-style agent.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This is the training-side answer to the question <a href="../tutorials/skill-state.html">SKILL.state</a> answered at the architecture level: append-only history is the wrong data structure for long-horizon agents, but <em>what replaces it, and who decides when to compress?</em> SKILL.state hard-codes the policy (validated state updates, discard reasoning); ContextPilot instead gives the model a rich edit toolset and asks RL to learn the policy. The pilot-study numbers explain why prompting isn't enough — handing Qwen3-8B the tools without training <em>drops</em> its average from 45.93 to 27.61. Context management is a genuine skill with a real learning problem attached.</p>
+<p>The learning problem is exactly the credit-assignment gap this tracker keeps circling (see <a href="../tutorials/trace-turn-level-rewards.html">TRACE</a>, <a href="../tutorials/sp3o-segment-pbrl.html">SP3O</a>): a <code>foldHistory</code> call at turn 7 changes everything downstream, but under trajectory-level GRPO it inherits whatever reward the final answer happens to get. The paper's Figure 3 case study makes it concrete: correct answers can ride on sloppy context management (brute-force repeated retrieval) while wrong answers can contain excellent management — trajectory reward actively <em>mistrains</em> the editing policy. Their fix — measure which edits matter, branch there, and use branch statistics as action values — is a general recipe for any tool whose effect is indirect and delayed, which describes most of context engineering.</p>
+<h2>The core idea</h2>
+<p>In the proactive paradigm, the agent's context is no longer append-only. A context-management action <span class="arithmatex">\( a_i^{\mathrm{cm}} \)</span> triggers a transition function before the usual append:</p>
+<div class="arithmatex">\[ c_{i+1}=\mathcal{F}(c_{i},a_{i}^{\mathrm{cm}})\oplus(t_{i},a_{i},o_{i}), \]</div>
+<p>where <span class="arithmatex">\( c_i \)</span> is the working context, <span class="arithmatex">\( t_i, a_i, o_i \)</span> are thought, tool call, and observation. Because edits rewrite history, trajectories are segmented at context-<em>editing</em> operations into snapshots <span class="arithmatex">\( S_1,\dots,S_{M+1} \)</span>, each trained as an independent instance with loss masking on repeated content (following StateLM).</p>
+<p>Two signals identify <em>critical</em> edits. Context variation measures how much an edit reshapes the prompt, and entropy variation measures how much it shifts the model's uncertainty relative to the trajectory's start:</p>
+<div class="arithmatex">\[ \mathcal{S}(a_{t}^{\mathrm{cm}})=\alpha\cdot\Delta C_{t}^{\mathrm{cm}}+\beta\cdot\Delta H_{t}^{\mathrm{cm}},\qquad \Delta C_{t}^{\mathrm{cm}}=\left|\frac{\mathrm{len}(c_{t+1}^{\mathrm{cm}})-\mathrm{len}(c_{t}^{\mathrm{cm}})}{\mathrm{len}(c_{t}^{\mathrm{cm}})}\right|,\ \ \Delta H_{t}^{\mathrm{cm}}=H_{t}^{\mathrm{cm}}-H_{\mathrm{initial}}, \]</div>
+<p>with <span class="arithmatex">\( H_t^{\mathrm{cm}} \)</span> the mean entropy of the first <span class="arithmatex">\( k \)</span> tokens generated after the edit's observation, and <span class="arithmatex">\( \alpha,\beta \)</span> mixing weights. High-sensitivity edits get extra branched rollouts, and each snapshot's reward is the mean over terminal trajectories that extend it:</p>
+<div class="arithmatex">\[ R(S_{i})=\frac{1}{|\mathcal{T}(S_{i})|}\sum_{T\in\mathcal{T}(S_{i})}R(T),\qquad \hat{A}_{t}^{(j)}=\frac{R(S_{t}^{(j)})-\mathrm{mean}(\{R(S)\mid S\in\mathcal{G}\})}{\mathrm{std}(\{R(S)\mid S\in\mathcal{G}\})}, \]</div>
+<p>where <span class="arithmatex">\( \mathcal{T}(S_i) \)</span> is the set of terminal trajectories with prefix <span class="arithmatex">\( S_i \)</span>, <span class="arithmatex">\( \mathcal{G} \)</span> groups all snapshots for a query, and <span class="arithmatex">\( \hat{A} \)</span> is the group-normalized advantage fed to GRPO. Terminal reward is outcome + format − penalties (invalid tool calls, context-length violations).</p>
+<h2>How it works</h2>
+<pre><code class="language-text">per query q (budget N=128 snapshots):
+1. run 8 trajectory-level rollouts with the full toolset
+   (perception/planning, retrieval, notes, memory, offloading — Table 1)
+2. segment each trajectory at context-editing ops -&gt; up to M=64 snapshots
+3. if M &lt; N:                            # spend remainder on partial rollouts
+4.     for each context-management action a_t in existing trajectories:
+5.         sensitivity S(a_t) = α·ΔC_t + β·ΔH_t
+6.     pick top (N - M) actions by S; branch from each parent state
+7.     sample continuation sub-trajectories -&gt; more snapshots
+8. reward terminal snapshots: R = R_out + R_fmt + R_pen
+9. propagate to intermediate snapshots: R(S_i) = mean R over descendants
+10. group-normalize within query (GRPO) -&gt; per-snapshot advantages
+11. update policy treating each snapshot as an independent sample
+    (token loss masking over content repeated across snapshots)
+
+pipeline: SFT first (teacher runs inside a rule-scaffolded harness that
+hints readChunk-after-search, forces offloading near budget; scaffolding
+is stripped from the SFT traces) -&gt; then the RL above.  30K input cap.
+</code></pre>
+<p>The toolset design matters as much as the RL. <code>memorize</code> extracts entities, timestamps, and event episodes with edges to related items; <code>readMemory</code> retrieves a memory <em>with its neighbors</em>. <code>foldHistory</code> is the aggressive move: discard all history into a searchable index plus keyword summary — recoverable via <code>searchContext</code>, which is what makes it "soft" offloading rather than deletion. Offloading, memory-writing, and memory-updating count as context-editing ops (they trigger snapshot boundaries).</p>
+<p><img alt="ContextPilot overview" src="assets/contextpilot/fig1.png" />
+<em>Figure 1 from the paper: (a) the extended toolset — planning, long-term memory, and soft context offloading on top of retrieval/deletion/summarization; (b) RL with context-aware partial rollout branching at critical edits and fine-grained, snapshot-level credit assignment.</em></p>
+<h2>Results</h2>
+<p>Long-context QA (NovelQA-Copyright, ∞Bench En.MC, LongMemEval-S, BrowseComp+; 32K window unless noted; mean of 3 runs):</p>
+<ul>
+<li><strong>Qwen3-8B</strong>: backbone w/o tools (128K) 45.93 avg; <em>w/ tools but no training</em> 27.61; ContextPilot-8B (SFT) 65.78; <strong>ContextPilot-8B-RL 69.40</strong> — +3.55 avg over StateLM-8B-RL (65.85), with BrowseComp+ 54.18 vs 46.44. Similar pattern for 14B (72.20) and Gemma4-E4B (60.96, +6.22 from RL).</li>
+<li><strong>RL helps most where contexts are longest</strong>: +5.34 on BrowseComp+ (~552K-token inputs) vs modest gains on NovelQA (~119K, partly covered by SFT data). Deep search: beats SUPO by +1.51 avg across WebSailor-7B and WebExplorer-8B backbones on GAIA/BrowseComp/BrowseComp-ZH/xBench.</li>
+<li><strong>Tool ablation (Qwen3.5-397B-A17B, prompted)</strong>: original tools 77.89 → +planning 80.29 → +soft offloading 83.08 → +long-term memory <strong>87.16</strong> (BrowseComp+ climbs 63.49 → 80.96) — and that full-toolset 397B at 32K beats its own 256K no-tools variant (80.55). Each tool family pays rent.</li>
+<li><strong>Efficiency</strong>: on BrowseComp trajectories ≥15 turns, per-turn input stabilizes at ~8–10K tokens vs ~30K (near-linear growth) for WebExplorer-8B.</li>
+<li><strong>Behavioral shifts during RL</strong>: retrieval's share of tool calls (~half, early) falls while planning, memory, and offloading rise; failure rates of memory/offloading tools drop in tandem with task success — the SFT model could <em>invoke</em> these tools but didn't understand their preconditions.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/skill-state.html">SKILL.state</a></strong> (user-hearted; new like merged today): fixed, validated execution state vs learned, tool-mediated editing — the two poles of post-append-only design. SKILL.state is cheaper and architecture-agnostic; ContextPilot is adaptive and trainable. An obvious hybrid: SKILL.state's schema as the memory substrate, ContextPilot's RL to learn when to write it.</li>
+<li><strong><a href="../tutorials/trace-turn-level-rewards.html">TRACE</a></strong> and <strong><a href="../tutorials/sp3o-segment-pbrl.html">SP3O</a></strong>: the credit-assignment lineage. TRACE scores turns, SP3O scores segments via preferences; ContextPilot picks <em>branch points by measured sensitivity</em> — closer to a targeted tree-search value estimate than a uniform decomposition, and probably the right pattern for any sparse-consequence tool call.</li>
+<li><strong>Agent Zero Memory (tracked today)</strong>: the systems-side complement — provenance, citation locks, tri-system memory, but hand-designed policies. ContextPilot suggests the write/prune policies in such systems are trainable.</li>
+<li><strong>Selective Forgetting (tracked today)</strong>: cautionary pairing — its graph memory <em>lost</em> to flat retrieval on LongMemEval because entity extraction destroys surface form. ContextPilot's <code>memorize</code> builds exactly that kind of entity/event graph; its wins may rely on <code>readChunk</code>/<code>searchContext</code> keeping raw text reachable when the graph abstraction fails.</li>
+<li><strong>The Handoff Tax (tracked today)</strong>: context curation as model-dependent policy — what ContextPilot learns for one backbone may transfer poorly to another, the same executor-coupling HarnessDev found for harnesses.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The credit-assignment machinery is the real contribution, and the ablations do show each RL ingredient adds points — but note what the headline comparisons lean on. The 128K-backbone baseline is a soft target (long-context models degrade well before their advertised window), and the most dramatic number — prompted tools <em>halving</em> backbone performance — is measured on an 8B model; the 397B prompted model gains +6.6 from the same tools, so "you must train for this" is really "small models must train for this." The sensitivity score is a clever heuristic, but entropy variation measured on the first <span class="arithmatex">\( k \)</span> tokens after an edit conflates "this edit was consequential" with "this edit produced surprising text," and <span class="arithmatex">\( \alpha, \beta \)</span> are extra knobs with no reported sweep in the main text (inferred from the thread and main text — verify in the appendix). The 30K input / 2K generation caps also mean we never see the regime where compression decisions get genuinely hard (weeks-long agent sessions, in the spirit of Harness-of-Harness, tracked today). And branching rollouts at up to 128 snapshots per query is expensive — the method buys precision with rollout budget, and there's no compute-matched comparison against simply running more trajectory-level GRPO samples. Still: retrieval calls falling while planning/memory/offloading rise <em>and</em> tool-failure rates dropping is the signature of an actual learned skill, not reward hacking, and that behavioral evidence is more convincing than the benchmark deltas.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Context management is a trainable skill, not a prompt feature: untrained tools dropped Qwen3-8B from 45.93 to 27.61 average; SFT+RL lifted it to 69.40 at a 32K window, beating the 128K backbone with ~3× less context per turn.</li>
+<li>Don't give every context edit the trajectory's reward: score edits by context+entropy variation, branch rollouts at the critical ones, and value each edit by its descendants' outcomes — snapshot-level GRPO.</li>
+<li>Soft offloading beats deletion: fold history into a searchable index you can re-enter (<code>foldHistory</code> + <code>searchContext</code>), and structured memory with neighbors (<code>memorize</code>/<code>readMemory</code>) was the single biggest tool-ablation gain (+4.08 avg, +9.76 on BrowseComp+).</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-02 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
