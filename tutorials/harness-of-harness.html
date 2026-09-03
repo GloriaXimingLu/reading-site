@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness-of-Harness: Multi-Day Autonomous Software Development with Continual Improvement</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness-of-Harness: Multi-Day Autonomous Software Development with Continual Improvement</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2609.01481">arXiv:2609.01481</a> · <a href="https://arxiv.org/abs/2609.01481">arXiv</a> · <a href="https://x.com/dair_ai/status/2095172426925801608">X post</a> · <a href="https://academy.dair.ai/papers/harness-of-harness-multi-day-autonomous-software-development-with-continual-impr-2609.01481">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Harness-of-Harness: Multi-Day Autonomous Software Development with Continual Improvement" (arXiv 2609.01481; Haoyang Yan, Min-Le Su, Hangfan Zhang, Zhanhao Li, Chen Zhang, Shao Zhang, Yang Chen, Lei Bai, Shuyue Hu — Shanghai AI Laboratory; code released) wraps an <strong>unmodified</strong> coding-agent harness (Codex, OpenCode, Pi) in an outer planning–coding–testing loop that carries two states across iterations: the versioned software artifact <span class="arithmatex">\(A_t\)</span> and an evidence state <span class="arithmatex">\(\mathcal{E}_t\)</span> of verified behaviors and open gaps.</li>
+<li>The outer loop is deliberately thin: three roles (Project Planner, Developer, QA Tester) are three invocations of the <em>same</em> frozen harness–model pair under a deterministic Runtime that freezes each role's inputs, enforces read/write permissions, and retries outputs that violate the required schema. No memory module — artifacts live in the file system behind a categorized index with progressive disclosure.</li>
+<li>Three iterations lift final artifact quality across all three harness–model pairs on GameCraft-Bench (+16.62 to +22.08 points), FrontierSWE (Codex Dominance 44%→71%), and ProgramBench (+6.09 to +16.85 pass-rate points) — an average relative gain of 52.25% — and gains keep compounding: FrontierSWE Dominance reaches 76.00% at HoH@9 vs 27.33% for Vanilla. A 70-loop multi-day run builds a human-playable FPS game from a requirements document alone.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This is the strongest evidence yet for a thesis this tracker keeps returning to: the cheapest capability gains right now come from structuring <em>how existing harnesses are invoked over time</em>, not from touching the model or even the harness internals. HoH modifies nothing inside Codex/OpenCode/Pi — it is pure orchestration, a meta-harness in the literal sense — and still adds 20+ points on GameCraft-Bench and rises from 22% to 72.67% on FrontierSWE over ten loops with Codex + GPT-5.5.</p>
+<p>The pass-controlled comparison is the part to internalize. The obvious null hypothesis is "you just ran the agent longer." The authors test it: Vanilla Continuation, which re-prompts the same session for extra passes, reaches 58.24 after three passes and 6.33M tokens; HoH@2 reaches 64.84 with 5.67M tokens. Structure beats raw iteration at <em>matched</em> pass and token budgets. That echoes what the <a href="../tutorials/harness-handbook.html">Harness Handbook</a> and <a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a> found from the harness-editing side — but here the improvement loop operates on the <em>software project</em>, not on the harness code, which makes it deployable today on any stack.</p>
+<p>It also lands directly on the long-horizon problem: sustaining coherent progress when trajectories outgrow any context window. HoH's answer — externalize state into a versioned artifact plus an explicit evidence ledger, and re-derive the next objective from both every loop — is the same shape as the manage–execute–audit loop in LongHorizon-Harness and the recoverable executable states of <a href="../tutorials/scienceflow-long-horizon-agent.html">ScienceFlow</a>, now validated at 70+ iterations over multiple days.</p>
+<h2>The core idea</h2>
+<p>Formally, HoH treats end-to-end development as applying a fixed harness–model pair to a specification:</p>
+<div class="arithmatex">\[\operatorname{HoH}_{M,H}:\mathcal{S}\longmapsto A,\]</div>
+<p>where <span class="arithmatex">\(\mathcal{S}\)</span> is the software specification, <span class="arithmatex">\(M\)</span> the model, <span class="arithmatex">\(H\)</span> the coding harness, and <span class="arithmatex">\(A\)</span> the final software artifact.</p>
+<p>The insight is that the next useful change cannot be read off <span class="arithmatex">\(\mathcal{S}\)</span> alone — it depends on the current artifact (dependencies, constraints, missing capabilities) and on accumulated execution evidence (observed failures, validated behavior worth preserving). Since each harness invocation has bounded context, anything retained only in an invocation's interaction history dies with it. HoH therefore carries two complementary states across loop boundaries:</p>
+<div class="arithmatex">\[\left(A_{t-1},\mathcal{E}_{t-1}\right)\xrightarrow{\text{loop } t \text{ under } \mathcal{S}}\left(A_{t},\mathcal{E}_{t}\right),\]</div>
+<p>where <span class="arithmatex">\(A_t\)</span> is the artifact state (source, config, resources, metadata) and <span class="arithmatex">\(\mathcal{E}_t\)</span> the evidence state produced by independently evaluating <span class="arithmatex">\(A_t\)</span>. Evidence is explicitly partitioned:</p>
+<div class="arithmatex">\[\mathcal{E}_{t}=\mathcal{E}_{t}^{\mathrm{ver}}\cup\mathcal{E}_{t}^{\mathrm{gap}},\qquad \mathcal{E}_{t}^{\mathrm{ver}}\cap\mathcal{E}_{t}^{\mathrm{gap}}=\emptyset,\]</div>
+<p>with <span class="arithmatex">\(\mathcal{E}_t^{\mathrm{ver}}\)</span> the verified behaviors (which become preservation constraints) and <span class="arithmatex">\(\mathcal{E}_t^{\mathrm{gap}}\)</span> the unmet requirements and observed failures (which become candidate work). Artifact continuity makes development <em>incremental</em>; evidence-conditioned replanning makes it <em>iterative</em>. Neither state subsumes the other, and the ablations show both matter.</p>
+<p><img alt="HoH framework overview" src="assets/harness-of-harness/fig3_framework.png" />
+<em>Figure 3 from the paper: each loop invokes Project Planner, Developer, and QA Tester around the evolving artifact; a deterministic Runtime freezes each role's inputs, enforces permissions, and binds evidence to the tested candidate.</em></p>
+<h2>How it works</h2>
+<p>Each loop makes three decisions requiring different context and authority, assigned to three roles that are just three invocations of the same frozen harness–model configuration under role-specific prompts and a deterministic Runtime contract:</p>
+<ol>
+<li><strong>Project Planner</strong> (read-only on <span class="arithmatex">\(A_{t-1}\)</span>) reconciles <span class="arithmatex">\(\mathcal{S}\)</span> with <span class="arithmatex">\(\mathcal{E}_{t-1}\)</span> into a development document <span class="arithmatex">\(D_t\)</span>: a <em>bounded but locally complete</em> objective — one coherent observable capability plus the related changes needed to make it functional and testable — together with preservation constraints and validation conditions. Boundedness keeps diagnosis tractable; local completeness prevents collapse into isolated repairs.</li>
+<li><strong>Developer</strong> (single writer) warm-starts from <span class="arithmatex">\(A_{t-1}\)</span> and implements <span class="arithmatex">\(D_t\)</span>, free to pick its own design, tools, and debugging strategy. Testing is shift-left: establish a baseline for the target behavior before editing, then rerun after each meaningful change. Developer self-tests gate readiness but never grant acceptance.</li>
+<li><strong>QA Tester</strong> (read-only, frozen candidate) derives scenario-specific checkable criteria from <span class="arithmatex">\(\mathcal{S}\)</span> and <span class="arithmatex">\(D_t\)</span>, then collects black-box observations (inputs, rendered outputs, end-to-end flows) and white-box observations (source, config, logs, runtime state). A criterion is verified only when candidate-bound records support it; everything else is recorded as a gap — never inferred as success. The output is <span class="arithmatex">\(\mathcal{E}_t\)</span>.</li>
+</ol>
+<p>The Runtime enforces the contract deterministically: it freezes role inputs, controls tool and write access, binds every observation to a single candidate identity, and rejects outputs violating the required schema (triggering a retry). Constraining <em>verifiable outputs</em> rather than prescribing workflows is the design principle throughout. Continuity comes from progressive disclosure (persisted artifacts behind a concise index, details retrieved on demand) plus versioned project history at role and iteration granularity, which allows rollback to previously verified states after regressions.</p>
+<pre><code class="language-text">Algorithm: Harness-of-Harness (from Alg. 1 of the paper)
+Input: specification S, initial artifact A0, iteration budget T
+Fixed: model M, harness H, role contracts
+  E0 &lt;- {}                                # empty evidence state
+  for t = 1..T:
+      # 1) plan: bounded, locally complete increment
+      Dt &lt;- ProjectPlanner(S, E_{t-1}; read_only(A_{t-1}))
+      # 2) develop: single writer, warm-start, shift-left tests
+      At &lt;- Developer(A_{t-1}; S, Dt)
+      # 3) independently verify the frozen candidate
+      Et &lt;- QATester(read_only(At); S, Dt, Runtime.check(At))
+      #    Et = verified behaviors  ∪  gaps/failures
+      # Runtime: freeze inputs, enforce permissions,
+      #          schema-validate outputs (retry on violation),
+      #          version (At, Dt, Et) for rollback
+  return A_T
+</code></pre>
+<p>For the multi-day case study (only), HoH additionally gets role-organized domain tools — Godot MCP, asset retrieval/generation, git, an issue ledger — plus lightweight Markdown skills for asset style, UI/UX consistency, and testing. The benchmark runs use none of that: just the loop.</p>
+<h2>Results</h2>
+<p><strong>Benchmarks</strong> (HoH@3 vs. Vanilla, identical harness–model pairs and initial states):</p>
+<ul>
+<li><em>GameCraft-Bench</em> (45 tasks, playable Godot games): Codex + GPT-5.5 (high) 49.58 → 71.52; OpenCode + DeepSeek-V4-Pro 26.90 → 48.98; Pi + MiniMax-M3 42.16 → 58.78. All four rubric components (mechanics, content, functional visuals, art) improve under every configuration.</li>
+<li><em>FrontierSWE</em> (15 tasks): mean reward 0.31 → 0.54 (Codex), 0.23 → 0.31, 0.26 → 0.55; Codex Dominance 44% → 71%. Extending to ten loops, Dominance climbs from 39.33% at HoH@3 to 72.67% at HoH@10 (peak 76.00% at HoH@9) against a fixed 11-checkpoint pool where Vanilla scores 27.33% — no plateau at the paper's budget.</li>
+<li><em>ProgramBench</em> (rebuild a codebase from an executable + docs): pass rates 60.41 → 66.50, 45.27 → 57.56, 35.83 → 52.68.</li>
+<li><em>Pass-controlled</em>: HoH@{1,2,3} scores 59.71/64.84/71.52 vs. Vanilla Continuation's 49.58/54.99/58.24; HoH@2 beats three-pass Vanilla with fewer tokens (5.67M vs 6.33M).</li>
+<li><em>Ablations</em> (Codex, GameCraft): freezing the plan (−8.13), replanning without evidence (−6.28), and dropping artifact warm-start (−7.85, tokens 8.41M → 11.12M) all hurt — both carried states are load-bearing.</li>
+</ul>
+<p><strong>Fusepoint case study</strong>: from an empty workspace plus a PRD (five-minute single-player bomb-defusal FPS: two ordered control points, three-stage defusal, exactly 18 enemies in a 3/5/10 distribution, success and detonation branches), HoH with Codex CLI + GPT-5.6-Sol ran 70 loops over multiple days with human involvement limited to restoring network/API access. Development shows three phases — construction (loops 1–27, backlog grows as testability grows), capability expansion (28–49), stabilization (backlog declines). By loop 70: 81 issues recorded, 65 closed, 16 open, and 17 <em>reopened</em> after regressions — the reopened records making regression repair explicit planning input rather than something reconstructed from code.</p>
+<p><img alt="Fusepoint issue dynamics over 70 loops" src="assets/harness-of-harness/fig1_fusepoint.png" />
+<em>Figure 1 from the paper: capability milestones and issue open/close dynamics across six days of autonomous FPS development.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>The meta-layer above harness evolution.</strong> <a href="../tutorials/meta-harness.html">Meta-Harness</a>, <a href="../tutorials/harnessdev.html">HarnessDev</a>, <a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a>, and <a href="../tutorials/recursive-harness-self-improvement.html">Recursive Harness Self-Improvement</a> all improve agents by <em>changing harness code</em>. HoH holds the harness fixed and improves the <em>project</em> through repeated invocation — the improvement loop lives one level up, in orchestration. The two axes compose in principle: nothing stops HoH's roles from running an evolved harness.</li>
+<li><strong>Evidence as the carried state.</strong> The <span class="arithmatex">\(\mathcal{E}^{\mathrm{ver}}/\mathcal{E}^{\mathrm{gap}}\)</span> split — verified behavior becomes preservation constraints, gaps become work — is the same gated-update instinct as <a href="../tutorials/keeping-harness-patches.html">AutoSaddler</a> (keeping only patches that help) and the performance gates in HarnessEvolve (arXiv 2609.00829, tracked this week), transplanted from harness updates to software increments. Reopened issues are its regression detector.</li>
+<li><strong>Independent verification as the anti-reward-hacking mechanism.</strong> Freezing the candidate, read-only QA, and "record gaps, never infer success" is the eval-side discipline that <a href="../tutorials/evolving-benchmarks.html">Evolving Benchmarks</a> argues self-improving systems need — here applied inside every loop rather than at the benchmark level. Notably, HoH's FrontierSWE gains are measured on the same benchmark this week's FrontierSWE v2 release (tracked) is hardening.</li>
+<li><strong>Contrast with role-based multi-agent SWE.</strong> MetaGPT/ChatDev-style fixed role pipelines (discussed in the paper's related work) also use planner/dev/QA roles, but within a bounded episode. HoH's claim is that the cross-loop <em>state contract</em> — not the role decomposition — is what sustains multi-day progress; the ablations (plan freezing and evidence removal each cost 6–8 points) support that reading. See also the <a href="../tutorials/self-evolving-coding-agents.html">Survey: Self-Evolving Coding Agents</a> for the broader design space.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline numbers deserve two discounts. First, all evaluation of intermediate/final artifacts is rubric- or verifier-based on the <em>benchmarks' own</em> scoring; GameCraft's LLM-scored rubric components (visuals, art) may reward the kind of polish an iterative loop naturally accumulates, independent of functional depth. Second, HoH@3 costs ~3.2× Vanilla's tokens (8.41M vs 2.59M on GameCraft); the pass-controlled table blunts but doesn't eliminate the compute objection, since Vanilla Continuation is a weak continuation strategy — a best-of-n or fresh-restart baseline at matched cost isn't reported (inferred from the paper's tables — verify in the supplementary material).</p>
+<p>The Fusepoint case is a single run, one game, with domain tools hand-provisioned for exactly that scenario — it demonstrates feasibility, not reliability, and 16 issues remained open at cutoff with a non-monotonic reopen rate. The deeper open question is whether the evidence ledger keeps working when QA's scenario-derived criteria are themselves wrong or incomplete: HoH's tester decides what counts as verified, and nothing outside the loop audits it. Still, as an existence proof that a thin, deterministic orchestration contract turns one-shot coding harnesses into week-scale developers — with every mechanism ablated — this is the most convincing entry in the genre so far.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Carry two states, not one</strong>: the artifact <span class="arithmatex">\(A_t\)</span> plus an explicit evidence ledger <span class="arithmatex">\(\mathcal{E}_t\)</span> split into verified-behaviors (preservation constraints) and gaps (work queue). Ablating either costs 6–8 points.</li>
+<li><strong>Constrain outputs, not workflows</strong>: schema-enforced deliverables per role, deterministic Runtime for permissions and candidate freezing, full agent autonomy inside those boundaries.</li>
+<li><strong>Structure beats iteration at matched budget</strong>: HoH@2 (5.67M tokens, 64.84) &gt; three-pass Vanilla Continuation (6.33M tokens, 58.24); gains still compounding at loop 10 on FrontierSWE and loop 70 in the wild.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-03 16:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

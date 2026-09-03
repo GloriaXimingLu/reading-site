@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Switch Distillation: Entropy-Routed KD Fixes Mid-Training&#x27;s Reasoning–Recall Tradeoff</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Switch Distillation: Entropy-Routed KD Fixes Mid-Training&#x27;s Reasoning–Recall Tradeoff</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.01532">arXiv:2609.01532</a> · <a href="https://arxiv.org/abs/2609.01532">arXiv</a> · <a href="https://github.com/facebookresearch/midtraining-distillation">GitHub</a> · <a href="https://x.com/iScienceLuvr/status/2095025584724119837">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.01532">alphaxiv.org</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Knowledge Distillation During Mid-Training Favors Reasoning over Factual Recall" (arXiv 2609.01532; Jacqueline He, Howard Yen, Shuyue Stella Li, Margaret Li, Hanqing Zeng, Yinglong Xia, Benyu Zhang, Zhuokai Zhao, Qiang Zhang, Pang Wei Koh, Luke Zettlemoyer, Wen-tau Yih — Meta AI / UW / Princeton; code released) shows that logit-based KD is <strong>stage-dependent</strong>: in controlled OLMo-2 experiments it Pareto-improves reasoning <em>and</em> factual recall during pre-training, but during mid-training <em>no</em> KD operating point — any α, forward or reverse KL, 1B/7B/13B teachers — beats plain next-token prediction on factual recall.</li>
+<li>The mechanism is an entropy asymmetry: teachers are confident (low predictive entropy) on procedural data and diffuse on knowledge-heavy tokens; students learn low-entropy facts early, so by mid-training the <em>unlearned</em> facts sit exactly where the teacher's supervision is weakest — and KD attenuates the gold-token gradient to ~0.5× NTP on those tokens.</li>
+<li><strong>Switch Distillation</strong> routes each token by teacher entropy: the lowest-entropy q% (q=20) get reverse-KL distillation, the rest get plain cross-entropy. With a 7B teacher, mid-training reasoning goes 26.1% → 44.7% over NTP with factual recall 29.3% vs 30.3%; after the full post-training pipeline the recall gap closes entirely while reasoning stays 1.25–1.32× NTP.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Mid-training is where the token budget is scarcest and per-token learning signal matters most — and it is quietly becoming where frontier labs put their distillation (the paper cites its use in Gemma-class and Meta pipelines). This work is the first controlled evidence that the standard KD objective is the <em>wrong default</em> at that stage: it looks great on reasoning dashboards while silently slowing exactly the knowledge acquisition mid-training corpora are curated for. Anyone running "distill from the instruct teacher during the annealing phase" should check Figure 1's middle panel before shipping.</p>
+<p>For this tracker, it's also the cleanest mechanistic story we've filed under distillation this year. The on-policy distillation literature (<a href="../tutorials/opd-survey.html">OPD survey</a>, <a href="../tutorials/opd-no-free-lunch.html">MOPD's no-free-lunch results</a>, <a href="../tutorials/dapd-dual-anchored-distillation.html">DAPD</a>) keeps finding that teacher supervision helps unevenly and needs targeting; this paper derives the <em>where</em> from first principles — teacher predictive entropy as a per-token reliability signal, validated against gold-token agreement, learning curves, and gradient norms — and then builds the minimal intervention on top. The signal is free (you already computed teacher logits), the method is four lines, and the ablations show routing <em>policy</em>, not objective choice, carries the gains.</p>
+<h2>The core idea</h2>
+<p>Standard logit KD interpolates cross-entropy with a divergence to the teacher:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{KD}} = (1-\alpha)\,\mathcal{L}_{\mathrm{CE}} + \alpha\,\mathcal{L}_{\mathrm{KL}},\]</div>
+<p>where <span class="arithmatex">\(\alpha\in[0,1]\)</span> is distillation strength and <span class="arithmatex">\(\mathcal{L}_{\mathrm{KL}}\)</span> is forward or reverse KL between temperature-scaled teacher and student next-token distributions. Sweeping <span class="arithmatex">\(\alpha\)</span>, KL direction, and teacher size (OLMo-2 1B/7B/13B Instruct) over a 1B student:</p>
+<ul>
+<li><strong>Pre-training</strong> (100B tokens from scratch): moderate forward-KL distillation improves reasoning <em>and</em> factual recall over NTP.</li>
+<li><strong>Mid-training</strong> (60B tokens from the 4T-token Stage-1 checkpoint, Dolmino mix): every KD point gains reasoning but <em>loses</em> factual recall relative to NTP — the reasoning–recall tradeoff. It persists (narrowing) through post-training.</li>
+</ul>
+<p>Three measurements explain the stage dependence. (1) Teacher entropy is systematically lower on procedural domains (math, FLAN) than knowledge-heavy ones (web, Wikipedia), and within every domain, lower entropy predicts higher teacher top-1 agreement with the corpus token — entropy is a supervision-quality signal. (2) Under pure NTP, students acquire facts in teacher-entropy order: by end of pre-training the student knows 67% of lowest-entropy-quintile facts vs 5% of the highest; by the 4T-token mid-training init it's 80% vs 7% — so mid-training's <em>remaining</em> facts live in the high-entropy tail. (3) On those high-entropy tokens the teacher puts little mass on the gold token, and both FKD and RKD attenuate the gold-token gradient to roughly 0.5× NTP. Weak supervision, concentrated precisely on the unlearned facts.</p>
+<p>The fix follows directly: use the teacher only where it is confident. Compute per-token teacher entropy</p>
+<div class="arithmatex">\[H_{n} = -\sum_{v\in\mathcal{V}} p_{T}^{(\tau)}(v\mid x_{&lt;n})\,\log p_{T}^{(\tau)}(v\mid x_{&lt;n}),\]</div>
+<p>where <span class="arithmatex">\(p_T^{(\tau)}\)</span> is the teacher's temperature-<span class="arithmatex">\(\tau\)</span> next-token distribution over vocabulary <span class="arithmatex">\(\mathcal{V}\)</span> at position <span class="arithmatex">\(n\)</span>, and hard-route the lowest-q% of in-batch tokens (<span class="arithmatex">\(\mathcal{S}_q\)</span>) to reverse KL, the rest to cross-entropy:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{SwitchDist}} = \tau^{2}\,\frac{1}{|\mathcal{S}_q|}\sum_{n\in\mathcal{S}_q}\mathrm{RKL}\!\left(p_{S,n}^{(\tau)}\,\middle\|\,p_{T,n}^{(\tau)}\right) + \frac{1}{|\bar{\mathcal{S}}_q|}\sum_{n\notin\mathcal{S}_q}\mathcal{L}_{\mathrm{CE},n},\]</div>
+<p>with the two terms normalized separately so q sets only the routing policy, not the effective distillation strength. Reverse KL is chosen deliberately: its mode-seeking behavior exploits the sharp teacher distributions the router selects. No extra parameters, no extra forward passes.</p>
+<p><img alt="Switch Distillation method" src="assets/switch-distillation/fig6_method.png" />
+<em>Figure 6 from the paper: teacher entropy varies token-by-token ("Reppisch" is uncertain; "Switzerland" is not); each step routes the lowest-entropy q% of tokens to reverse-KL distillation and the rest to corpus cross-entropy.</em></p>
+<h2>How it works</h2>
+<pre><code class="language-text">Algorithm: Switch Distillation (one mid-training step)
+# reconstruction from Fig. 6 and Sec. 5; no numbered algorithm in paper
+Input: batch of corpus sequences, student S, frozen teacher T,
+       temperature tau, routing quantile q (paper: q = 20%)
+1  forward T on the batch  -&gt;  teacher logits (needed for KD anyway)
+2  for each supervised token position n:
+3      H_n &lt;- entropy of temperature-scaled teacher distribution
+4  S_q  &lt;- the q% of in-batch tokens with the LOWEST H_n
+5  loss_KD &lt;- mean over n in S_q  of tau^2 * RKL(p_S,n || p_T,n)
+6  loss_CE &lt;- mean over n not in S_q  of  -log p_S(x_n | x_&lt;n)
+7  loss &lt;- loss_KD + loss_CE        # normalized separately:
+8                                   # q changes routing, not strength
+9  backprop loss; update student
+# intuition: distill where the teacher is confident,
+#            trust the corpus where it is not
+</code></pre>
+<p>Setup details that matter for reading the numbers: mid-training runs 60B tokens of Dolmino Mix 1124 (DCLM web, FLAN, Dolmino Math, peS2o, Wikipedia, Stack Exchange) from the OLMo-2 1B 4T-token checkpoint; evaluation uses the OLMES harness grouped into Reasoning (generative), Factual Recall (TriviaQA/NQ/SimpleQA-style generative retrieval), and Knowledge &amp; Commonsense (multiple choice). Baselines: NTP, FKD and RKD at α=0.5 (their best balance), and TRKD — the token-routing KD from the pre-training literature, which distills <em>high</em>-entropy tokens while keeping CE everywhere; Switch Distillation inverts both choices (low-entropy tokens, hard switch).</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Mid-training, 7B Instruct teacher</strong>: Reasoning macro 26.1% (NTP) → <strong>44.7%</strong> (SwitchDist), vs 39.3% for the best conventional KD (RKD) and 37.5% for TRKD. Factual Recall 29.3% vs NTP's 30.3% — the closest of any KD method (abstract framing: 1.61–1.71× reasoning, 96.7–96.8% recall preserved). Knowledge &amp; Commonsense is also best at 49.3% (1.13–1.19×). GSM8K goes 40.4 → 69.7.</li>
+<li><strong>13B teacher</strong>: same pattern at slightly lower absolute levels (Reasoning 42.1%, GSM8K 66.0) — the 7B teacher beats the 13B, consistent with capacity-gap findings in the distillation-scaling literature.</li>
+<li><strong>Post-training persistence</strong>: applying OLMo-2's full pipeline (SFT → DPO → RLVR×2) to every mid-trained checkpoint, SwitchDist stays strongest on reasoning (50.6% macro with the 7B teacher, 1.25–1.32× NTP) and — despite entering with a small recall deficit — <em>forgets the least</em>, finishing with the highest Factual Recall macro-average. The mid-training choice survives alignment.</li>
+<li><strong>Speed</strong>: SwitchDist passes the final reasoning performance of the 60B-token NTP baseline within the first 2.5B mid-training tokens evaluated (Fig. 13) — a ~24× token-efficiency statement for reasoning acquisition.</li>
+<li><strong>Ablations</strong> (7B teacher): swap RKL→FKL: −2.9 reasoning; replace entropy routing with teacher-correctness routing (−4.4 reasoning, −5.1 recall), oracle domain routing (−7.2 reasoning), or random routing (−6.5); replace soft distillation with teacher top-1 labels: −6.4 reasoning. Entropy-based routing is the driver; the soft distribution adds the rest.</li>
+</ul>
+<p><img alt="Reasoning-recall tradeoff across stages" src="assets/switch-distillation/fig1_tradeoff.png" />
+<em>Figure 1 from the paper: sweeping distillation strength α with a 7B-Instruct teacher. KD Pareto-improves in pre-training (left) but trades recall for reasoning in mid-training (middle); Switch Distillation (★) mitigates the tradeoff and Pareto-dominates NTP after post-training (right).</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Entropy-gated teacher trust is converging from two directions.</strong> The paper's closest relative, EOPD, uses teacher entropy during <em>post-training</em> on student-generated trajectories to interpolate KL directions; SwitchDist uses it during <em>mid-training</em> on fixed corpus tokens to decide teacher-vs-corpus. Together with the confidence-weighted variants in the <a href="../tutorials/opd-survey.html">OPD survey</a> and the dual-anchor correction of <a href="../tutorials/dapd-dual-anchored-distillation.html">DAPD</a>, "never apply uniform teacher supervision" now looks like the consensus across every training stage.</li>
+<li><strong>A stage-aware companion to the stage-allocation results.</strong> The <a href="../tutorials/rl-pretraining-scaling-law.html">pretrain-vs-RL scaling-law study</a> asks where compute goes across stages; this paper shows the <em>objective itself</em> must change per stage because the student's knowledge state changes what teacher supervision is worth. Same lesson <a href="../tutorials/midtool-midtraining.html">MidTool</a> drew for tool-use data placement: mid-training is not just "more pre-training."</li>
+<li><strong>Inverts TRKD rather than extending it.</strong> TRKD (from the pre-training/in-context-learning line) distills high-entropy tokens with CE retained everywhere; SwitchDist distills <em>low</em>-entropy tokens with a hard switch — and beats it by 7.2 reasoning points here. The disagreement is a useful flag that routing polarity is regime-dependent, not universal.</li>
+<li><strong>Feeds the tracker's teacher-reliability thread.</strong> The gold-token gradient-attenuation analysis (~0.5× NTP at high entropy) gives a mechanistic basis for failure modes catalogued in <a href="../tutorials/opd-no-free-lunch.html">MOPD / no-free-lunch</a> and the generalization asymmetries in <a href="../tutorials/opd-dual-nature.html">OPD's dual nature</a> — weak teacher mass on the right answer doesn't just fail to help, it displaces the corpus signal that would have.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The scope qualifiers matter. Everything is OLMo-2 (plus a SmolLM2 replication in the appendix) at 1B-student scale with same-family teachers — vocabulary-compatible, same tokenizer, same data lineage. Cross-family distillation, larger students, and stronger-but-mismatched teachers are untested, and the observed 7B&gt;13B teacher ordering hints the routing threshold q interacts with the capacity gap (q=20% was tuned; the sweep is in the appendix, sensitivity unreported in the main text). The entropy signal is also computed from the <em>same</em> teacher whose supervision it gates — a teacher that is confidently wrong (miscalibrated on its own pre-training gaps, or on shifted domains like code) gets routed <em>in</em>, and the teacher-correctness ablation suggests correctness and confidence do come apart (−4.4/−5.1 when routing on correctness — though that oracle uses gold labels, so the comparison isn't pure).</p>
+<p>There's also a framing subtlety: "preserves 96.7% of factual recall" is still a small absolute regression vs NTP at the mid-training checkpoint; the full Pareto dominance only materializes after post-training. That's the right endpoint to care about — mid-training exists to prime post-training — but it means the headline claim rests on one post-training pipeline (OLMo-2's) applied once per checkpoint. Still: a robust negative result about the default objective, a three-factor mechanism with direct measurements at every link, and a near-free fix that survives alignment. This is what a good mid-training paper looks like.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>KD is not stage-agnostic</strong>: with a knowledgeable student, uniform distillation slows factual acquisition — no (α, KL-direction, teacher-size) point beats NTP on recall during mid-training, even as reasoning soars.</li>
+<li><strong>Teacher entropy is a free per-token reliability signal</strong>: it predicts gold-token agreement within every domain, and the unlearned facts at mid-training concentrate exactly where it is highest.</li>
+<li><strong>Route, don't blend</strong>: reverse-KL on the lowest-entropy 20% of tokens + plain CE elsewhere → 1.6–1.7× reasoning at 97% recall, Pareto-dominating NTP after post-training — and routing policy, not loss choice, is what carries it.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-03 16:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

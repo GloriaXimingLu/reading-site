@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WHALE: A Simple Recipe for Joint Harness–Weight Optimization</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>WHALE: A Simple Recipe for Joint Harness–Weight Optimization</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.00196">arXiv:2609.00196</a> · <a href="https://arxiv.org/abs/2609.00196">arXiv</a> · <a href="https://github.com/krafton-ai/WHALE">GitHub</a> · <a href="https://x.com/Kangwook_Lee/status/2095234520819826878">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"WHALE: A Simple Recipe for Joint Harness–Weight Optimization" (arXiv 2609.00196; Haechan Kim, Yoonho Lee, Gisang Lee, Chelsea Finn, Kangwook Lee — KRAFTON / KAIST / Stanford; code released) alternates two black-box phases: update model weights under the current harness (online rejection-sampling fine-tuning), then search over <strong>executable harness code</strong> under the updated model (Meta-Harness) — the first controlled, budget-matched study of full alternating weight–harness optimization.</li>
+<li>On Qwen3.5-2B/4B agents across SearchQA, math-with-code, and chess puzzles, WHALE beats weight-only and harness-only by 7.67–24.38 points and Fast–Slow Training (same schedule, search restricted to prompts) by 4.15–13.00 points in best mean@8 accuracy — e.g. SearchQA 48.3% vs 38.3/38.3/35.3.</li>
+<li>The scheduling findings are the real contribution: domains split into harness-dominant and weight-dominant regimes, one big pass per component ("stagewise") loses to small interleaved updates by 5.32–9.16 points at <em>higher</em> rollout cost, and a per-phase patience rule on training signals (adaptive WHALE) matches or beats hand-tuned schedules — 52.82% on SearchQA, the best number in the whole comparison.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Kangwook Lee's one-line framing of the paper — with data, you should train both the model weights <em>and</em> the harness — is precisely the co-evolution thesis this tracker has been assembling piece by piece. <a href="../tutorials/training-agents-in-harnesses.html">Training Agents Inside Their Harnesses</a> does the weight half with the scaffold frozen; <a href="../tutorials/meta-harness.html">Meta-Harness</a> and <a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a> do the harness half with the weights frozen; the <a href="../tutorials/long-horizon-agents-survey.html">long-horizon agents survey</a> formalizes <span class="arithmatex">\(\text{Agent}=\pi_\theta\oplus H\)</span> and calls the joint problem open. WHALE is the first paper here to run the full loop both ways under matched budgets and ask the operational questions: which component is the bottleneck, and how long should each phase run before switching?</p>
+<p>The answers are actionable. First, a <em>short harness search is a cheap diagnostic</em>: in SearchQA it matched peak weight-only accuracy with 5.79% of the rollouts, so run it before you commit to RL. Second, the interaction is <em>catalytic</em> in both directions — in Math, harness search is nearly useless on the base model (0.42% vs 15.42% for weight-only), but after one small weight update the <em>same</em> search becomes effective (format accuracy +3.54 points in 4,608 rollouts, where harness-only spent 46,080 rollouts for +0.63). Optimizing one component changes which gains the other can reach. Third, the standard practice — train the model to convergence, then tune the scaffold once — is quantifiably the wrong schedule.</p>
+<h2>The core idea</h2>
+<p>Weights <span class="arithmatex">\(\theta\)</span> and an executable harness program <span class="arithmatex">\(h\)</span> (system instructions, tool schemas, context management, parsing/execution logic, termination policy) jointly induce a trajectory distribution, and the object to maximize is the expected task reward of the <em>system</em>:</p>
+<div class="arithmatex">\[J(\theta,h)\triangleq\mathbb{E}_{x\sim\mathcal{P}}\,\mathbb{E}_{\tau\sim\pi_{\theta,h}(\cdot\mid x)}[R(x,\tau)],\]</div>
+<p>where <span class="arithmatex">\(x\)</span> is a task from distribution <span class="arithmatex">\(\mathcal{P}\)</span>, <span class="arithmatex">\(\tau\)</span> a full trajectory (messages, tool calls/results, environment transitions), and <span class="arithmatex">\(R\in\{0,1\}\)</span> a sparse trajectory-level verifier. Since <span class="arithmatex">\(J\)</span> is not separable in <span class="arithmatex">\(\theta\)</span> and <span class="arithmatex">\(h\)</span>, WHALE decomposes it into alternating conditional updates, each against a <em>fixed</em> counterpart:</p>
+<div class="arithmatex">\[\theta_{k+1}=\operatorname{ModelUpdate}(\theta_{k};h_{k},\mathcal{D}_{\mathrm{weight}}),\qquad h_{k+1}=\operatorname{HarnessSearch}(h_{k};\theta_{k+1},\mathcal{D}_{\mathrm{harness}}).\]</div>
+<p>Alternation avoids evaluating each update against a moving target (the two phases run on incompatible cadences: gradient steps vs. long propose-evaluate-select cycles). The recipe is modular — both operators are black boxes — and the whole design question collapses into <em>when to switch</em>: each phase needs enough evidence to separate real improvement from noise, but must stop before over-optimizing against a counterpart that is about to change.</p>
+<p><img alt="WHALE overview" src="assets/whale-harness-weight/fig1_overview.png" />
+<em>Figure 1 from the paper: (a) weight-only and harness-only adaptation move along one axis of <span class="arithmatex">\(J(\theta,h)\)</span>; alternating steps track the valley to the joint optimum. (b) WHALE beats single-component and prompt-restricted joint baselines in all three domains.</em></p>
+<h2>How it works</h2>
+<p><strong>Weight phase — online RSFT.</strong> Under fixed harness <span class="arithmatex">\(h\)</span>, sample <span class="arithmatex">\(G=8\)</span> trajectories per prompt from the frozen <span class="arithmatex">\(\theta_{\mathrm{old}}\)</span>, keep only verifier-accepted ones (<span class="arithmatex">\(\mathcal{S}_s^+\)</span>), and maximize token-normalized log-likelihood on the model-generated tokens <span class="arithmatex">\(\mathcal{I}(\tau)\)</span> only:</p>
+<div class="arithmatex">\[\widehat{J}_{\mathrm{weight}}(\theta;\theta_{\mathrm{old}},h)=\frac{1}{\sum_{(x,\tau)\in\mathcal{S}_{s}^{+}}|\mathcal{I}(\tau)|}\sum_{(x,\tau)\in\mathcal{S}_{s}^{+}}\;\sum_{t\in\mathcal{I}(\tau)}\log p_{\theta}\left(\tau_{t}\mid x,h,\tau_{&lt;t}\right).\]</div>
+<p><strong>Harness phase — Meta-Harness.</strong> Under fixed <span class="arithmatex">\(\theta\)</span>, an LLM proposer inspects an archive of prior harnesses plus their evaluation artifacts (scores, per-example outcomes, trajectory logs) through filesystem tools, writes <span class="arithmatex">\(M\)</span> candidate harness programs per iteration, and each candidate is scored on a small <span class="arithmatex">\(\mathcal{D}_{\mathrm{harness}}\)</span> (256 examples, 1 rollout each):</p>
+<div class="arithmatex">\[\widehat{J}_{\mathrm{harness}}(\theta,h)=\frac{1}{|\mathcal{D}_{\mathrm{harness}}|}\sum_{x\in\mathcal{D}_{\mathrm{harness}}}\widehat{\mathbb{E}}_{\tau\sim\pi_{\theta,h}(\cdot\mid x)}[R(x,\tau)].\]</div>
+<p>The search may modify prompts, tool I/O formatting, tool feedback, stopping criteria, and turn allocation — model, data, verifier, and environment stay fixed. The best archived harness is accepted.</p>
+<pre><code class="language-text">Algorithm: WHALE (RSFT + Meta-Harness instantiation)
+Input: (theta_0, h_0), D_weight, D_harness, verifier R
+Budgets: E epochs/cycle, I search iters/cycle, M candidates/iter
+for k = 0, 1, ...:
+    # ---- weight-update phase (harness h_k frozen) ----
+    for each prompt batch B_s in next E-epoch span of D_weight:
+        sample G rollouts per prompt under (theta_old, h_k)
+        S+ &lt;- verifier-accepted (x, tau) pairs
+        SGD-ascend J_weight on model tokens of S+; sync rollout workers
+    theta_{k+1} &lt;- theta
+    # ---- harness-search phase (theta_{k+1} frozen) ----
+    archive A &lt;- {h_k} with eval artifacts
+    for j = 1..I:
+        C_j &lt;- Propose(A, artifacts; M)      # LLM writes harness code
+        evaluate each h in C_j on D_harness (1 rollout/example)
+        A &lt;- A ∪ C_j;  h_accept &lt;- argmax_{h in A} J_harness
+    h_{k+1} &lt;- h_accept
+    # adaptive WHALE: replace fixed E, I with per-phase patience —
+    # stop a phase when its own training signal plateaus
+return best (theta_k, h_k) on test
+</code></pre>
+<p><strong>Adaptive WHALE</strong> replaces <span class="arithmatex">\((E,I)\)</span> with an early-stopping-style patience rule per phase, driven purely by training signals (sliding-window training reward for weights; best archive training score for harness search) — no validation set.</p>
+<h2>Results</h2>
+<p>Setup: Qwen3.5-2B (SearchQA: Search-R1-style Wikipedia retrieval; Math: DAPO-Math-17K training, AIME 24/25 test, Python execution tool) and Qwen3.5-4B (Lichess chess puzzles, UCI moves against a fixed opponent line). Baselines share initializations and receive matched cumulative budgets.</p>
+<ul>
+<li><strong>Headline</strong> (best test mean@8): SearchQA <strong>48.3</strong> vs 38.3 (harness-only) / 38.3 (weight-only) / 35.3 (FST); Math <strong>24.8</strong> vs 0.4 / 15.4 / 17.9; Chess <strong>29.8</strong> vs 19.8 / 22.2 / 25.7. Since FST uses WHALE's exact schedule with search confined to prompts, the FST gap (+4.15 to +13.00) isolates the value of searching <em>executable</em> harness code over prompt text.</li>
+<li><strong>Bottleneck regimes</strong>: SearchQA is harness-dominant — harness search lifts retrieval accuracy 26.88%→60.61% (the harness post-processes queries and controls what returns), and WHALE reaches 65.41%. Math is weight-dominant — the binding constraint is response truncation (95.83%→30.83% only via weight updates); harness-side caps and recovery steps can't fix base-model verbosity.</li>
+<li><strong>Alternating vs stagewise</strong>: full-budget weight-then-harness reaches 43.02% (SearchQA) and 15.63% (Math); WHALE (0.6, 6) beats it by +5.32/+9.16 and passes its final accuracy with 29%/49% of the rollouts. Diagnosis: conditional over-optimization — in Math, the 60-iteration stagewise harness search keeps improving its <em>training</em> score while gaining +0.21 test points.</li>
+<li><strong>Schedule geometry</strong>: (0.2, 6) is the best fixed schedule in <em>both</em> regimes (50.09% / 28.33%); scaling per-cycle budgets up monotonically hurts (SearchQA 50.09→48.34→45.93 along (0.2,6)→(0.6,6)→(1.0,10)), and too little evidence per phase destabilizes (the Math (0.2, 2) run accepted a chance-inflated candidate and was stopped). The budgets interact: increasing <span class="arithmatex">\(E\)</span> helps at <span class="arithmatex">\(I{=}2\)</span> but hurts at <span class="arithmatex">\(I{=}6\)</span>.</li>
+<li><strong>Adaptive</strong>: 52.82% on SearchQA — best point of the entire comparison, +2.73 over the best hand-tuned schedule with 23% fewer rollouts than (0.6,6) needed; on Math 26.46%, above (0.6,6) but 1.87 below the best fixed schedule. Realized median phase lengths (~0.25 epochs, <span class="arithmatex">\(I{=}7\)</span>) land near the sweep's optimum on their own.</li>
+</ul>
+<p><img alt="Best-so-far accuracy vs rollouts" src="assets/whale-harness-weight/fig2_curves.png" />
+<em>Figure 2 from the paper: best-so-far test mean@8 vs. cumulative rollouts. The orange segments (harness-search phases) produce the near-vertical jumps; note harness-only saturating in Math while WHALE keeps climbing.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>Completes the co-evolution quadrant.</strong> <a href="../tutorials/training-agents-in-harnesses.html">Training Agents Inside Their Harnesses</a> = weights-only inside a fixed scaffold; <a href="../tutorials/meta-harness.html">Meta-Harness</a> = harness-only around frozen weights (and is WHALE's search operator); <a href="../tutorials/harness-r1-trainable-harness.html">Harness-R1</a> trains an <em>editor</em> while the target stays frozen. WHALE alternates the two native updates directly — the recipe the <a href="../tutorials/harness-rl-coevolution.html">Interleaving Harness Engineering with RL</a> piece sketched, now with a controlled study behind it.</li>
+<li><strong>The over-optimization result generalizes a familiar failure.</strong> Stagewise's collapse (training score up, +0.21 test) is the same train-signal-overfitting that <a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a> and <a href="../tutorials/keeping-harness-patches.html">AutoSaddler</a> document for harness search alone — WHALE shows the fix is not better gating but <em>shorter phases against a fresher counterpart</em>.</li>
+<li><strong>Regime diagnosis is a scaling-allocation question.</strong> "Which component is the bottleneck" is the harness-side analogue of the pretrain-vs-RL compute split in the <a href="../tutorials/rl-pretraining-scaling-law.html">RL/pretrain scaling-law study</a>; the 5.79%-of-rollouts diagnostic makes it cheap to answer empirically before committing GPU-hours.</li>
+<li><strong>Contrast with per-task harness generation.</strong> <a href="../tutorials/jit-agent-harness.html">JIT Agent Harnesses</a> writes a fresh harness per task with weights frozen; WHALE amortizes one harness per domain but co-adapts the weights. The obvious hybrid — RSFT under JIT-style task-conditional harnesses — is unexplored, and <a href="../tutorials/harnesscompass-guided-evolution.html">HarnessCompass</a>-style generalization pressure would be the natural guard for <span class="arithmatex">\(\mathcal{D}_{\mathrm{harness}}\)</span> overfitting.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The recipe is genuinely simple, but the evidence base is small-model and single-seed territory: Qwen3.5-2B/4B, 256-example harness-search sets, and no reported variance across runs (inferred from the main text — verify in the appendix). RSFT is the gentlest possible weight operator; whether the scheduling conclusions survive PPO/GRPO-class updates — which move the policy much further per epoch and could make "small phases" either more critical or unstable — is untested, and the authors themselves flag operator generality as future work. The harness-search budget accounting also excludes proposer compute (a frontier-model expense that Meta-Harness inherits), so the rollout-efficiency claims for harness phases understate dollar cost.</p>
+<p>There's also a quiet dependency: adaptive WHALE's patience rule assumes the phase training signal is informative. In Math the training score of a long harness search kept improving while test gains were nil — the very failure the rule is supposed to stop — and adaptive Math indeed lands below the best fixed schedule. Regime detection from training signals alone may be the actual open problem. None of this dents the core message: the bottleneck moves, and any pipeline that freezes one side of <span class="arithmatex">\((\theta, h)\)</span> by convention is leaving points — sometimes 20+ — on the table.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>The bottleneck is domain-dependent and it moves</strong>: SearchQA is harness-dominant, Math is weight-dominant, and a small update to one component can unlock a previously useless search over the other — so optimize <span class="arithmatex">\(J(\theta,h)\)</span>, not one axis.</li>
+<li><strong>Alternate in small steps</strong>: one big weight pass followed by one big harness pass over-optimizes each side against a stale counterpart; short interleaved phases won by 5–9 points at half the rollouts.</li>
+<li><strong>A cheap harness search is your first diagnostic</strong>: it matched peak weight-only accuracy with ~6% of the rollouts in the harness-dominant regime — run it before you launch RL.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-03 16:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
