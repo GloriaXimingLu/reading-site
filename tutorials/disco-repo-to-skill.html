@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repo-To-Skill: Distilling 1,000 GitHub Repositories into Verified AI4AI Skills (DisCo)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Repo-To-Skill: Distilling 1,000 GitHub Repositories into Verified AI4AI Skills (DisCo)</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.02749">arXiv:2609.02749</a> · <a href="https://arxiv.org/abs/2609.02749">arXiv</a> · <a href="https://x.com/dair_ai/status/2095539831141220620">X post</a> · <a href="https://academy.dair.ai/papers/repo-to-skill-distilling-github-repositories-into-ai4ai-skills-2609.02749">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Repo-To-Skill: Distilling GitHub Repositories Into AI4AI Skills" (arXiv 2609.02749; Jianlyu Chen, Yuyang Hu, et al. — BAAI) names the layer that model + harness leave unspecified: <strong>operational knowledge</strong> <span class="arithmatex">\(K\)</span> — the executable know-how that separates knowing a method from making it work — and upgrades the research agent from <span class="arithmatex">\(A=(M_\theta,H)\)</span> to <span class="arithmatex">\(A_{res}=(M_\theta,H,K)\)</span>.</li>
+<li>DisCo is an agent that runs in two modes over the same backbone and harness: <em>creator mode</em> distills repositories/papers into verified skill graphs; <em>researcher mode</em> solves tasks with a task-relevant branch of the library loaded as operating context. Scaled task-agnostically over the open ecosystem, this yields the <strong>AREX-Skill Library: 5,353 verified skills from 1,000 widely used ML repos (+153 papers), organized into 20 areas and 178 capability families</strong>.</li>
+<li>With GPT-5.5, harness, and execution budget held fixed, skills lift MLE-bench Any-Medal from 31.11% to <strong>72.89%</strong> (+134.3% relative — and 8.45 points above the best public leaderboard agent on any backbone), PaperBench replication 29.45→39.59 (+34.4%), FrontierCS 70.63→77.14 (+9.2%), PassNet 1.343→1.531 (+14.0%).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The field has spent two years strengthening exactly two components — backbones get smarter each generation, harnesses get better engineered — and this tracker documents both threads exhaustively. DisCo's claim is that a third component was silently missing and is worth more than either at the margin: the same Codex agent goes from bottom-of-leaderboard (31.11 on MLE-bench) to top (72.89) with <em>zero</em> change to weights or scaffold, purely by handing it distilled, verified, executable domain know-how. If that number survives replication, "skill engineering at ecosystem scale" becomes a third axis of agent capability, and one that compounds: declarative sources (repos, papers, blogs) are abundant and continually refreshed, while the expert labor that currently converts them into agent-usable form is the bottleneck DisCo automates.</p>
+<p>The framing also cleanly separates concerns that this tracker's self-improving-agents thread keeps entangling: the harness specializes <em>how the agent explores</em>; <span class="arithmatex">\(K\)</span> specializes <em>what the agent knows to consider</em>. Improvement loops that edit prompts and tools (HarnessEvolve, tracked this week, or <a href="../tutorials/harnesscompass-guided-evolution.html">HarnessCompass</a>) are optimizing <span class="arithmatex">\(H\)</span>; DisCo argues much of the headroom was never in <span class="arithmatex">\(H\)</span> at all.</p>
+<h2>The core idea</h2>
+<p>A research task is <span class="arithmatex">\(\tau=(q,\mathcal{D},\mathcal{E},g)\)</span> — problem, given data/material, environment (tools + budget), and target. A conventional agent <span class="arithmatex">\(A=(M_\theta,H)\)</span> runs the loop</p>
+<div class="arithmatex">\[ a_t \sim \pi_\theta(a \mid \tau, h_t, H), \qquad o_t = \mathcal{E}(a_t), \]</div>
+<p>and everything domain-specific must be inferred by trial and error — which spends the same budget <span class="arithmatex">\(\mathcal{E}\)</span> bounds. DisCo adds an explicit third component,</p>
+<div class="arithmatex">\[ A_{res} = (M_\theta, H, K), \qquad a_t \sim \pi_\theta(a \mid \tau, h_t, H, K), \]</div>
+<p>where <span class="arithmatex">\(K\)</span> is operational knowledge as operating context. It has two constituents: <strong>capability</strong> (methods/code/APIs packaged into invocable units) and <strong>usage policy</strong> (the conditions, reasons, and procedures governing each unit). Capability without policy is tools without selection criteria; policy without capability is advice without an interface.</p>
+<p>The unit of <span class="arithmatex">\(K\)</span> is a three-layer skill,</p>
+<div class="arithmatex">\[ S = (\ \underbrace{\texttt{SKILL.md}}_{\text{knowledge interface}},\ \underbrace{\texttt{references/}}_{\text{knowledge substrate}},\ \underbrace{\texttt{scripts/}}_{\text{execution interface}}\ ), \]</div>
+<p>read via progressive disclosure: only SKILL.md (SOP, key concepts, worked examples, failure modes, routing pointers) is loaded up front; deeper docs and executable wrappers load on demand. Skills from one source form a <strong>skill graph</strong> <span class="arithmatex">\(\mathcal{G}=(\mathcal{S},\mathcal{L})\)</span> with an entry skill and links encoding routing/dependency/composition, so the loaded context at any moment is just the branch the task needs.</p>
+<p><img alt="AREX-Skill concept and headline gains" src="assets/disco-repo-to-skill/fig1.png" />
+<em>Figure 1 from the paper: (a) operational knowledge as the missing layer beyond model + harness — skills steer the research agent past dead ends (method choice, API use, validation checks, failure recovery); (b) the resulting stack and per-benchmark gains.</em></p>
+<h2>How it works</h2>
+<p>Every distillation run follows one four-stage pipeline, differing only in its anchor <span class="arithmatex">\(z\)</span>:</p>
+<div class="arithmatex">\[ z \xrightarrow{\ \text{scope}\ } \mathcal{Q} \xrightarrow{\ \text{ground}\ } \mathcal{X} \xrightarrow{\ \text{construct}\ } \tilde{\mathcal{G}} \xrightarrow{\ \text{verify}\ } (\mathcal{G}, R), \]</div>
+<p>where <span class="arithmatex">\(\mathcal{Q}\)</span> is the capability set the run decides to cover, <span class="arithmatex">\(\mathcal{X}\subseteq C\)</span> the admissible evidence gathered from source material <span class="arithmatex">\(C\)</span>, <span class="arithmatex">\(\tilde{\mathcal{G}}\)</span> the candidate skill graph, and the accepted <span class="arithmatex">\(\mathcal{G}\)</span> ships with a construction record <span class="arithmatex">\(R\)</span> retaining evidence used, checks performed, and unresolved gaps. <strong>Task-agnostic</strong> distillation anchors on a source (<span class="arithmatex">\(z=c\)</span>: a repo or paper) — this is what populates the library. <strong>Task-oriented</strong> distillation anchors on a problem and <em>searches</em> for sources — used per-task on MLE-bench-style problems. The paper's dictum: <em>verification is what separates distillation from summarization</em> — no skill enters the library on the strength of its sources alone; skills are checked by running them (task trials/checks), unsupported claims repaired, and surviving gaps recorded in <span class="arithmatex">\(R\)</span> rather than hidden.</p>
+<pre><code class="language-text">Algorithm: DisCo skill distillation (creator mode)
+Input: anchor z (source c, or task tau), reachable material C
+1. SCOPE:      Q &lt;- capabilities to cover
+               (task-agnostic: what the repo/paper teaches;
+                task-oriented: what the task's solution gaps demand)
+2. GROUND:     X &lt;- admissible evidence from C
+               (select/filter; task-oriented: web-search &amp; assemble;
+                record conflicts and gaps)
+3. CONSTRUCT:  G~ &lt;- agent-facing skills in 3 layers
+               (SKILL.md + references/ + scripts/),
+               + routing/dependency/composition links
+4. VERIFY:     run checks or task trials; find unsupported claims;
+               repair skill, link, evidence, or setup;
+               unresolved gaps -&gt; record R
+5. DEPOSIT:    accepted graph G into AREX-Skill Library
+Researcher mode: given tau, retrieve relevant branch of library
+                 as operating context K; solve tau with (M_theta, H, K)
+</code></pre>
+<p>Construction of the public snapshot used GPT-5.5 and GPT-5.6-sol at xhigh reasoning effort over 1,000 repos selected by open-source visibility and practical use. In researcher mode the agent reads a router/entry skill, follows only the links its problem calls for, and invokes <code>scripts/</code> wrappers instead of reimplementing.</p>
+<p><img alt="DisCo pipeline" src="assets/disco-repo-to-skill/fig2.png" />
+<em>Figure 2 from the paper: the four-stage skill-distillation pipeline (scope → ground → construct → verify) feeding the AREX-Skill Library, with researcher mode consuming task-relevant skills as operating context <span class="arithmatex">\(K\)</span> under progressive disclosure.</em></p>
+<h2>Results</h2>
+<p>All comparisons hold backbone (GPT-5.5), harness (Codex), and downstream execution budget fixed; skill construction runs on a separate one-time budget not counted in either condition.</p>
+<ul>
+<li><strong>MLE-bench (full 75 competitions, Any-Medal, 3 runs):</strong> Codex 31.11 → <strong>Codex + AREX-Skill 72.89</strong> (Low 42.42→86.36, Medium 31.58→69.30, High 13.33→62.22). That beats every public leaderboard entry, including Famou-Agent 2.0 on Gemini-3-Pro (64.44) — +8.45 points over the previous best with a <em>weaker-scoring</em> base agent. Skills here are task-oriented, built per task from web-searched sources with the competition webpage and competition-specific content excluded.</li>
+<li><strong>PaperBench (20 papers, official grader):</strong> 29.45 → 39.59 average replication (+34.4%), distilling from works cited in the target paper's related-work section, excluding the target paper and its released code.</li>
+<li><strong>FrontierCS (188 Agent-Track tasks, 5h/task, 2 CPU/4 GiB):</strong> 70.63 → 77.14 (+9.2%) with a <em>single frozen skill graph shared across all tasks</em> — the strongest evidence for reusable, task-agnostic operational knowledge.</li>
+<li><strong>PassNet (compiler pass generation):</strong> 1.343 → 1.531 (+14.0%).</li>
+</ul>
+<p>The gain profile is informative: largest where tasks demand broad stack know-how the model can't hold reliably (ML engineering: +134%), smallest where the bottleneck is raw problem-solving (FrontierCS: +9%).</p>
+<h2>How it connects</h2>
+<ul>
+<li>The library is literally named <strong>AREX-Skill</strong> — the same AREX lineage as <a href="../tutorials/arex-recursive-research.html">the recursively self-improving deep-research agent</a> already tracked; DisCo is the knowledge-production half of that program.</li>
+<li>The <span class="arithmatex">\((M_\theta,H,K)\)</span> decomposition slots neatly next to <a href="../tutorials/whale-harness-weight.html">WHALE</a>'s joint <span class="arithmatex">\((\theta,H)\)</span> optimization: WHALE showed weights and harness are co-trainable; DisCo argues a third, cheaper-to-update component dominates at the margin for knowledge-heavy tasks. A three-way budget-allocation study is now the obvious experiment.</li>
+<li>Skill <em>production</em> here complements skill <em>selection and lifecycle</em> work tracked earlier: <a href="../tutorials/skillgate-skill-selection.html">SkillGate</a> (when loading skills hurts), <a href="../tutorials/skillrise-curriculum-skills.html">SkillRise</a> (curriculum acquisition), <a href="../tutorials/msce-memory-to-skills.html">MSCE</a> (skills from the agent's own memory rather than the ecosystem's repos), and <a href="../tutorials/skill-library-google.html">Google's skill library</a>.</li>
+<li><a href="../tutorials/harness-generalization.html">Harness generalization</a> found no universally best harness for discovery; DisCo's FrontierCS result (one frozen graph, +9.2 across 188 tasks) suggests operational knowledge may generalize better than harness structure does.</li>
+<li>The verification-first stance ("no skill without verification, gaps recorded not hidden") is the constructive answer to the SKILL.md staleness/coupling failure mode tracked yesterday in the agent-plugins co-evolution study.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The +134% headline is against the <em>weakest</em> agent in the table: vanilla Codex at 31.11 is far below public agents (Famou-Agent 64.44), so most of the relative gain is "Codex was a bad MLE-bench harness." The honest number is +8.45 over the best public system — genuinely impressive, but 16× smaller than the marketing figure. Second, the one-time skill-construction budget is excluded from the matched-budget comparison and, on MLE-bench and PaperBench, construction is <strong>per-task</strong> — so the deployed system really does more total work per task than the baseline, and "one-time" is doing heavy lifting (it amortizes only if tasks repeat, which competitions don't). Third, leakage control is self-administered: excluding the competition page while web-searching for sources still permits blog posts and repos <em>about</em> that competition's problem class; the appendix protocol needs scrutiny (inferred from the setup description — verify in Appendix A.2.1). The FrontierCS result is the cleanest and most convincing: one frozen, task-agnostic graph, +6.5 points across 188 tasks, no per-task construction. Finally, 5,353 skills "verified" by an LLM agent running its own checks is verification of executability, not of correctness-in-context — <a href="../tutorials/skillgate-skill-selection.html">SkillGate</a>-style negative results suggest loaded skills can mislead, and the paper's own record <span class="arithmatex">\(R\)</span> mechanism (gaps recorded, not hidden) implicitly concedes the library ships with known holes. None of this undermines the conceptual contribution, which feels durable: operational knowledge is a first-class, separately-optimizable component of agent capability.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><span class="arithmatex">\(A_{res}=(M_\theta,H,K)\)</span>: the harness specializes how an agent explores; operational knowledge <span class="arithmatex">\(K\)</span> specializes what it knows to consider — and adding <span class="arithmatex">\(K\)</span> alone (weights and harness frozen) took MLE-bench Any-Medal from 31.11% to 72.89%, past every public leaderboard agent.</li>
+<li>The skill unit is three layers under progressive disclosure — SKILL.md (usage policy) / references/ (knowledge) / scripts/ (execution) — organized into per-source skill graphs, and produced by one pipeline: scope → ground → construct → <strong>verify</strong> (no skill admitted on its sources alone; unresolved gaps recorded).</li>
+<li>Discount the headline: per-task construction budgets are excluded from the comparison and the baseline is weak — the load-bearing numbers are +8.45 over the best public MLE-bench agent and +6.5 on FrontierCS from a single frozen task-agnostic graph.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

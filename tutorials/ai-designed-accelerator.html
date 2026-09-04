@@ -116,6 +116,6 @@ project to Samsung 8nm:                         # NOT measured
 <li><strong>The real result is process latency, not perf-per-watt.</strong> Spec to FPGA-running-a-transformer in 22 days, 95% coverage on every block with no human in verification, any spec change back on hardware in 48 hours, and optimization runs down from 15 hours to 15-30 minutes via FPGA-multiplexed emulation. That is what the commit history actually shows, and it is what would change chip programs if it replicates.</li>
 <li><strong>Decoding is memory-bound, and the roofline says so plainly.</strong> One Qwen3-0.6B token moves 0.627 GB: 44.65 ms of DRAM service against 12.29 ms of arithmetic, a 3.6× ratio. Nearly all of the projected gain comes from raising bandwidth and clock, not from the compute fabric — which is a useful reminder that on-device inference accelerators are won at the memory interface.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-09-03 16:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

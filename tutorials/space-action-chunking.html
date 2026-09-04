@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPACE: Skill-Guided Adaptive Action Chunking for Long-Horizon LLM Agents</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>SPACE: Skill-Guided Adaptive Action Chunking for Long-Horizon LLM Agents</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.02042">arXiv:2609.02042</a> · <a href="https://arxiv.org/abs/2609.02042">arXiv</a> · <a href="https://x.com/dair_ai/status/2095617916284936502">X post</a> · <a href="https://academy.dair.ai/papers/act-more-decide-less-skill-guided-adaptive-action-chunking-for-long-horizon-llm-2609.02042">academy.dair.ai</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Act More, Decide Less" (arXiv 2609.02042; Yanting Yang, Can Jin, et al., Rutgers + collaborators) attacks the ReAct tax: one LLM call per primitive action means most calls on long-horizon tasks re-decide routine sequences. The fix is a policy that emits <strong>variable-length action chunks</strong> — but naive multi-action RL fails in two symmetric ways: collapse to single actions (Qwen3-4B) or over-commitment to 5–6-action chunks with worse success (Llama-3.1-8B).</li>
+<li>The diagnosis is that sparse terminal rewards carry no signal about <em>where chunks should end</em>. SPACE supplies that signal from data the agent already has: it induces two-level <strong>programmatic skills</strong> (composite → subskills) from successful trajectories, and uses subskill boundaries as direct chunk-boundary supervision, distilled into a skill-free policy via hybrid on-/off-policy training with chunk-aware credit assignment.</li>
+<li>On ALFWorld, SPACE hits 99.2/96.9% success (seen/unseen, Qwen3-4B) at <strong>3.7–4.4 LLM rounds per episode</strong> vs 15.9–21.7 for GiGPO — +14–15.6 points success with up to 78.9% fewer decision rounds; on ScienceWorld it nearly doubles the strongest baseline (+27.3 to +31.3).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Decision frequency is the hidden cost center of every agent: each LLM round pays full-context prefill, and for a mature policy most rounds are foregone conclusions ("open fridge → take apple → close fridge"). Robotics solved this long ago with temporally extended actions (options, action chunking), but LLM-agent RL has stayed stubbornly one-action-per-round because nothing in RLVR tells the policy where a chunk boundary belongs — the paper shows standard GRPO/PPO given a multi-action interface either degenerates back to ReAct or overshoots into open-loop execution that misses observations.</p>
+<p>The interesting move for this tracker is <em>what supervises the boundaries</em>: programmatic skills induced from the agent's own successes, used purely as a <strong>training-time scaffold and discarded at deployment</strong>. That is a genuinely different role for skill libraries than the retrieval-time role in <a href="../tutorials/skill-library-google.html">Google's skill library</a> or <a href="../tutorials/msce-memory-to-skills.html">MSCE</a> — here skills are a supervision <em>format</em>, a way to convert trajectories into labeled temporal structure. It's distillation of structure rather than content, and it composes with any of the skill-accumulation work already tracked.</p>
+<h2>The core idea</h2>
+<p>Chunked acting keeps the POMDP and terminal reward unchanged but makes the policy semi-Markov: at decision round <span class="arithmatex">\(i\)</span> with history <span class="arithmatex">\(h_i\)</span>, the policy emits a chunk <span class="arithmatex">\(u_i=(a_{i,1},\dots,a_{i,\ell_i})\)</span> of up to <span class="arithmatex">\(L\)</span> primitive actions, executed open-loop until done or an invalid action interrupts. The question is where <span class="arithmatex">\(\ell_i\)</span> should end.</p>
+<p>SPACE's answer: successful behavior already decomposes into reusable routines. It maintains a two-level skill library <span class="arithmatex">\(B=B^C\cup B^S\)</span>: a subskill <span class="arithmatex">\(b^S=\langle d^S,\xi^S,f^S\rangle\)</span> (description, argument schema, function) emits exactly <strong>one action chunk</strong> when invoked; a composite skill <span class="arithmatex">\(b^C=\langle d^C,\xi^C,f^C,c\rangle\)</span> is a task-pattern program whose body is an ordered sequence of subskill calls <span class="arithmatex">\(c=(c_1,\dots,c_M)\)</span>. Subskill boundaries inside a composite skill <em>are</em> the chunk boundaries. Skills are induced by prompting the model to segment its own successful trajectories, then filtered by static checks (syntax, compilability, signature consistency) and AST-level deduplication.</p>
+<p>Training alternates two rollout modes: a fraction <span class="arithmatex">\(\rho_{prim}\)</span> of rollouts use the deployment interface (<strong>primitive-chunk mode</strong>, → on-policy set <span class="arithmatex">\(D_{on}\)</span>); the rest use <strong>skill-augmented mode</strong>, where the policy may emit a chunk or call a retrieved skill. Skill calls are then compiled away by <em>skill-to-chunk expansion</em> — a composite call unrolls into its subskill sequence, each yielding one (history, chunk) pair with an inherited boundary — producing the off-policy set <span class="arithmatex">\(D_{off}\)</span> in the same format the deployed policy uses.</p>
+<p><img alt="SPACE overview" src="assets/space-action-chunking/fig1.png" />
+<em>Figure 2 from the paper: (A) programmatic skills induced from successful trajectories; (B) primitive-chunk vs skill-augmented rollout modes; (C) expand-and-relabel converts skill calls into chunk-level supervision for joint on-/off-policy training; (D) at test time the policy emits variable-length chunks with no skill-library access.</em></p>
+<h2>How it works</h2>
+<p><strong>Chunk-aware two-level advantages.</strong> Following GiGPO, a trajectory-level advantage is combined with anchor-grouped step credit. For a rollout group <span class="arithmatex">\(G\)</span> sharing task and initial condition:</p>
+<div class="arithmatex">\[ A^{traj}_{\tau} = \frac{r(\tau)-\mu_G}{\sigma_G+\epsilon}, \qquad G_{\tau,i} = \gamma_c^{\,M_\tau-i}\, r(\tau), \]</div>
+<p>where <span class="arithmatex">\(r(\tau)\)</span> is terminal reward, <span class="arithmatex">\(M_\tau\)</span> the number of LLM rounds, and <span class="arithmatex">\(\gamma_c\)</span> a round-level discount. The return <span class="arithmatex">\(G_{\tau,i}\)</span> is broadcast to every action in chunk <span class="arithmatex">\(u_i\)</span>, then normalized within the set <span class="arithmatex">\(H(z)\)</span> of action occurrences sharing the same anchor observation <span class="arithmatex">\(z_{\tau,i,j}\)</span> (the observation immediately before action <span class="arithmatex">\(a_{\tau,i,j}\)</span>):</p>
+<div class="arithmatex">\[ A^{step}_{\tau,i,j} = \frac{G_{\tau,i}-\mu_{H(z_{\tau,i,j})}}{\sigma_{H(z_{\tau,i,j})}+\epsilon}, \qquad A_{\tau,i,j} = A^{traj}_{\tau} + \lambda_{step} A^{step}_{\tau,i,j}. \]</div>
+<p><strong>Two losses, one advantage.</strong> On-policy data gets a standard clipped objective over per-action ratios <span class="arithmatex">\(\rho_{\tau,i,j}(\theta)=\pi_\theta(a_{\tau,i,j}\mid h_i,a_{\tau,i,&lt;j})/\pi_{\theta_{old}}(\cdot)\)</span>; expanded skill trajectories get a self-imitation-style weighted log-likelihood:</p>
+<div class="arithmatex">\[ \mathcal{L}_{off}(\theta) = -\,\mathbb{E}_{\tau\sim D_{off}} \sum_{i=1}^{M_\tau}\sum_{j=1}^{\ell_i} w(A_{\tau,i,j})\,\log \pi_\theta(a_{\tau,i,j}\mid h_i, a_{\tau,i,&lt;j}), \quad w(A)=\mathrm{clip}(A,0,w_{max}), \]</div>
+<div class="arithmatex">\[ \mathcal{L}(\theta) = \mathcal{L}_{on}(\theta) + \lambda_{off}\,\mathcal{L}_{off}(\theta). \]</div>
+<p>The off-policy term is where chunk boundaries get distilled: only positive-advantage expanded chunks are imitated, and their boundaries come from the programmatic subskill structure rather than from the terminal reward.</p>
+<pre><code class="language-text">Algorithm: SPACE training loop
+Input: policy pi_theta, env tasks, skill library B (initially empty)
+for each training step:
+    sample 16 tasks, rollout group of 8 per task
+    for each rollout:
+        with prob rho_prim:  # primitive-chunk mode (deployment interface)
+            emit chunks u_i ~ pi_theta(.|h_i)            -&gt; D_on
+        else:                # skill-augmented mode
+            y_i ~ pi_theta(.|h_i, retrieved skills B_i)  # chunk OR skill call
+            Expand(h_i, y_i): unroll composite -&gt; subskill chunks
+                              subskill call -&gt; one chunk  -&gt; D_off
+    from successful trajectories: induce composite+subskills,
+        static-check (syntax/compile/signature), AST-dedupe -&gt; update B
+    compute A_traj (group-normalized) and A_step (anchor-grouped, gamma_c)
+    update theta on L_on(D_on, clipped) + lambda_off * L_off(D_off, SIL)
+Deployment: primitive chunks only; no skill library, no retrieval
+</code></pre>
+<p>Setup details: Qwen3-4B and Llama-3.1-8B-Instruct backbones, no-thinking mode, history length 5, max chunk length 6, <span class="arithmatex">\(\rho_{prim}=0.5\)</span> (ALFWorld) / 0.75 (ScienceWorld), lr 1e-6.</p>
+<h2>Results</h2>
+<p>On ALFWorld (Table 1), against prompting (zero-shot/ReAct/Reflexion) and RL baselines (RLOO, GRPO, GiGPO, multi-action GRPO), SPACE is best on every split and backbone <strong>on both axes simultaneously</strong>:</p>
+<ul>
+<li>Qwen3-4B unseen: <strong>96.9% SR at 4.4 rounds</strong>, vs GiGPO 72.7% at 21.7 rounds and multi-action GRPO 81.3% at 20.9 — +15.6 points while cutting rounds ~5×.</li>
+<li>Llama-3.1-8B unseen: <strong>94.5% at 5.2 rounds</strong> vs GiGPO 83.6% at 18.8.</li>
+<li>ScienceWorld: +27.3 to +31.3 over the strongest baseline at roughly half the rounds (near-doubling of success).</li>
+</ul>
+<p>The failure-mode analysis is the part worth internalizing (Figure 3): with a multi-action interface but no boundary supervision, Qwen collapses to ~1 action/round by step ~25 (single-action regime), while Llama overshoots to 5–6 actions/round with success plateauing at ~68%. SPACE sustains a non-degenerate 3–4 actions/round with SR &gt;95%, converges to multi-action-GRPO's final performance by step 40, and keeps higher policy entropy early (broader exploration, no premature collapse). Rollout efficiency: matching GRPO's final ALFWorld performance takes SPACE only 43.6K rollout rounds.</p>
+<p><img alt="SPACE training dynamics" src="assets/space-action-chunking/fig2.png" />
+<em>Figure 3 from the paper: (a) SPACE reaches multi-action GRPO's final success by step 40 while PPO collapses; (b, c) the two naive failure modes — Qwen collapses to 1 action/round, Llama overshoots to 5–6 — vs SPACE's stable 3–4; (d) higher early entropy, no early collapse.</em></p>
+<p>Ablations confirm both ingredients are necessary (dropping either the skill-derived off-policy supervision or chunk-aware credit hurts), and learned chunks improve test-time scaling via chunk-level best-of-N.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>GiGPO</strong> (tracked): SPACE inherits its two-level anchor-grouped advantage and shows what it buys once the action space is temporally extended — chunk-aware broadcast of <span class="arithmatex">\(G_{\tau,i}\)</span> is the credit-assignment piece that makes variable-length chunks trainable.</li>
+<li><strong><a href="../tutorials/sp3o-segment-pbrl.html">SP3O</a></strong> and <strong><a href="../tutorials/trace-turn-level-rewards.html">turn-level trace rewards</a></strong> attack the same granularity problem from the reward side (segment preferences, per-turn rewards); SPACE attacks it from the <em>action-space</em> side and gets efficiency, not just learning signal, out of the coarser granularity.</li>
+<li><strong><a href="../tutorials/msce-memory-to-skills.html">MSCE</a></strong> and <strong><a href="../tutorials/skill-library-long-horizon.html">the long-horizon skill library</a></strong> accumulate skills to <em>use at inference</em>; SPACE inverts this — skills exist only to label temporal structure and are compiled away, so deployment needs no retrieval, no library maintenance, no skill-selection failure modes (cf. <a href="../tutorials/skillgate-skill-selection.html">SkillGate</a>).</li>
+<li><strong><a href="../tutorials/automata-from-agent-traces.html">Automata from agent traces</a></strong> is the closest structural relative: both induce programmatic structure from trajectories; SPACE is what you get when that structure is fed back as RL supervision rather than used for analysis.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The environments are the weak point: ALFWorld and ScienceWorld are templated text worlds with small, discrete action vocabularies where "routine subsequence" is unusually well-defined; in coding or browser agents, chunk boundaries are fuzzier and mid-chunk observations matter more, so the open-loop risk that sank the Llama baseline could bite SPACE too (the max chunk length of 6 and interrupt-on-invalid-action are doing real safety work here). Skill induction is self-supervised by the same model with only static checks — no execution-level validation of induced skills is described, so noisy segmentation flows straight into supervision (inferred from the thread and method text — verify in the paper's appendix). The comparison to GiGPO conflates two changes (chunked action space + skill supervision); multi-action GRPO isolates the first, but a "GiGPO + chunked actions" cell would have been the cleanest ablation. And success-per-round gains partially <em>are</em> the point of chunking, so the 78.9% round reduction should be read as the deliverable, not as a bonus. Still, the two-failure-mode diagnosis (collapse vs over-commitment, both from unlearnable boundaries) is crisp, reproducible, and the kind of insight that transfers even if the exact recipe doesn't.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Multi-action RL without boundary supervision fails predictably in one of two ways — collapse to single actions or over-commitment to too-long chunks — because sparse terminal rewards say nothing about where a chunk should end.</li>
+<li>Subskill boundaries inside programmatic skills induced from successful trajectories are free chunk-boundary labels; expand skill calls into chunks, imitate the positive-advantage ones (SIL with <span class="arithmatex">\(w=\mathrm{clip}(A,0,w_{max})\)</span>), and the deployed policy needs no skill library at all.</li>
+<li>The payoff is on both axes at once: ~97% ALFWorld unseen success at ~4 LLM rounds/episode — versus ~73% at ~22 rounds for GiGPO — i.e., better agents that are also ~5× cheaper per episode.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

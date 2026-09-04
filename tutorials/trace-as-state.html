@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trace as State: Reasoning Traces as Conditional States for Long-Context Transformers</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Trace as State: Reasoning Traces as Conditional States for Long-Context Transformers</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.02702">arXiv:2609.02702</a> · <a href="https://arxiv.org/abs/2609.02702">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2095663057653346348">X post</a> · <a href="http://Z.AI">Z.AI</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>"Trace as State" (arXiv 2609.02702; Xu Zou, Jie Tang) is a pure inference trick: run the model once on a long-context problem, collect its reasoning traces, then run a <strong>fresh pass with the traces placed <em>before</em> the context</strong> — <code>[T, x, q]</code> instead of the natural append order <code>[x, T, q]</code>.</li>
+<li>The placement is the entire method, and it is worth a shocking amount: on GraphWalks-256K Parents, DeepSeek V4 Pro Preview goes from 29.2% EM (first pass) and 43.0% EM (trace appended) to <strong>81.8% EM with Trace as State</strong>; GLM-5.2 reaches 100.0. Across 3 frontier models × 3 long-context benchmarks, condition-first wins 26 of 27 model/task/metric combinations.</li>
+<li>The motivation is a clean formal argument: for causal state-update processors, receiving a task condition <em>before</em> an information stream requires <span class="arithmatex">\(\lceil b\rceil\)</span> bits of working memory, while receiving it <em>after</em> can require <span class="arithmatex">\(\lceil b2^b\rceil\)</span> bits in the worst case — an exponential gap that transformers, as causal processors, plausibly inherit.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Every agent harness that does retry-with-feedback makes a silent design decision: where does the feedback go? The near-universal convention — append the previous attempt's reasoning after the context and ask again — turns out to be measurably the wrong order, by up to ~39 EM points on state-tracking tasks. That is a free, architecture-agnostic win for anything that rereads long inputs: compaction/resume loops, multi-pass document QA, self-refinement, best-of-N with feedback.</p>
+<p>The deeper reason this belongs in this tracker: it gives a principled account of <em>why</em> context ordering matters, not just another prompt hack. A causal transformer builds representations of token <em>i</em> using only tokens <span class="arithmatex">\(&lt;i\)</span>. Task state discovered during reasoning (an active target, a resolved reference, a search frontier) cannot retroactively shape how the 256K tokens before it were encoded — unless you re-present the context with that state up front. This is the same intuition behind putting instructions before documents, and behind <a href="../tutorials/pro-long-programmatic-memory.html">PRO-LONG's programmatic memory</a> (externalize evolving task state so it survives long horizons); here it is isolated as a single controlled variable and given a memory-complexity justification.</p>
+<h2>The core idea</h2>
+<p>Model a causal processor that reads an ordered sequence of information units <span class="arithmatex">\(C=(c_1,\dots,c_n)\)</span> and carries a task state <span class="arithmatex">\(s_i\)</span> in a finite state space <span class="arithmatex">\(S\)</span>, updated by a fixed rule:</p>
+<div class="arithmatex">\[ s_i = U(s_{i-1}, c_i), \qquad i=1,\dots,n, \]</div>
+<p>where <span class="arithmatex">\(s_i\)</span> is the state after unit <span class="arithmatex">\(c_i\)</span>. In a <em>conditional</em> state-update task, the initial state is a condition <span class="arithmatex">\(z \in S\)</span>. If the processor gets <span class="arithmatex">\([z, C]\)</span> (condition first), it tracks one realized state path and needs only <span class="arithmatex">\(\lceil b\rceil\)</span> bits, <span class="arithmatex">\(b=\log_2|S|\)</span>. If it gets <span class="arithmatex">\([C, z]\)</span> (condition last), it must retain enough to answer for <em>any</em> possible condition — a full response profile over <span class="arithmatex">\(S\)</span>. In the worst case that costs</p>
+<div class="arithmatex">\[ \left\lceil \log_2 |S|^{|S|} \right\rceil = \lceil\, |S|\log_2 |S| \,\rceil = \lceil b\,2^{b} \rceil \]</div>
+<p>bits: exponentially more working memory than condition-first. The ordering principle: a task condition is far easier to use when it arrives before the information whose processing it guides.</p>
+<p>The bridge to LLMs: a reasoning trace is an observable <strong>textual proxy for task state</strong> — possibly lossy or wrong, but often carrying exactly the "condition" the model discovered too late on the first pass. So sample <span class="arithmatex">\(n_{tr}\)</span> first-pass runs, serialize the traces, and give them to a fresh pass <em>ahead of</em> the context:</p>
+<div class="arithmatex">\[ (r_j, a_j) \sim \mathcal{M}(\cdot \mid x), \quad j=1,\dots,n_{tr}; \qquad T=\pi(r_1,\dots,r_{n_{tr}}), \]</div>
+<div class="arithmatex">\[ (r'_{\mathrm{Tap}}, a'_{\mathrm{Tap}}) \sim \mathcal{M}(\cdot \mid [x, T]), \qquad (r'_{\mathrm{Tas}}, a'_{\mathrm{Tas}}) \sim \mathcal{M}(\cdot \mid [T, x]), \]</div>
+<p>where <span class="arithmatex">\(x\)</span> is the long context, <span class="arithmatex">\(r_j/a_j\)</span> are trace and visible answer of run <span class="arithmatex">\(j\)</span>, and <span class="arithmatex">\(\pi\)</span> is a fixed serializer (source-order traces + delimiters like <code>&lt;trace_start&gt;</code>). Trace Append (Tap) and Trace as State (Tas) use the <em>same</em> <span class="arithmatex">\(T\)</span>; order is the only difference.</p>
+<p><img alt="Trace as State overview" src="assets/trace-as-state/fig1.png" />
+<em>Figure 1 from the paper: (A) causal state updates; (B) condition-last processing needs exponentially more worst-case memory than condition-first; (C) reasoning traces as a textual task-state proxy; (D) the two second-pass orders, <code>[x,T]</code> vs <code>[T,x]</code>, with everything else held fixed.</em></p>
+<h2>How it works</h2>
+<p>The evaluated realization is deliberately frozen — no training, no architecture change:</p>
+<pre><code class="language-text">Algorithm: Trace as State (inference-only)
+Input: model M, long context x, question q, repeats n_tr
+1. First pass: for j = 1..n_tr:
+2.     (r_j, a_j) ~ M([x, q])          # log the reasoning trace r_j
+3. Serialize: T = pi(r_1, ..., r_n_tr)
+4.     # fixed labels + &lt;trace_start&gt;/&lt;trace_end&gt; delimiters,
+5.     # traces kept in source order, truncated to 50k chars each
+6. Second pass (Trace as State):
+7.     answer ~ M([T, x, q])           # trace BEFORE context, question last
+8. (Control — Trace Append: answer ~ M([x, T, q]))
+Return answer
+</code></pre>
+<p>The question <span class="arithmatex">\(q\)</span> always goes last in both conditions (models misbehave otherwise), so the literal prompts are <span class="arithmatex">\([T,x,q]\)</span> vs <span class="arithmatex">\([x,T,q]\)</span>.</p>
+<p><strong>Setup.</strong> Three frontier long-context models with intentionally different architectures — Qwen 3.7 Max (Gated DeltaNet + Gated Attention), DeepSeek V4 Pro Preview (CSA/HCA sparse attention + mHC), GLM-5.2 (1M-token MoE with DeepSeek Sparse Attention) — all run at max reasoning effort through their official providers. Benchmarks: GraphWalks 256K (BFS and Parents subtasks: maintain graph state over a long edge list), MRCRv2 8-needle at 256K/512K (bind a final request to the right earlier instance), and NUB-1M (long-novel comprehension, season 2, 20 problems). Five repeats per problem; all five traces go into <span class="arithmatex">\(T\)</span>.</p>
+<h2>Results</h2>
+<p>The headline table (Table 2, all numbers % over 5 repeats):</p>
+<ul>
+<li><strong>DeepSeek V4 Pro Preview, GraphWalks Parents</strong>: 29.2 EM first pass → 43.0 Trace Append → <strong>81.8 Trace as State</strong> (F1: 46.5 → 65.3 → 91.3). BFS: 31.6 → 41.8 → <strong>58.8</strong> EM.</li>
+<li><strong>Qwen 3.7 Max, Parents</strong>: 60.8 → 71.0 → <strong>96.4</strong> EM. <strong>GLM-5.2, Parents</strong>: 66.4 → 83.2 → <strong>100.0</strong> EM (and 100.0 F1).</li>
+<li>MRCRv2 and NUB-1M move the same direction everywhere; the single exception in 27 combinations is GLM-5.2 GraphWalks BFS F1 (Trace Append +0.8 higher, while EM still favors Trace as State).</li>
+</ul>
+<p>The ablations (Table 3, DeepSeek on GraphWalks 256K) are the persuasive part, because they kill the cheap explanations one by one:</p>
+<ul>
+<li><strong>Re2</strong> (reread: <span class="arithmatex">\([x,q,x,q]\)</span>) gets 50.0 EM on Parents — rereading helps, but Trace as State's 81.8 is not just rereading.</li>
+<li><strong>Question First</strong> <span class="arithmatex">\([q,x,q]\)</span>: 53.0 — the question is useful early state, but traces carry more.</li>
+<li><strong>Answer Feedback</strong> <span class="arithmatex">\([a,x,q]\)</span>: 45.4 — answers alone are a much weaker state proxy than reasoning.</li>
+<li><strong>Random Trace</strong> <span class="arithmatex">\([T_{rand},x,q]\)</span>: 14.2, <em>worse than no trace</em> — so it is not a formatting/scaffold effect; the content must be problem-specific.</li>
+<li><strong>Trace Only</strong> <span class="arithmatex">\([T,q]\)</span> (no context!): 43.8 — traces carry real answer-relevant state, yet rereading the context conditioned on them adds ~40 more points.</li>
+<li>Trace as State (81.8) even beats <strong>Oracle@5</strong> (50.0), the best of the five first-pass answers picked retrospectively — the second pass genuinely computes something new rather than selecting.</li>
+</ul>
+<p><img alt="Trace-count ablation" src="assets/trace-as-state/fig2.png" />
+<em>Figure 2 from the paper: F1 rises with the number of reused first-pass traces <span class="arithmatex">\(n_{tr}\)</span>, and Trace as State dominates Trace Append at every count — trace count acts as an inference-scaling knob.</em></p>
+<p>The trace-count ablation (Figure 2) shows monotone-ish gains from <span class="arithmatex">\(n_{tr}=1\)</span> to 5 with the ordering gap persisting throughout, which frames "how many first-pass rollouts to feed back" as a legitimate test-time-scaling parameter.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/pro-long-programmatic-memory.html">PRO-LONG: programmatic memory</a></strong> — same conviction (task state must be made explicit and available, not left implicit in attention), different mechanism: PRO-LONG maintains executable state across a horizon; Trace as State re-injects discovered state at the top of a fresh pass.</li>
+<li><strong>Declarative Attention</strong> (tracked yesterday, arXiv 2609.02737) is the natural complement: it lets the model <em>choose what to read</em> from a fixed-order cache, while Trace as State <em>changes the order</em> so early reading is already conditioned. One optimizes the read pattern, the other the write pattern.</li>
+<li><strong>Full-Bandwidth Transformer</strong> (tracked, arXiv 2608.08888) is the architectural version of the same feedback idea — routing top-layer latent state back to decoding — where TAS does it in text across passes with zero weight changes.</li>
+<li><strong>Prefix Sliding</strong> (tracked, arXiv 2608.26070) found that the task prefix plus recent reasoning carries most attention weight; TAS explains a piece of why a <em>prefix</em> is so disproportionately valuable: it conditions everything downstream.</li>
+<li>The authors' proposed extension — jointly learning the model and the feedback interface — is essentially the harness–weight co-training program of <a href="../tutorials/whale-harness-weight.html">WHALE</a> applied to trace placement.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The cost story is buried: Trace as State is a <em>second full pass over up to 256K–512K tokens</em> plus five first-pass rollouts, so the fair baseline is not "first pass" but "any method at matched token spend." The paper partially addresses this — Oracle@5 and Re2 are compute-comparable and lose badly on Parents — but a compaction-style baseline (summarize traces, then reread) is missing, and traces are already truncated to 50K chars, which is a crude serializer <span class="arithmatex">\(\pi\)</span>. The theory is motivation, not proof: the authors are candid that conditional state-update tasks "are not literal models of real world long context tasks," and transformers with KV caches are only loosely finite-state. Benchmark choice flatters the method — GraphWalks/MRCR are nearly pure state-tracking; NUB-1M (the most naturalistic task) is only 20 problems and shows the smallest, noisiest gains (60→73 for DeepSeek but 37→51 for Qwen from a very weak first pass). Also, provider-side output budgets were left at defaults and "may change over time" — an honest but real reproducibility hole. None of this threatens the core finding, which is cheap to verify and immediately actionable: <strong>when you feed an agent its own prior reasoning, put it before the context, not after.</strong></p>
+<h2>If you remember three things</h2>
+<ol>
+<li>Same trace, same model, same context — moving the trace from after to before the context is worth up to ~39 EM points (43.0 → 81.8) on long-context state tracking, and wins 26/27 comparisons across three frontier models.</li>
+<li>The formal ordering principle: condition-first costs <span class="arithmatex">\(\lceil b\rceil\)</span> bits of working memory, condition-last up to <span class="arithmatex">\(\lceil b2^b\rceil\)</span> — late conditions force a causal processor to hedge over every possible state path.</li>
+<li>Random traces <em>hurt</em> (14.2 vs 29.2 baseline EM) while own-problem traces without any context reach 43.8 — the gain is problem-specific state, not scaffolding, and the number of reused traces is a new inference-scaling knob.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

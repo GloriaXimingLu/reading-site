@@ -13,14 +13,39 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="annotate.js"></script>
 </head>
 <body>
-<div class="wrap"><h1>Reading Tracker</h1><p class="meta">692 papers/posts · 136 tutorials · 5 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-09-03</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">126</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">102</span></a><a href="#distillation">Distillation <span class="count">38</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">84</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">26</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">28</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">72</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">24</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">104</span></a><a href="#data">Data &amp; Datasets <span class="count">18</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">44</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">26</span></a></nav><section id="walkthroughs"><h2>Walkthroughs</h2><div class="wt-grid"><a class="wt-card" href="walkthroughs/harness-optimization.html"><span class="wt-title">Harness Optimization</span><span class="wt-meta">10 min · 33 papers · 2026-08-23</span></a></div></section><section id="latest"><h2>Latest additions</h2><p class="latest-row">2026-09-03 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>WHALE: Joint Harness-Weight Optimization by Alternating RSFT and Harness Search (KRAFTON/Stanford)</strong> · <a href="tutorials/whale-harness-weight.html">📖 tutorial</a></p><p class="latest-row">2026-09-03 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>HarnessEvolve: Reference Trajectories + Quality/Performance Gates for Reliable Agent Self-Evolution</strong></p><p class="latest-row">2026-09-03 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>CORAL: An LLM-Native Harness Continually Optimizing Production Recommender Systems (Meta)</strong></p><p class="latest-row">2026-09-03 · <a href="#memory-context">Memory &amp; Context Engineering</a> · <strong>MemoryWalker: Training Agents under Context Eviction via Trajectory Trees (LogitTree, 4D Masks, SDCC)</strong></p><p class="latest-row">2026-09-03 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>Declarative Attention: Language Models Control Their Own Attention (Global/Focus/Local Modes)</strong></p><p class="latest-row">2026-09-03 · <a href="#memory-context">Memory &amp; Context Engineering</a> · <strong>How Do Language Models Choose Between Context and Memory? (Stanford)</strong></p><p class="latest-row">2026-09-03 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Apodex 1.1: Credit Assignment for Sparse Terminal Rewards in Long-Horizon Agentic RL</strong></p><p class="latest-row">2026-09-03 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>miles: Open-Source RL-as-a-Service Framework (radixark)</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="whale-harness-weight">
+<div class="wrap"><h1>Reading Tracker</h1><p class="meta">717 papers/posts · 139 tutorials · 5 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-09-04</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">129</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">106</span></a><a href="#distillation">Distillation <span class="count">39</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">87</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">28</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">28</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">75</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">24</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">111</span></a><a href="#data">Data &amp; Datasets <span class="count">18</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">46</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">26</span></a></nav><section id="walkthroughs"><h2>Walkthroughs</h2><div class="wt-grid"><a class="wt-card" href="walkthroughs/harness-optimization.html"><span class="wt-title">Harness Optimization</span><span class="wt-meta">10 min · 33 papers · 2026-08-23</span></a></div></section><section id="latest"><h2>Latest additions</h2><p class="latest-row">2026-09-04 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>ARC-AGI-3 Saturated: Provider-Adapter Harness Lifts GPT-6 Astra from 63% to 99%</strong></p><p class="latest-row">2026-09-04 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>Flow Reasoning Models: Recurrent Continuous Flows with Self-Conditioned Refinement for Structured Reasoning</strong></p><p class="latest-row">2026-09-04 · <a href="#tools">Tools &amp; Infrastructure</a> · <strong>Tardigrade: Agent Harness as Typed State-Machine Components over an Immutable Event Log</strong></p><p class="latest-row">2026-09-04 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Repo-Personalized Post-Training: Teacher-Trajectory SFT + GRPO on Curated Repo Environments (Bespoke Labs)</strong></p><p class="latest-row">2026-09-04 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>FrontierCode 1.1: Merge-Quality PR Benchmark Graded by Maintainer Rubrics (Cognition)</strong></p><p class="latest-row">2026-09-04 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>WANDR: Wide-and-Deep Research Benchmark Scoring Precision and Completion over Source-Backed Records (Perplexity)</strong></p><p class="latest-row">2026-09-04 · <a href="#tools">Tools &amp; Infrastructure</a> · <strong>Harness Playbook: A Systematic Design Handbook for Agent Harnesses (omp Author)</strong></p><p class="latest-row">2026-09-04 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>SPACE: Skill-Guided Adaptive Action Chunking with Chunk-Aware Credit Assignment for Long-Horizon Agents</strong> · <a href="tutorials/space-action-chunking.html">📖 tutorial</a></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="2095539831141220620">
+<div class="card-head"><span class="title">DisCo / Repo-To-Skill: Distilling 1,000 GitHub Repositories into a Verified AI4AI Skill Library (BAAI)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger paper from BAAI.
+
+If you are building research agents, this one is worth your time.
+
+(bookmark it)
+
+They find that adding skills scores 134.3% higher on MLE-bench, 34.4% hig…</p>
+<p class="card-meta">@dair_ai, @_akhaliq · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.02749">arXiv</a> · <a href="https://x.com/dair_ai/status/2095539831141220620">X post</a> · <a href="https://academy.dair.ai/papers/repo-to-skill-distilling-github-repositories-into-ai4ai-skills-2609.02749">academy.dair.ai</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/disco-repo-to-skill.html">📖 Tutorial · 8 min</a> </p>
+</div><div class="card" data-key="2095845582912782360">
+<div class="card-head"><span class="title">STRACE: Execution Dependency Graphs and Causal Slicing for Agent Self-Optimization (Microsoft)</span><span class="badge feed">feed</span></div>
+<p class="snippet">This Microsoft research paper is f*cking gold
+
+Microsoft researchers just proved that feeding raw agent execution traces back into an LLM causes prompt hallucinations, low SNR, and…</p>
+<p class="card-meta">@marfinxx · added 2026-09-04 · <a href="https://x.com/marfinxx/status/2095845582912782360">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095900930357313893">
+<div class="card-head"><span class="title">TAHI: Evolving Rubrics from Repeated Human Feedback for Agent Self-Improvement</span><span class="badge feed">feed</span></div>
+<p class="snippet">Your AI agent&#x27;s best upgrade may be remembering what you reject.
+
+TAHI turns repeated human feedback into an evolving rubric. On 600 writing and visual-creation tasks, solo success…</p>
+<p class="card-meta">@di_zhang_fdu · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04141">arXiv</a> · <a href="https://x.com/di_zhang_fdu/status/2095900930357313893">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="whale-harness-weight">
 <div class="card-head"><span class="title">WHALE: Joint Harness-Weight Optimization by Alternating RSFT and Harness Search (KRAFTON/Stanford)</span><span class="badge feed">feed</span></div>
 <p class="snippet">With data, you can/should train both model weight &amp; harness.
 
 🐳: https://t.co/uAOUHVo0E3
 
 A full blown thread is on its way 🙂 https://t.co/6w6ajkUDGJ</p>
-<p class="card-meta">@Kangwook_Lee · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.00196">arXiv</a> · <a href="https://github.com/krafton-ai/WHALE">GitHub</a> · <a href="https://x.com/Kangwook_Lee/status/2095234520819826878">X post</a></p>
+<p class="card-meta">@Kangwook_Lee, @yoonholeee · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.00196">arXiv</a> · <a href="https://github.com/krafton-ai/WHALE">GitHub</a> · <a href="https://x.com/Kangwook_Lee/status/2095234520819826878">X post</a> · <a href="https://krafton.ai/blog/whale/">krafton.ai</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/whale-harness-weight.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card" data-key="2095252935659913657">
 <div class="card-head"><span class="title">HarnessEvolve: Reference Trajectories + Quality/Performance Gates for Reliable Agent Self-Evolution</span><span class="badge feed">feed</span></div>
@@ -29,7 +54,7 @@ A full blown thread is on its way 🙂 https://t.co/6w6ajkUDGJ</p>
 Self-evolving agents fail in three specific ways:
 
 1. Terminal-only feedback makes it ambiguous which step caused…</p>
-<p class="card-meta">@dair_ai · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.00829">arXiv</a> · <a href="https://x.com/dair_ai/status/2095252935659913657">X post</a> · <a href="https://academy.dair.ai/papers/harnessevolve-learning-from-reference-trajectories-for-reliable-agent-self-evolu-2609.00829">academy.dair.ai</a></p>
+<p class="card-meta">@dair_ai, @rohanpaul_ai · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.00829">arXiv</a> · <a href="https://x.com/dair_ai/status/2095252935659913657">X post</a> · <a href="https://academy.dair.ai/papers/harnessevolve-learning-from-reference-trajectories-for-reliable-agent-self-evolu-2609.00829">academy.dair.ai</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2095518433865777600">
 <div class="card-head"><span class="title">CORAL: An LLM-Native Harness Continually Optimizing Production Recommender Systems (Meta)</span><span class="badge feed">feed</span></div>
@@ -69,7 +94,7 @@ If you are curious about self-evolving agent harnesses, this one is worth your t
 (bookmark it)
 
 The proposes method, HarnessDev, stops scori…</p>
-<p class="card-meta">@omarsar0 · added 2026-09-02 · <a href="https://arxiv.org/abs/2609.01437">arXiv</a> · <a href="https://x.com/omarsar0/status/2095170896407548190">X post</a> · <a href="https://academy.dair.ai/papers/harnessdev-can-llms-create-and-evolve-their-own-agent-harness-2609.01437">academy.dair.ai</a></p>
+<p class="card-meta">@omarsar0, @HuggingPapers, @_akhaliq, @askalphaxiv, @rohanpaul_ai · added 2026-09-02 · <a href="https://arxiv.org/abs/2609.01437">arXiv</a> · <a href="https://x.com/omarsar0/status/2095170896407548190">X post</a> · <a href="https://academy.dair.ai/papers/harnessdev-can-llms-create-and-evolve-their-own-agent-harness-2609.01437">academy.dair.ai</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/harnessdev.html">📖 Tutorial · 8 min</a> </p>
 </div><div class="card" data-key="2095172426925801608">
 <div class="card-head"><span class="title">Harness-of-Harness: Continual-Improvement Wrapper for Multi-Day Autonomous Software Development</span><span class="badge feed">feed</span></div>
@@ -980,7 +1005,37 @@ They built the Red Queen Gödel Machine, self-improving AI agents that evolve al
 For over 20 years, computer s…</p>
 <p class="card-meta">@HowToPrompt__, @yyyiiillluuu · added 2026-08-03 · <a href="https://arxiv.org/abs/2606.26294">arXiv</a> · <a href="https://x.com/HowToPrompt__/status/2092983677919830336">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/red-queen-godel-machine.html">📖 Tutorial · 19 min</a> </p>
-</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="2095176875761189274">
+</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="2095550200546983981">
+<div class="card-head"><span class="title">Repo-Personalized Post-Training: Teacher-Trajectory SFT + GRPO on Curated Repo Environments (Bespoke Labs)</span><span class="badge feed">feed</span></div>
+<p class="snippet">How to post-train a model to personalize it on your code repo? In our latest research in Bespoke Labs, we post-trained a model to improve its performance on a given Github reposito…</p>
+<p class="card-meta">@AlexGDimakis · added 2026-09-04 · <a href="https://x.com/AlexGDimakis/status/2095550200546983981">X post</a> · <a href="https://bespokelabs.ai/blog/personalizing-inkling-for-your-code-repository-with-post-training">bespokelabs.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095617916284936502">
+<div class="card-head"><span class="title">SPACE: Skill-Guided Adaptive Action Chunking with Chunk-Aware Credit Assignment for Long-Horizon Agents</span><span class="badge feed">feed</span></div>
+<p class="snippet">Brilliant paper on long-horizon agents.
+
+They cut 78.9% of an agent&#x27;s LLM calls while raising its success rate.
+
+Here is how:
+
+It turns out that ReAct issues one primitive action p…</p>
+<p class="card-meta">@dair_ai · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.02042">arXiv</a> · <a href="https://x.com/dair_ai/status/2095617916284936502">X post</a> · <a href="https://academy.dair.ai/papers/act-more-decide-less-skill-guided-adaptive-action-chunking-for-long-horizon-llm-2609.02042">academy.dair.ai</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/space-action-chunking.html">📖 Tutorial · 8 min</a> </p>
+</div><div class="card" data-key="2095788731651567845">
+<div class="card-head"><span class="title">Environment Evolution for Terminal Agents: Off-Policy Lineages of Increasingly Difficult Verified Tasks (Tencent Hunyuan)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Tencent HY proposes environment evolution, which builds off-policy lineages of increasingly difficult verified terminal tasks, keeping long-horizon RL signals alive as Qwen3.6 agen…</p>
+<p class="card-meta">@sheriyuo · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04128">arXiv</a> · <a href="https://x.com/sheriyuo/status/2095788731651567845">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095880318146507139">
+<div class="card-head"><span class="title">Terminal-Universe: Reconstructing 37.3k Executable Training Environments from Agent Trajectories (Qwen)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Brilliant new paper from the Qwen team.
+
+It provides insights into where agent training environments actually come from.
+
+Terminal agent trajectories have accumulated at scale whil…</p>
+<p class="card-meta">@dair_ai, @di_zhang_fdu · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04148">arXiv</a> · <a href="https://x.com/dair_ai/status/2095880318146507139">X post</a> · <a href="https://academy.dair.ai/papers/terminal-universe-turning-agent-trajectories-into-scalable-terminal-environments-2609.04148">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095176875761189274">
 <div class="card-head"><span class="title">Apodex 1.1: Credit Assignment for Sparse Terminal Rewards in Long-Horizon Agentic RL</span><span class="badge feed">feed</span></div>
 <p class="snippet">如果一个 Agent 用几十轮工具调用完成了一项任务，最后只得到一个 0/1 reward，这个 reward 应该怎样分配给前面的决策？
 
@@ -1731,7 +1786,14 @@ LSPO 给这些“悬崖题”临时装上 LoRA：用标准推导短暂 SFT，再
 So I&#x27;ve been reading prime-rl codebase from @PrimeIntellect, and I&#x27;m turning that into a blog seri…</p>
 <p class="card-meta">@vivek_2332 · added 2026-08-03 · <a href="https://x.com/vivek_2332/status/2084291916221579299">X post</a> · <a href="https://vivekvkashyap.github.io/posts/rl-infra-orchestrator-part-1.html">vivekvkashyap.github.io</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card" data-key="2095253084884582766">
+</div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card" data-key="2095716853196747175">
+<div class="card-head"><span class="title">One-Shot OPD: A Single Query Sustains Hundreds of Productive On-Policy Distillation Steps</span><span class="badge feed">feed</span></div>
+<p class="snippet">(1/n) ✨ Why can OPD train on a single query for hundreds of steps and still improve substantially?
+
+Since the release of Rethinking OPD (https://t.co/DDS4uAbWHb), we&#x27;ve been diving…</p>
+<p class="card-meta">@HBX_hbx · added 2026-09-04 · <a href="https://x.com/HBX_hbx/status/2095716853196747175">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095253084884582766">
 <div class="card-head"><span class="title">Reading List: Multi-Teacher On-Policy Distillation (MOPD) Lineage</span><span class="badge feed">feed</span></div>
 <p class="snippet">A new post-training paradigm is emerging in 2026: Multi-Teacher On-Policy Distillation (MOPD), which lets a single model absorb capabilities from multiple specialized RL teachers.
 …</p>
@@ -2018,7 +2080,32 @@ On-policy distillation has become a default post-training tool in many open-sour
 A new on-policy distillation paradigm that uses evolving contexts to capture task preferences in open-ended domains, without verifiable rewards https://t.co/LofGf3rTnZ</p>
 <p class="card-meta">@HuggingPapers · added 2026-08-03 · <a href="https://x.com/HuggingPapers/status/2083713047353266678">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="2095438351704920505">
+</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="2095663057653346348">
+<div class="card-head"><span class="title">Trace as State: Prepending Reasoning Traces as Conditional State for Long-Context Rereading</span><span class="badge feed">feed</span></div>
+<p class="snippet">“Trace as State: Reasoning Traces as Conditional States for Long-Context Transformers”
+
+Normally, task state discovered late can’t influence how earlier context was encoded.
+
+So th…</p>
+<p class="card-meta">@askalphaxiv, @dair_ai · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.02702">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2095663057653346348">X post</a> · <a href="http://Z.AI">Z.AI</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/trace-as-state.html">📖 Tutorial · 9 min</a> </p>
+</div><div class="card" data-key="2095668374437306641">
+<div class="card-head"><span class="title">It Takes Two to Match: Co-Evolving a Generative Retriever with Reinforcement Learning</span><span class="badge feed">feed</span></div>
+<p class="snippet">It Takes Two to Match
+
+Co-Evolving Generative Retriever with Reinforcement Learning
+
+paper: https://t.co/LsIVFkh8Fy https://t.co/qCx1TJ6wQy</p>
+<p class="card-meta">@_akhaliq · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.00638">arXiv</a> · <a href="https://x.com/_akhaliq/status/2095668374437306641">X post</a> · <a href="https://huggingface.co/papers/2609.00638">huggingface.co</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095704297778594109">
+<div class="card-head"><span class="title">DoPR: Reusable Compressed Document Prefixes for Efficient LLM Reranking</span><span class="badge feed">feed</span></div>
+<p class="snippet">DoPR: Reusable Compressed Document Prefixes for Efficient LLM Reranking
+
+Precomputes document representations offline for reuse across queries, cutting reranking memory and latency…</p>
+<p class="card-meta">@_reachsumit · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.03311">arXiv</a> · <a href="https://github.com/dbylynn/DoPR">GitHub</a> · <a href="https://x.com/_reachsumit/status/2095704297778594109">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095438351704920505">
 <div class="card-head"><span class="title">MemoryWalker: Training Agents under Context Eviction via Trajectory Trees (LogitTree, 4D Masks, SDCC)</span><span class="badge feed">feed</span></div>
 <p class="snippet">MemoryWalker models every eviction as a branch in a trajectory tree. Keeping only the final compressed path causes time-travel leakage; replaying the full traversal causes a train-…</p>
 <p class="card-meta">@sheriyuo · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.00865">arXiv</a> · <a href="https://x.com/sheriyuo/status/2095438351704920505">X post</a></p>
@@ -2667,7 +2754,23 @@ The paper is PlugMem, from Microsoft Research and UIUC. The failure is plain…<
 <p class="snippet">Rather than treating evidence retrieval as a single step, HierDoc learns evidence acquisition hierarchically: first selecting relevant pages, then the relevant semantic regions wit…</p>
 <p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.29638">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084309823487660096">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="multi-agent"><h2>Multi-Agent Systems</h2><p class="cat-desc">Coordination, role drift, meta-agents, multi-agent search and exploration.</p><div class="card" data-key="2095362451093287294">
+</div></section><section id="multi-agent"><h2>Multi-Agent Systems</h2><p class="cat-desc">Coordination, role drift, meta-agents, multi-agent search and exploration.</p><div class="card" data-key="2095532473539051602">
+<div class="card-head"><span class="title">GlossoGen: Controlled Study of Emergent, Transmissible Languages in Multi-Agent LLM Systems</span><span class="badge feed">feed</span></div>
+<p class="snippet">When do LLM agents develop new languages that we can’t understand?
+
+Lots of recent news about this, based mostly on anecdata from a single run. We study language emergence more rig…</p>
+<p class="card-meta">@EliasEskin · added 2026-09-04 · <a href="https://x.com/EliasEskin/status/2095532473539051602">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095873020778991918">
+<div class="card-head"><span class="title">Emergent Cheating and Whistleblowing in a 100-Agent Autonomous Research Swarm (DeepMind)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Wild findings in this paper from Google DeepMind.
+
+If you are tracking recent work on agent swarms, this is worth reading.
+
+They ran a research collective of 100 autonomous agents …</p>
+<p class="card-meta">@omarsar0 · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04170">arXiv</a> · <a href="https://x.com/omarsar0/status/2095873020778991918">X post</a> · <a href="https://academy.dair.ai/papers/a-case-study-on-emergent-cheating-and-whistleblowing-in-autonomous-research-swar-2609.04170">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095362451093287294">
 <div class="card-head"><span class="title">Software World: A Simulated GitHub Ecosystem for Developing Multi-Agent Systems at Scale</span><span class="badge feed">feed</span></div>
 <p class="snippet">Building an environment to develop and evaluate multi-agent systems at scale is challenging. Software World is our first step towards it:
 📍We build a simulated GitHub ecosystem for…</p>
@@ -2870,7 +2973,7 @@ The result: dynamic …</p>
 <p class="snippet">new paper: Prefix Sliding for efficient test-time scaling
 
 vanilla full attention OOMs on long tasks &amp; compaction loses important details -- prefix sliding is a simple &amp; fast alter…</p>
-<p class="card-meta">@Muennighoff, @askalphaxiv, @omarsar0 · added 2026-08-28 · <a href="https://arxiv.org/abs/2608.26070">arXiv</a> · <a href="https://x.com/Muennighoff/status/2092960068685692974">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.26070">alphaxiv.org</a></p>
+<p class="card-meta">@Muennighoff, @askalphaxiv, @omarsar0, @rohanpaul_ai · added 2026-08-28 · <a href="https://arxiv.org/abs/2608.26070">arXiv</a> · <a href="https://x.com/Muennighoff/status/2092960068685692974">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.26070">alphaxiv.org</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2091191241673252907">
 <div class="card-head"><span class="title">Thinking as Cued Retrieval: CoT Recovers 40-65% of Encoded-but-Inaccessible Facts (Google Research)</span><span class="badge feed">feed</span></div>
@@ -3077,11 +3180,33 @@ basically, you combine exploration with latent reasoning models (e.g., on sudoku
 Progressive pessimistic verification starts with whole-proof verification, then progressively subdivides proofs into smaller seg…</p>
 <p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2511.21522">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084307496613695645">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2095350016449851733">
+</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2095498033504940355">
+<div class="card-head"><span class="title">Flow Reasoning Models: Recurrent Continuous Flows with Self-Conditioned Refinement for Structured Reasoning</span><span class="badge feed">feed</span></div>
+<p class="snippet">Introducing Flow Reasoning Models.
+
+We developed a recurrent flow-based architecture to efficiently solve structured reasoning problems (e.g., Sudoku).
+
+FRMs apply continuous flows…</p>
+<p class="card-meta">@alec_helbling · added 2026-09-04 · <a href="https://x.com/alec_helbling/status/2095498033504940355">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095676469527916970">
+<div class="card-head"><span class="title">Rethinking Loop Transformers: Loops, Recirculation, and Sparse MoE (Analysis)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Rethinking Loop Transformer: Loops, Recirculation, and Sparse MoE
+https://t.co/ehKrgQQey5</p>
+<p class="card-meta">@zartbotF · added 2026-09-04 · <a href="https://x.com/zartbotF/status/2095676469527916970">X post</a> · <a href="https://github.com/zartbot/blog/issues/14">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095791202188845172">
+<div class="card-head"><span class="title">Uno: Diffusion-Augmented LLMs Sample Multiple Tokens in Parallel from an AR Distribution</span><span class="badge feed">feed</span></div>
+<p class="snippet">Unlocking Lossless Speedups in LLMs via Discrete Diffusion
+
+&quot;we introduce diffusion-augmented LLMs, a new class of models that defines an AR model distribution while using diffusio…</p>
+<p class="card-meta">@iScienceLuvr · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04010">arXiv</a> · <a href="https://github.com/ifm-ai/uno">GitHub</a> · <a href="https://x.com/iScienceLuvr/status/2095791202188845172">X post</a> · <a href="https://s-sahoo.com/uno/">s-sahoo.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095350016449851733">
 <div class="card-head"><span class="title">Declarative Attention: Language Models Control Their Own Attention (Global/Focus/Local Modes)</span><span class="badge feed">feed</span></div>
 <p class="snippet">This is a big one. Full thread coming soon.
 https://t.co/rw4kKlLbDd</p>
-<p class="card-meta">@itsnamgyu · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.02737">arXiv</a> · <a href="https://x.com/itsnamgyu/status/2095350016449851733">X post</a> · <a href="https://huggingface.co/papers/2609.02737">huggingface.co</a></p>
+<p class="card-meta">@itsnamgyu, @omarsar0, @askalphaxiv · added 2026-09-03 · <a href="https://arxiv.org/abs/2609.02737">arXiv</a> · <a href="https://x.com/itsnamgyu/status/2095350016449851733">X post</a> · <a href="https://huggingface.co/papers/2609.02737">huggingface.co</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2095021856638271747">
 <div class="card-head"><span class="title">Concept-Level Language Modeling: Dynamic Large Concept Models &amp; ConceptMoE</span><span class="badge feed">feed</span></div>
@@ -3390,7 +3515,7 @@ If you’re curious why fixing weight RMS like this c…</p>
 <p class="snippet">1/ Sharing a new, interesting project I did during my internship at Microsoft AI Frontiers w/ @JohnCLangford
 
 TL;DR: At decoding time, we feed **previous hidden state** into the in…</p>
-<p class="card-meta">@xidulu, @askalphaxiv · added 2026-08-11 · <a href="https://arxiv.org/abs/2608.08888">arXiv</a> · <a href="https://x.com/xidulu/status/2087185532707111092">X post</a> · <a href="https://alphaxiv.org/abs/2608.08888">alphaxiv.org</a></p>
+<p class="card-meta">@xidulu, @askalphaxiv, @JohnCLangford · added 2026-08-11 · <a href="https://arxiv.org/abs/2608.08888">arXiv</a> · <a href="https://x.com/xidulu/status/2087185532707111092">X post</a> · <a href="https://alphaxiv.org/abs/2608.08888">alphaxiv.org</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="nd-interaction-scaling-law">
 <div class="card-head"><span class="title">Scaling Law with N-D Interaction + Efficient Experiment Sampling</span><span class="badge feed">feed</span></div>
@@ -3792,7 +3917,61 @@ So the world is what stays stable, like the scene, character, voice, and ambienc
 Most manipulation systems can only follow a si…</p>
 <p class="card-meta">@stepjamUK · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.21725">arXiv</a> · <a href="https://x.com/stepjamUK/status/2084281886348652725">X post</a> · <a href="https://lianegalanti.github.io/Pigey/">lianegalanti.github.io</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2095330956823629995">
+</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2095597602545025138">
+<div class="card-head"><span class="title">ARC-AGI-3 Saturated: Provider-Adapter Harness Lifts GPT-6 Astra from 63% to 99%</span><span class="badge feed">feed</span></div>
+<p class="snippet">GPT-6 Astra by @OpenAI achieves SOTA on ARC-AGI:
+
+- Astra scores 63% on ARC-AGI-3, 99% via a new provider adapter harness
+- It surpasses human performance on 96% of ARC-AGI-3 level…</p>
+<p class="card-meta">@arcprize, @rohanpaul_ai · added 2026-09-04 · <a href="https://x.com/arcprize/status/2095597602545025138">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095648712639070518">
+<div class="card-head"><span class="title">FrontierCode 1.1: Merge-Quality PR Benchmark Graded by Maintainer Rubrics (Cognition)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Cognition says GPT-6 Astra reached near-Fable 5 coding quality (within 0.4 points) at 64% lower rollout cost on FrontierCode 1.1
+
+Now, FrontierCode benchmark is quite unusual becau…</p>
+<p class="card-meta">@rohanpaul_ai · added 2026-09-04 · <a href="https://x.com/rohanpaul_ai/status/2095648712639070518">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095710882932429022">
+<div class="card-head"><span class="title">WANDR: Wide-and-Deep Research Benchmark Scoring Precision and Completion over Source-Backed Records (Perplexity)</span><span class="badge feed">feed</span></div>
+<p class="snippet">GPT-6 Astra delivered Perplexity’s strongest WANDR result yet
+
+13.5% above Fable 5.1 while costing 6.1% less per task.
+
+This benchmark WANDR is quite unusual because it tests wide-…</p>
+<p class="card-meta">@rohanpaul_ai · added 2026-09-04 · <a href="https://x.com/rohanpaul_ai/status/2095710882932429022">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095575252445405466">
+<div class="card-head"><span class="title">Bias-Corrected Routing Ceiling: Oracle Model Selection Cuts Error 54% at Matched Cost across 21 LLMs (Martian)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Researchers found a surprisingly simple path to 82% fewer LLM errors.
+
+Instead of searching for one universally best model, they combined the strengths of many.
+
+21 LLMs were evalu…</p>
+<p class="card-meta">@akshay_pachaar, @omarsar0, @rohanpaul_ai · added 2026-09-04 · <a href="https://x.com/akshay_pachaar/status/2095575252445405466">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095560057706672323">
+<div class="card-head"><span class="title">TRACES: Process-Level Evaluation of Scientific-Discovery Solvers across Six Trajectory Capabilities (Apodex)</span><span class="badge feed">feed</span></div>
+<p class="snippet">Most benchmarks assume the answer exists somewhere. Scientific discovery often starts precisely because it does not.
+
+Apodex released TRACES, which is built around that mismatch. A…</p>
+<p class="card-meta">@rohanpaul_ai · added 2026-09-04 · <a href="https://x.com/rohanpaul_ai/status/2095560057706672323">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095880233488732609">
+<div class="card-head"><span class="title">SWE-Gate: One Third of Functionally Passing Agent Patches Violate Real Review Constraints</span><span class="badge feed">feed</span></div>
+<p class="snippet">Passing tests can overstate a coding agent&#x27;s reliability.
+
+SWE-Gate tested 303 repairs across 75 Python repos. Of 644 functionally passing patches, 221 violated review constraints …</p>
+<p class="card-meta">@di_zhang_fdu · added 2026-09-04 · <a href="https://arxiv.org/abs/2609.04167">arXiv</a> · <a href="https://x.com/di_zhang_fdu/status/2095880233488732609">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095898682545905907">
+<div class="card-head"><span class="title">SWE Refactor Bench: Whole-Repository C-to-Rust Migration with Adversarial Verification (Einsia)</span><span class="badge feed">feed</span></div>
+<p class="snippet">20 real open-source projects. 867,000 lines of code. 10,594 files. The task: rewrite the entire system from C to Rust — same interfaces, same behavior, old code fully deleted.
+
+Ein…</p>
+<p class="card-meta">@jiqizhixin · added 2026-09-04 · <a href="https://arxiv.org/abs/2608.23564">arXiv</a> · <a href="https://github.com/Einsia/SWE-Refactor-Bench">GitHub</a> · <a href="https://x.com/jiqizhixin/status/2095898682545905907">X post</a> · <a href="https://lab.einsia.ai/swe-refactor-bench">lab.einsia.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095330956823629995">
 <div class="card-head"><span class="title">Retrieval-Invoked Actual-Use Effect: Same-Task Evaluation Shows Agent Skill Retrieval Often Hurts</span><span class="badge feed">feed</span></div>
 <p class="snippet">Good measurement work on whether retrieved agent skills actually help.
 
@@ -4003,7 +4182,7 @@ Enterprise teams are starting to leverage shared skill libraries, and th…</p>
 </div><div class="card" data-key="2091273141872140507">
 <div class="card-head"><span class="title">ASI-Bench: Benchmarking Capabilities at the Dawn of Artificial Superintelligence (Tsinghua)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Benchmark suite from Tsinghua aimed at capabilities beyond current frontier evals.</p>
-<p class="card-meta">@fly51fly · added 2026-08-23 · <a href="https://arxiv.org/abs/2608.17271">arXiv</a> · <a href="https://x.com/fly51fly/status/2091273141872140507">X post</a></p>
+<p class="card-meta">@fly51fly, @jiqizhixin · added 2026-08-23 · <a href="https://arxiv.org/abs/2608.17271">arXiv</a> · <a href="https://x.com/fly51fly/status/2091273141872140507">X post</a> · <a href="https://github.com/apexin-ai/ASI-Bench">github.com</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2090763462217551976">
 <div class="card-head"><span class="title">When Do Agents Need MCP? CLI-Native Tooling Matches Reliability at 5-28x Lower Cost</span><span class="badge feed">feed</span></div>
@@ -4717,7 +4896,27 @@ A million-scale synthetic dataset of private records—medical files, financial 
 A Grounded Code-Agent Platform for Constructing Editable LLM Data Pipelines https://t.co/9JP0L73LNn</p>
 <p class="card-meta">@_akhaliq · added 2026-08-03 · <a href="https://x.com/_akhaliq/status/2079980795071000858">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2095392848900202728">
+</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2095544229384925612">
+<div class="card-head"><span class="title">Tardigrade: Agent Harness as Typed State-Machine Components over an Immutable Event Log</span><span class="badge feed">feed</span></div>
+<p class="snippet">Introducing Tardigrade! 🐛
+
+A framework to build your agent harness as components over an immutable event log (think react for harness).
+
+Each component is a typed state machine ove…</p>
+<p class="card-meta">@arjunkmrm · added 2026-09-04 · <a href="https://x.com/arjunkmrm/status/2095544229384925612">X post</a> · <a href="https://tardigrade.sh/docs/why">tardigrade.sh</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095799369660576198">
+<div class="card-head"><span class="title">Harness Playbook: A Systematic Design Handbook for Agent Harnesses (omp Author)</span><span class="badge feed">feed</span></div>
+<p class="snippet">AI Coding Agent Harness 正在经历一场集体重构。
+
+OpenCode、Pi、OpenClaw、omp 等不约而同地推倒重来。为什么？
+
+omp 作者发布的《Harness Playbook》给出了迄今最系统的回答。
+
+9 章正文 + 2 个附录，覆盖状态、运行时、控制面、推理层、工具面、界面与技术栈。 https://t.co/4wR8…</p>
+<p class="card-meta">@shao__meng, @LanLance24 · added 2026-09-04 · <a href="https://x.com/shao__meng/status/2095799369660576198">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2095392848900202728">
 <div class="card-head"><span class="title">Specula: Coding Agents as Formal-Verification Engineers (TLA+; 382 Bugs across 67 Systems)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Formal verification catches the deepest concurrency bugs — but building a usable specification for one complex system can take experts months. It has stayed locked inside a small c…</p>
 <p class="card-meta">@jiqizhixin · added 2026-09-03 · <a href="https://arxiv.org/abs/2607.25333">arXiv</a> · <a href="https://github.com/specula-org/Specula">GitHub</a> · <a href="https://x.com/jiqizhixin/status/2095392848900202728">X post</a> · <a href="https://specula.info">specula.info</a></p>
@@ -5298,6 +5497,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-09-03 16:08 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>

@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>WHALE: A Simple Recipe for Joint Harness–Weight Optimization</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.00196">arXiv:2609.00196</a> · <a href="https://arxiv.org/abs/2609.00196">arXiv</a> · <a href="https://github.com/krafton-ai/WHALE">GitHub</a> · <a href="https://x.com/Kangwook_Lee/status/2095234520819826878">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>WHALE: A Simple Recipe for Joint Harness–Weight Optimization</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.00196">arXiv:2609.00196</a> · <a href="https://arxiv.org/abs/2609.00196">arXiv</a> · <a href="https://github.com/krafton-ai/WHALE">GitHub</a> · <a href="https://x.com/Kangwook_Lee/status/2095234520819826878">X post</a> · <a href="https://krafton.ai/blog/whale/">krafton.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
 <ul>
 <li>"WHALE: A Simple Recipe for Joint Harness–Weight Optimization" (arXiv 2609.00196; Haechan Kim, Yoonho Lee, Gisang Lee, Chelsea Finn, Kangwook Lee — KRAFTON / KAIST / Stanford; code released) alternates two black-box phases: update model weights under the current harness (online rejection-sampling fine-tuning), then search over <strong>executable harness code</strong> under the updated model (Meta-Harness) — the first controlled, budget-matched study of full alternating weight–harness optimization.</li>
 <li>On Qwen3.5-2B/4B agents across SearchQA, math-with-code, and chess puzzles, WHALE beats weight-only and harness-only by 7.67–24.38 points and Fast–Slow Training (same schedule, search restricted to prompts) by 4.15–13.00 points in best mean@8 accuracy — e.g. SearchQA 48.3% vs 38.3/38.3/35.3.</li>
@@ -85,6 +85,6 @@ return best (theta_k, h_k) on test
 <li><strong>Alternate in small steps</strong>: one big weight pass followed by one big harness pass over-optimizes each side against a stale counterpart; short interleaved phases won by 5–9 points at half the rollouts.</li>
 <li><strong>A cheap harness search is your first diagnostic</strong>: it matched peak weight-only accuracy with ~6% of the rollouts in the harness-dominant regime — run it before you launch RL.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-09-03 16:08 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-04 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
