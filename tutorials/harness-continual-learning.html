@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Continual Learning: Guarded Evolution of the Agent State Outside the Model</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.19013">arXiv:2608.19013</a> · <a href="https://arxiv.org/abs/2608.19013">arXiv</a> · <a href="https://x.com/omarsar0/status/2090533587066249514">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.19013 (v1, Aug 19 2026), by Borui Kang, Jinrui Gu, Junhan Lv, Wenbin Li, Lei Wang, Yang Gao — Nanjing University State Key Lab for Novel Software Technology + University of Wollongong. Grounded in the full arXiv HTML text.</em></p>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Harness Continual Learning: Guarded Evolution of the Agent State Outside the Model</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2608.19013">arXiv:2608.19013</a> · <a href="https://arxiv.org/abs/2608.19013">arXiv</a> · <a href="https://x.com/omarsar0/status/2090533587066249514">X post</a> · <a href="https://www.jiqizhixin.com/articles/2026-08-28-6">jiqizhixin.com</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2608.19013 (v1, Aug 19 2026), by Borui Kang, Jinrui Gu, Junhan Lv, Wenbin Li, Lei Wang, Yang Gao — Nanjing University State Key Lab for Novel Software Technology + University of Wollongong. Grounded in the full arXiv HTML text.</em></p>
 <h2>TL;DR</h2>
 <ul>
 <li><strong>Harness Continual Learning (HCL)</strong> reframes continual learning around a <em>frozen</em> model: the state that evolves with experience is the harness — prompts, memories, skills, routing rules — and the paper names the failure mode this creates <strong>harness-level forgetting</strong>: a harness update that fixes the current task silently breaks previously reliable behavior, with the model untouched.</li>
@@ -84,6 +84,6 @@ for each task interaction n:
 <li><strong>Guarded evolution = propose, evaluate, commit</strong>: candidates must clear current-improvement, historical-retention (<span class="arithmatex">\(D_n \leq B_n\)</span>), and validity gates before deployment; the tolerance <span class="arithmatex">\(B_n\)</span> is an explicit stability–plasticity dial (<span class="arithmatex">\(b{=}0\)</span> → zero forgetting, <span class="arithmatex">\(b{=}\infty\)</span> → most plastic).</li>
 <li><strong>No gate is the worst gate</strong>: in the controlled sweep, commit-anything (<span class="arithmatex">\(b{=}\infty\)</span>) finished below every guarded setting (60.13 vs 63.46 at <span class="arithmatex">\(b{=}1\)</span>) — for self-evolving harnesses, the evaluator is not overhead, it's load-bearing.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-09-05 18:49 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-06 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

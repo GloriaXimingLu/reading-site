@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM-as-a-Verifier: Verification as a Scaling Axis via Scoring-Token Expectations</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>LLM-as-a-Verifier: Verification as a Scaling Axis via Scoring-Token Expectations</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2607.05391">arXiv:2607.05391</a> · <a href="https://arxiv.org/abs/2607.05391">arXiv</a> · <a href="https://github.com/llm-as-a-verifier/llm-as-a-verifier#self-verification-terminal-bench-21">GitHub</a> · <a href="https://x.com/jackyk02/status/2089421448784023553">X post</a> · <a href="https://github.com/llm-as-a-verifier/llm-as-a-verifier">github.com</a> · <a href="../index.html#reasoning">Reasoning &amp; Test-Time Compute</a></p><p>Paper: "LLM-as-a-Verifier: A General-Purpose Verification Framework" (arXiv 2607.05391, v1 Jul 2026, v2 current). Authors: Jacky Kwok, Shulu Li, Pranav Atreya, Yuejiang Liu, Yixing Jiang, Chelsea Finn, Marco Pavone, Ion Stoica, Azalia Mirhoseini. Code: github.com/llm-as-a-verifier/llm-as-a-verifier.</p>
+<h2>TL;DR</h2>
+<ul>
+<li>The paper's claim: <strong>verification is a scaling axis</strong> alongside pre-training, post-training, and test-time compute. Instead of prompting an LLM judge for one discrete score, LLM-as-a-Verifier reads the <strong>full logit distribution over an ordered set of scoring tokens</strong> and takes its expectation — a continuous reward, no training required — then scales it along three dimensions: score granularity <span class="arithmatex">\(G\)</span>, repeated evaluations <span class="arithmatex">\(K\)</span>, and criteria decomposition <span class="arithmatex">\(C\)</span>.</li>
+<li>Each dimension measurably helps: granularity <span class="arithmatex">\(G{=}1\to 20\)</span> raises the signal-to-noise ratio of correct-vs-incorrect separation from 0.775 to 0.799 (pairwise accuracy 73.1%→77.5%); <span class="arithmatex">\(K{=}16\)</span> repeats beat single-shot; a 3-criterion ensemble (Specification/Output/Errors) hits 78.3% where any single criterion gets 75.2–76.4%.</li>
+<li>Used for best-of-N selection with a budget-efficient <strong>Probabilistic Pivot Tournament</strong>, it sets SOTA on Terminal-Bench V2 (83.1%→<strong>86.5%</strong> with GPT-5.5 under the Capy harness, verifier = Gemini 2.5 Flash) and SWE-Bench Verified (<strong>78.2%</strong> selecting across an Opus 4.5/Gemini 3 Flash/MiniMax M2.5 pool), and its score doubles as a task-progress signal (Spearman 0.848 on successful trajectories) and a dense RL reward (~1.8× sample efficiency for SAC on LIBERO).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The gap between Pass@1 and oracle Pass@N is the cheapest capability on the table — on the paper's Terminal-Bench pool it's 83.1% vs 92.1% — and the only thing between you and it is a ranker. Standard LM judges are bad rankers for a mundane reason: they collapse a graded internal belief into an integer. In the paper's <code>query-optimize</code> case study, the judge <em>sees</em> the failure (the losing trajectory never validates equivalence against the canonical database) and hedges in prose, but a 1–5 discrete score ties the two trajectories 88 times out of 100. Taking the expectation over the same 5-point distribution eliminates ties entirely; widening to 20 score tokens ranks the correct trajectory strictly higher 77/100 times. Nothing was trained; the information was in the logits all along.</p>
+<p>The self-verification economics angle (from the authors' thread) is what lands for open models: sampling 5 candidates with DeepSeek V4 Flash and ranking them <em>with the same model</em> lifted Terminal-Bench 2.1 from 79% to 88%, beating frontier closed models at ~11× lower cost (from the thread/repo — verify against the repo's self-verification section). Cheap tokens turn generate-then-verify into a self-improvement loop with no stronger model anywhere in it.</p>
+<h2>The core idea</h2>
+<p><img alt="Overview: text/image/video inputs flow through a verification-scaling framework built on uncertainty (probability over LLM logits), granularity, repetition, and decomposition, feeding test-time scaling, progress tracking, and RL" src="assets/llm-as-a-verifier/fig2.png" />
+<em>Figure 2 from the paper: one probabilistic verification framework — expectation over scoring-token logits, scaled along granularity, repetition, and decomposition — serving test-time selection, progress tracking, and RL rewards across modalities.</em></p>
+<p>Let <span class="arithmatex">\(V_{\text{score}}=\{v_1,\dots,v_G\}\)</span> be an ordered set of tokens denoting score levels (extracted from <code>&lt;score_A&gt;</code>/<code>&lt;score_B&gt;</code> tags in a pairwise scoring prompt). Rather than collapsing the model's distribution to its argmax, the reward is the expectation over that distribution, averaged over criteria and repeats:</p>
+<div class="arithmatex">\[ R(x,\tau)=\frac{1}{CK}\sum_{c=1}^{C}\sum_{k=1}^{K}\sum_{g=1}^{G}p_{\theta}(v_{g}\mid x,c,\tau)\,\phi(v_{g}), \]</div>
+<p>where <span class="arithmatex">\(x\)</span> is the task, <span class="arithmatex">\(\tau\)</span> a candidate trajectory, <span class="arithmatex">\(c\)</span> indexes <span class="arithmatex">\(C\)</span> evaluation criteria, <span class="arithmatex">\(k\)</span> indexes <span class="arithmatex">\(K\)</span> repeated verifications, <span class="arithmatex">\(p_\theta(v_g\mid\cdot)\)</span> is the verifier's probability on score token <span class="arithmatex">\(v_g\)</span>, and <span class="arithmatex">\(\phi\)</span> maps tokens to scalars. After min-max normalization to <span class="arithmatex">\([0,1]\)</span>, scores become pairwise preferences via Bradley–Terry:</p>
+<div class="arithmatex">\[ P(\tau_{i}\succ\tau_{j}\mid x)=\frac{1}{1+\exp\!\big(-(R(x,\tau_{i})-R(x,\tau_{j}))\big)}. \]</div>
+<p>Why does <em>widening the score vocabulary</em> help when it adds no information about the trajectory? The paper's answer: it grants the decoder a finer space to project the model's internal belief — nearby beliefs that would round to the same integer become distinguishable. The effect is quantified with a signal-to-noise ratio over the correct/incorrect score gap <span class="arithmatex">\(\Delta=s_c-s_i\)</span>:</p>
+<div class="arithmatex">\[ \mathrm{SNR}(G)=\frac{\mathbb{E}[s_{c}-s_{i}]}{\sqrt{\mathrm{Var}(s_{c}-s_{i})}}, \]</div>
+<p>which rises monotonically with <span class="arithmatex">\(G\)</span> (0.775→0.799 from <span class="arithmatex">\(G{=}1\)</span> to <span class="arithmatex">\(G{=}20\)</span> on Terminal-Bench), and pairwise accuracy is monotone in SNR. Repetition (<span class="arithmatex">\(K\)</span>) attacks the variance term; decomposition (<span class="arithmatex">\(C\)</span>) replaces one compound question the verifier can latch onto arbitrarily with simpler factors it can answer reliably.</p>
+<h2>How it works</h2>
+<p><img alt="Probabilistic Pivot Tournament: candidates → ring pass over a random Hamiltonian cycle → top-k pivot selection → non-pivot-vs-pivot and pivot-vs-pivot comparisons → win-mass aggregation and winner selection" src="assets/llm-as-a-verifier/fig6.png" />
+<em>Figure 6 from the paper: the Probabilistic Pivot Tournament cuts best-of-N ranking cost from <span class="arithmatex">\(\mathcal{O}(N^2)\)</span> round-robin to <span class="arithmatex">\(\mathcal{O}(Nk)\)</span> by scoring a ring pass first, then comparing everyone only against the top-<span class="arithmatex">\(k\)</span> pivots.</em></p>
+<p>Selecting the best of <span class="arithmatex">\(N\)</span> candidates by full round-robin costs <span class="arithmatex">\(\binom{N}{2}\)</span> pairwise verifications with soft win updates <span class="arithmatex">\(w_i \mathrel{+}= P(\tau_i\succ\tau_j\mid x)\)</span>. The Probabilistic Pivot Tournament (PPT) gets almost all of the accuracy at a fraction of the budget:</p>
+<pre><code class="language-text">Probabilistic Pivot Tournament (best-of-N under budget):
+  1. Candidates: pool {τ_1..τ_N}, each with K·C·G-scaled verifier scores
+  2. Ring pass: draw a random Hamiltonian cycle over the pool;
+     score the N adjacent pairs — every candidate appears once as &quot;A&quot;
+     and once as &quot;B&quot; (cancels the verifier's positional bias)
+  3. Pivot selection: rank candidates by ring-pass win mass w_(i);
+     top-k form the pivot set P
+  4. Pivot tournament: score every non-pivot-vs-pivot and
+     pivot-vs-pivot pair via Bradley–Terry preferences
+     → O(N·k) comparisons instead of O(N²)
+  5. Selection: aggregate win mass w_i and comparison count c_i;
+     return argmax w_i / c_i
+</code></pre>
+<p>Everything is harness- and model-agnostic: the verifier throughout the main results is <strong>Gemini 2.5 Flash</strong>, scoring trajectories produced by unrelated agents. (For frontier APIs that restrict logprobs, an appendix gives a recovery trick for continuous rewards.)</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Terminal-Bench V2</strong>: Capy harness, GPT-5.5, <span class="arithmatex">\(N{=}5\)</span> samples/task. Pass@1 83.1%, oracle Pass@5 92.1%; verifier selection reaches <strong>86.5%</strong>, above Claude Mythos + Terminus-2 (82.0%), GPT-5.5 + NexAU-AHE (84.7%), and other leaderboard entries. Gains persist on two other harnesses (Terminus-2 71.2%, Terminus-Kira 79.4%).</li>
+<li><strong>SWE-Bench Verified</strong>: mini-swe-agent, heterogeneous pool of one trajectory each from Claude Opus 4.5, Gemini 3 Flash, MiniMax M2.5. Pool mean 76.1%, oracle 84.4%; verifier picks <strong>78.2%</strong>, above every individual model (best single: Opus 4.5 at 76.8%).</li>
+<li><strong>RoboRewardBench 87.4% / MedAgentBench 73.3%</strong>, beating trained robotics reward models on preference accuracy and lowering MAE against human labels.</li>
+<li><strong>Progress tracking</strong>: Value-Order Correlation (Spearman between step index and prefix score) is 0.848 on successful Terminal-Bench trajectories vs 0.769 on failures — rising scores mean progress, flat scores are an early-warning signal. This powers their Claude Code/Codex extensions that surface a live verifier score so long agentic jobs can be paused or rolled back before committing broken state.</li>
+<li><strong>Dense RL reward</strong>: relabeling rollouts with the verifier progress curve <span class="arithmatex">\(r_t = r^{\text{env}}_t + \lambda\rho_t\)</span> gets DSRL-SAC on LIBERO to the same success with ~1.8× fewer environment steps (final 0.76 vs 0.69); GRPO on MATH gains ~1.1× sample efficiency by breaking all-fail reward ties.</li>
+</ul>
+<h2>How it connects</h2>
+<p>This is the paper behind two earlier tracker entries (the Terminal-Bench self-verification thread and the framework announcement), now merged. It's the constructive counterpoint to <a href="../items">The Verifier Bottleneck</a> thesis that RSI is limited by verification, and to this week's preregistered LLM-judge reliability audit (0.40 ranking agreement across 53k calls): both diagnose discrete judges as noise sources; this paper shows how much of that noise is an artifact of discretization rather than missing knowledge. The progress-score-as-dense-reward section lands on the same problem <a href="draco">DRACO</a> attacks the same week from the rubric side — DRACO gets dense credit from judge <em>citations</em>, this gets it from prefix <em>score curves</em> — and both feed the credit-assignment thread (<a href="trace-turn-level-rewards">TRACE</a>, GiGPO, Apodex). "Progressive Pessimistic Verification" and "Evaluating the Verifiers" in this tracker are natural follow-ups on when verification itself should be distrusted.</p>
+<h2>Critical take</h2>
+<p>The framework's honesty constraint is calibration, and expectation-over-logits is only as good as the verifier's token-level probability mass — a model can be smoothly, confidently miscalibrated, and nothing here detects that (the reliability audit above is the sobering companion read). The SNR gains from granularity are real but small (0.775→0.799); most of the lift in end numbers comes from <em>having</em> a continuous score and repeating it, i.e., from spending more verifier compute — the "scaling axis" framing is apt but so is the bill, and PPT only trims the pairwise-selection term. The SWE-Bench and Terminal-Bench results also ride on candidate pools from very strong generators; verifier selection recovers a slice of the oracle gap (3.4 of 9.0 points on Terminal-Bench), which is valuable but far from closing it. Finally, using the same family of models to generate and verify (the self-verification loop) invites correlated blind spots — the paper's cross-model SWE-Bench pool partially addresses this, but adversarial or self-serving trajectories (the reward-hacking failure modes in this tracker's emergent-cheating entries) are exactly where scoring-token expectations may stay confidently wrong.</p>
+<h2>If you remember three things</h2>
+<ul>
+<li>Don't ask a judge for a score; read the distribution: <span class="arithmatex">\(R(x,\tau)=\frac{1}{CK}\sum_{c,k,g}p_\theta(v_g\mid x,c,\tau)\phi(v_g)\)</span> turns any instruction-following LLM into a continuous, training-free verifier, and it eliminates the discrete-tie failure mode that makes LM judges useless on close pairs.</li>
+<li>Verification scales along three cheap knobs — score granularity, repeats, criteria decomposition — and the continuous score is triple-duty: best-of-N ranking (SOTA 86.5% Terminal-Bench V2, 78.2% SWE-Bench Verified), live progress monitoring (VOC 0.848), and dense RL reward (1.8× sample efficiency).</li>
+<li>For open models the loop is the point: generate N cheap candidates, verify with the same model, and the generate+verify bundle can beat a frontier model's single shot at a fraction of the cost — verification is the scaling axis that doesn't need a bigger model.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-06 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

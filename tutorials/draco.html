@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRACO: Dynamic Rubrics + Closed-Form Step Credit for Outcome-Blind Agent RL</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>DRACO: Dynamic Rubrics + Closed-Form Step Credit for Outcome-Blind Agent RL</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.04094">arXiv:2609.04094</a> · <a href="https://arxiv.org/abs/2609.04094">arXiv</a> · <a href="https://x.com/di_zhang_fdu/status/2096163955303710951">X post</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><p>Paper: "DRACO: Fine-Grained Credit Assignment with Dynamic Rubrics for Long-Horizon Agent Training" (arXiv 2609.04094, Sep 3 2026). Authors: Shubham Gandhi, Saurabh Goyal, Kiran Kate, Yara Rizk.</p>
+<h2>TL;DR</h2>
+<ul>
+<li>DRACO trains long-horizon agents with GRPO in the <strong>outcome-blind setting</strong> — no verifier, no unit tests, no gold answers in the reward. A judge writes a <strong>fresh rubric per task per training step</strong> (proposed from the instruction, extended by what each rollout actually reveals), scores each trajectory criterion-by-criterion, and the pass/fail rate becomes the reward.</li>
+<li>Its second contribution is a <strong>closed-form, sign-preserving credit-reallocation rule</strong>: the judge's verdicts cite the steps responsible, and the trajectory's GRPO advantage is redistributed over those steps in proportion to their cited quality — conserving the trajectory's total gradient push exactly, with no trained attribution module.</li>
+<li>On AppWorld (Qwen3.6-27B), DRACO lifts test-normal TGC/SGC from 69.4/41.1 to <strong>85.3/70.6</strong>, beats GRPO trained with the <em>ground-truth</em> sparse reward by 5.3 points, and transfers zero-shot to τ-bench Banking (15.8→20.4) — while the biggest gains are in consistency (pass³ TGC +25.2 points vs only +3.9 on pass@3).</li>
+</ul>
+<h2>Why this matters</h2>
+<p>RLVR works where a programmatic checker exists; most long-horizon agent domains have none, and building verifiers is exactly the bottleneck flagged across this tracker (see The Verifier Bottleneck). The standard fallback — a single trajectory-level rubric score — has two structural problems this paper attacks at once. First, a <em>static</em> rubric written for the whole task distribution can only contain generic criteria ("handle pagination", "don't leak secrets"), so it stops discriminating as the policy improves. Second, a <em>single scalar</em> spread uniformly over tens of steps is a terrible learning signal: GRPO pushes every token of a winning trajectory equally, including the flailing detours, and suppresses every token of a losing one, including the good recovery steps.</p>
+<p>The interesting design choice is where DRACO puts the intelligence: the judge's <em>language-level</em> work (write criteria, cite steps) is reused as the <em>numeric</em> credit structure through pure closed-form bookkeeping. No learned reward model, no value network, no trained attribution — so the machinery stays auditable, and the reward can't drift from what the judge actually asserted. For anyone doing agentic RL where "did it work?" is expensive but "what should good behavior look like here?" is cheap to elicit, this is a clean recipe.</p>
+<h2>The core idea</h2>
+<p><img alt="DRACO overview: a judge proposes prompt-specific and trajectory-specific criteria, post-processes them, computes a pass/fail-rate reward; GRPO normalizes it into a trajectory advantage which is redistributed over steps via judge-cited step qualities" src="assets/draco/fig1.png" />
+<em>Figure 1 from the paper: top — rubric generation (prompt-specific criteria + trajectory-specific criteria, deduplicated, never-failing criteria dropped, reward <span class="arithmatex">\(R_i=(p_i-f_i)/(p_i+f_i)\)</span>); bottom — GRPO group-normalizes rewards into <span class="arithmatex">\(A_i\)</span>, step qualities <span class="arithmatex">\(Q_j\)</span> become sign-dependent weights <span class="arithmatex">\(w_j\)</span>, and step advantages <span class="arithmatex">\(a_j\)</span> replace the uniform <span class="arithmatex">\(A_i\)</span>.</em></p>
+<p>For each task, a judge proposes criteria from the instruction alone, then extends them once per sampled rollout — adding the sub-goals that rollout reveals and the failure modes the policy actually exhibits. Proposals from all <span class="arithmatex">\(G\)</span> rollouts merge into one deduplicated set <span class="arithmatex">\(\mathcal{R}=\{c_1,\dots,c_K\}\)</span>, kept mutually exclusive and collectively exhaustive. <em>Discriminative dropout</em> then keeps a criterion only if some group member failed it (a criterion everyone passes carries no gradient information and would dilute the rate). A frozen external judge scores every trajectory against every surviving criterion — pass, fail, or not-applicable, plus a justification and <strong>the steps responsible</strong>. With <span class="arithmatex">\(p_i\)</span>, <span class="arithmatex">\(f_i\)</span> counting trajectory <span class="arithmatex">\(i\)</span>'s applicable passes and fails:</p>
+<div class="arithmatex">\[ R_{i}=\frac{p_{i}-f_{i}}{p_{i}+f_{i}}, \]</div>
+<p>with <span class="arithmatex">\(R_i=0\)</span> if nothing applies. Normalizing by verdicts cast (not by <span class="arithmatex">\(K\)</span>) keeps trajectories with different applicable-criteria counts comparable within the group. No task-success term appears anywhere — the reward is fully outcome-blind.</p>
+<h2>How it works</h2>
+<p>GRPO standardizes rewards within the group into a trajectory advantage <span class="arithmatex">\(A_i=(R_i-\mathrm{mean}(\{R_j\}))/\mathrm{std}(\{R_j\})\)</span> and, in its vanilla form, applies that same scalar to every token. DRACO replaces it with a per-step advantage. Steps are agent turns (one emitted code block); tokens in "gaps" (turn glue, tool-result echoes) get no credit. Let <span class="arithmatex">\(p_j, f_j\)</span> count the passed/failed criteria whose verdicts cite step <span class="arithmatex">\(j\)</span>. The <strong>step quality</strong> is the pass fraction of citing criteria:</p>
+<div class="arithmatex">\[ Q_{j}=\frac{p_{j}}{p_{j}+f_{j}}\in[0,1], \]</div>
+<p>with uncited steps inheriting the mean <span class="arithmatex">\(\bar{Q}\)</span> over cited ones. Sign-preserving weights flip the reading depending on whether the trajectory is being reinforced or suppressed:</p>
+<div class="arithmatex">\[ w_{j}=\begin{cases}Q_{j}, &amp; A_{i}\ge 0 \quad\text{(reinforce the good steps of a winner)},\\ 1-Q_{j}, &amp; A_{i}&lt;0 \quad\text{(suppress the bad steps of a loser)},\end{cases} \]</div>
+<p>and the <strong>step advantage</strong>, applied to every token of step <span class="arithmatex">\(j\)</span> (with <span class="arithmatex">\(n_j\)</span> tokens in step <span class="arithmatex">\(j\)</span>, <span class="arithmatex">\(N=\sum_k n_k\)</span>):</p>
+<div class="arithmatex">\[ a_{j}=A_{i}\cdot\frac{N\,w_{j}}{n_{j}\sum_{k}w_{k}}. \]</div>
+<p>Two properties make this rule trustworthy. It <strong>conserves total push</strong>: <span class="arithmatex">\(\sum_j n_j a_j = A_i N\)</span>, exactly what baseline GRPO applies to the same tokens — credit is moved, never inflated. And since <span class="arithmatex">\(w_j\ge 0\)</span>, no step's advantage ever flips sign against the judge's trajectory-level verdict. Each step's total contribution <span class="arithmatex">\(n_j a_j \propto w_j\)</span> is independent of its length, so a step earns influence by being judged good, not by being verbose. If the rubric cites no steps, the update degrades gracefully to plain GRPO.</p>
+<pre><code class="language-text">DRACO training step:
+  for each task x in batch (B=16):
+    sample group of G=6 trajectories from policy
+    # rubric generation (3 stages, judge = GPT-5.4)
+    R ← criteria proposed from instruction x
+    for each trajectory τ_i: R ← R ∪ criteria revealed by τ_i
+    dedupe R; drop criteria that no group member failed
+    # scoring
+    for each τ_i: judge scores every c ∈ R → pass/fail/NA + step citations
+    R_i = (p_i − f_i)/(p_i + f_i)
+    A_i = (R_i − mean)/std                      # GRPO group normalization
+    # closed-form credit reallocation
+    for each step j: Q_j = p_j/(p_j+f_j)  (uncited → mean Q)
+    w_j = Q_j if A_i ≥ 0 else 1−Q_j
+    a_j = A_i · N·w_j/(n_j·Σ_k w_k)             # conserves Σ n_j a_j = A_i N
+  policy-gradient update with per-token advantages a_j (LoRA)
+</code></pre>
+<p>Setup: policy Qwen3.6-27B (ablations) and Qwen2.5-32B-Instruct, LoRA + GRPO on AppWorld's 90 training tasks, judge GPT-5.4 at temperature 0.1 for all reward operations, 8×H100. Ablations remove dynamic rubrics, step credit, or both; an outcome reward model trained on AppWorld unit tests serves as the outcome-aware reference.</p>
+<h2>Results</h2>
+<p>On AppWorld test-normal (168 tasks), Qwen3.6-27B goes from 69.4/41.1 TGC/SGC to <strong>85.3/70.6</strong> (+15.9/+29.5); test-challenge TGC 49.7→61.5. The consistency story is the standout: pass³ TGC rises 25.2 points (47.6→72.8) while pass@3 rises only 3.9 — the base model could often solve tasks <em>once</em>; DRACO makes success repeatable. Zero-shot transfer to τ-bench Banking (trained only on AppWorld, no verifier ever) improves success 15.8→20.4. On Qwen2.5-32B-Instruct the gains are larger (TGC/SGC 35.7/17.3→62.9/42.3), closing most of the distance to SALT (66.2/47.9), which <em>uses the ground-truth reward</em>.</p>
+<p><img alt="Training-split TGC over training steps" src="assets/draco/fig7.png" />
+<em>Figure 7 from the paper: task goal completion on the training tasks across steps (post-hoc diagnostic — TGC is never part of the reward).</em></p>
+<p>The appendix analysis explains why dynamic beats static: over 99 training steps the judge wrote 6,245 distinct criteria (60,119 judgments); <strong>84.4% of criteria are written for a single task</strong> ("deduplicates artists before follow", "approved all and only eligible requests") — sub-goals no shared rubric could express — while the 18 criteria recurring across ten-plus tasks turn out to be the static rubric rediscovered. DRACO's rollouts also recover 91.3% on a static held-out rubric set it never trained on.</p>
+<h2>How it connects</h2>
+<p>DRACO sits at the junction of two tracker threads. On credit assignment, it's the outcome-blind counterpart of <a href="trace-turn-level-rewards">TRACE: Turn-Level Rewards for Long-Horizon Agents</a>, GiGPO's group-in-group step advantages, <a href="sp3o-segment-pbrl">SP3O's segment preferences</a>, and Apodex's sparse-terminal-reward decomposition — but where those learn or infer attribution, DRACO extracts it for free from judge citations. On rubric rewards, it operationalizes what <a href="../items">TAHI</a> does with human feedback and what AutoSciRub/CalibratedRubric do for evaluation, and the "discriminative dropout" move is a within-group cousin of Rubric Dropout's anti-reward-hacking motivation. The verifier-free framing answers directly to <a href="../items">The Verifier Bottleneck</a> and complements <a href="rlsvr-self-verifiable-rewards">RLSVR's task-transformation route</a> to self-verifiable rewards: RLSVR manufactures verifiability, DRACO abandons it and buys signal with judge structure instead.</p>
+<h2>Critical take</h2>
+<p>The elephant: <strong>GPT-5.4 does all rubric work at training time</strong>, and Figure 8's cost accounting plus the self-judge ablation show the frozen frontier judge matters — the policy scoring itself (even with thinking and 3-vote scoring) is a weaker substitute. So "no verifier" is not "no oracle"; it swaps a programmatic oracle for a strong-model oracle, and the economics only favor DRACO where checkers are genuinely unbuildable. Second, reward hacking is held off by design choices (MECE criteria, discriminative dropout, a <em>frozen</em> judge) but only 90 training tasks and ~100 steps of LoRA training were run; longer horizons with a policy that learns to write judge-pleasing trajectories are untested — the emergent-cheating literature suggests that pressure will find cracks. Third, credit precision inherits judge citation quality wholesale: a criterion mis-cited to the wrong step moves real gradient to the wrong turn, and there's no consistency check on citations. Finally, the closed-form rule redistributes only <em>within</em> a trajectory under GRPO's group baseline — it cannot express "this step was good in a trajectory whose advantage is zero because the whole group tied," a regime the appendix itself flags (unanimous rollouts stop discriminating between steps).</p>
+<h2>If you remember three things</h2>
+<ul>
+<li>You can train long-horizon agents with <strong>zero outcome signal</strong>: rubric pass-rate rewards <span class="arithmatex">\(R_i=(p_i-f_i)/(p_i+f_i)\)</span> from a frozen judge beat GRPO on ground-truth sparse rewards on AppWorld (+5.3), mostly by making success <em>consistent</em> (pass³ +25.2).</li>
+<li>Rubrics must be <strong>dynamic and per-trajectory</strong>: 84% of useful criteria are single-task sub-goals a static rubric cannot contain, and dropping never-failed criteria keeps the reward discriminative as the policy improves.</li>
+<li>Judge step-citations → closed-form credit: <span class="arithmatex">\(a_j = A_i\, N w_j / (n_j \sum_k w_k)\)</span> reallocates the trajectory's advantage onto implicated steps while conserving total push and never flipping sign — dense credit with no trained attribution module.</li>
+</ul><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-06 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
