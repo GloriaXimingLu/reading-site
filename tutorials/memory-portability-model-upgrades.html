@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Does Your Agent&#x27;s Memory Survive a Model Upgrade?</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Does Your Agent&#x27;s Memory Survive a Model Upgrade?</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2609.05339">arXiv:2609.05339</a> · <a href="https://arxiv.org/abs/2609.05339">arXiv</a> · <a href="https://x.com/dair_ai/status/2096985097450999839">X post</a> · <a href="https://academy.dair.ai/papers/does-your-agents-memory-survive-a-model-upgrade-a-controlled-study-of-memory-por-2609.05339">academy.dair.ai</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li>Goyal &amp; Ray (LinkedIn; arXiv 2609.05339) run the migration experiment everyone skips: keep the memory store fixed, swap the model (or embedder) underneath it, and measure what breaks. Four formats — raw history (LC-RAW), chunked retrieval (RAG), model-written notes (NOTES), fixed-schema knowledge graph (KG-fixed) — over 48 synthetic histories with randomized answer codes and exact scoring, so chance is ~0 and no LLM judge is involved.</li>
+<li><strong>Structure survives; prose doesn't.</strong> A writer swap moves KG-fixed accuracy by +0.0004 ± 0.0020 — statistically <em>nothing</em> — while NOTES swings <strong>asymmetrically</strong>: Qwen-written notes lift Llama by +9.9 points, Llama-written notes cost Qwen −13.3. Averaging the two directions yields ≈0 and hides the failure entirely. Meanwhile a "gradual" embedding upgrade (50/50 mixed index of bge v1.0+v1.5 vectors, same 1024 dims, no errors thrown) forfeits ~60% of the 11.9-point gain that full re-embedding delivers.</li>
+<li>Diagnosis and repair follow the same split: 80% of the NOTES deficit is information destroyed at <em>write time</em> (so store-only rewriting hits the 90%-recovery target in 0/48 cases — you cannot rewrite your way back to facts the notes never kept), while 81% of the RAG deficit is <em>retrieval</em> misses (so full re-embedding repairs 48/48 at ~$0.013/history). Raw history enables NOTES repair — but only 34/48, and only when the repair model is strong enough to finish the job.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Memory stores and models have different lifetimes. A store accumulates for months or years; the model gets swapped for capability, cost, latency, or provider reasons on a much shorter cycle — and the new model silently inherits the old store. Nothing errors. The vector DB still returns results. Accuracy just drops. Every memory paper in this tracker evaluates a <em>fixed</em> system remembering over time (LongMemEval-style); this is the first controlled study I've tracked of the orthogonal axis — the same memory read by a <em>different</em> model — and that axis is where production agents actually live.</p>
+<p>The asymmetry result should change how you read every "model-written notes" memory design. It isn't that notes are bad; it's that <strong>the note-writing model's quality becomes a permanent, load-bearing part of the store</strong>. In calibration, Qwen's notes preserved 85.6% of required evidence spans within budget; Llama's preserved 64.5% <em>while using more bytes</em>. Equal byte budgets do not produce equally informative stores, and no later reader — however capable — can recover a fact the writer omitted. The practical corollary is blunt: a migration test that only checks A→B told you nothing about B→A.</p>
+<p>There's also a methodological reason to like this paper: four hypotheses, expected directions, a 5-point action threshold, and Holm correction were locked in a signed Git tag (<code>hypothesis-lock-v1</code>) <em>before</em> main data collection. Two hypotheses survived (mixed-index cost, raw-vs-store-only repair), two didn't (the symmetric writer-swap penalties) — and the paper reports that honestly, with the interesting finding living in the <em>direction-specific</em> results the symmetric averages wash out.</p>
+<h2>The core idea</h2>
+<p>Separate the four roles an "agent with memory" conflates: the <strong>actor</strong> produces experience, the <strong>writer</strong> $W$ persists it, the <strong>reader</strong> $R$ later consumes it, the <strong>embedder</strong> $E$ routes retrieval. An upgrade changes one role at a time while the history $X$ stays fixed: $S=\mathrm{Write}_s(X;W,E)$, answers come from $\mathrm{Read}_s(q;S,R)$. Compare reader $B$ on writer $A$'s store against $B$ on its <em>own</em> store, and migration loss separates cleanly from reader ability.</p>
+<p>The headline metric is Retained Performance After Swap:</p>
+<div class="arithmatex">\[\mathrm{RPAS}_{s}(A{\to}B)=\frac{\mathrm{Perf}(s,\,W{=}A,\,R{=}B)-\mathrm{chance}}{N_{s}(B)-\mathrm{chance}},\]</div>
+<p>where $N_s(B)$ is reader $B$'s accuracy on a store it wrote itself and chance ≈ 0 thanks to randomized answer codes; RPAS = 1 means nothing lost, and values above 1 mean the inherited store is <em>better</em> than the reader's own (which actually happens for Qwen→Llama NOTES). Cost-to-Recover is the price of the cheapest repair that restores $\geq X\%$ of own-store performance, $\infty$ if none does.</p>
+<p>The diagnostic decomposition is the tool worth stealing. Supply the reader with (i) nothing extra, (ii) the exact stored items containing the answer, (iii) the original raw event, and the three accuracy jumps split total loss additively:</p>
+<div class="arithmatex">\[T = \underbrace{a^{\mathrm{stored}}-a^{\mathrm{normal}}}_{L^{\mathrm{retrieval}}}\;+\;\underbrace{a^{\mathrm{raw}}-a^{\mathrm{stored}}}_{L^{\mathrm{construction}}}\;+\;\underbrace{1-a^{\mathrm{raw}}}_{L^{\mathrm{reader}}},\]</div>
+<p>where $a^{\mathrm{normal}}, a^{\mathrm{stored}}, a^{\mathrm{raw}}$ are exact-match accuracies under the three conditions. This is what licenses the "80% construction / 81% retrieval" claims below.</p>
+<p><img alt="Comparison of the four memory formats: LC-RAW stores full history and risks context cost; RAG stores chunks plus a vector index and risks retrieval/embedding-version failure; NOTES stores model-written summaries and risks writer-dependent omission; KG-fixed stores S-P-O facts under a fixed schema and risks schema coverage limits" src="assets/memory-portability-model-upgrades/fig1.png" /></p>
+<p><em>Figure 1 from the paper: what each format persists, how it's read, its main portability risk, and its repair path. KG-fixed is most portable in this study; NOTES most writer-dependent; RAG most retrieval-dependent.</em></p>
+<h2>How it works</h2>
+<p>The study design, as a harness you could rerun on your own stack:</p>
+<pre><code class="language-text">fix 48 scripted histories X (randomized entity/value codes; 160 questions each;
+                             chance accuracy ~ 0; exact-match scoring, no LLM judge)
+models: Llama-3.1-8B-Instruct &lt;-&gt; Qwen2.5-7B-Instruct-1M (fixed local versions)
+embedders: bge-large-en v1.0 -&gt; v1.5 (both 1024-d; cross-space cosine 0.904)
+
+Test 1 (writer swap):    for each format in {NOTES, KG-fixed}:
+                             both models write a store from X
+                             both models read every store
+                         LC-RAW and RAG have no model writer -&gt; controls
+Test 2 (embedding swap): compare old index | full re-embed | 50/50 mixed | ideal router
+Test 3 (repair):         rebuild NOTES from retained raw history vs from store alone,
+                         re-embed RAG, rebuild KG into shared schema — at 3 matched budgets;
+                         success = reach 90/95/99% of fresh own-store accuracy
+Test 4 (diagnosis):      inject (a) the exact stored item, (b) the raw event;
+                         accuracy deltas split loss into retrieval/construction/reader
+report RPAS per DIRECTION (never averaged), CTR, and the loss decomposition
+</code></pre>
+<p>Guardrails worth copying: pre-registered contrasts in a signed git tag; runs abort if the served model/tokenizer/embedder doesn't match the manifest (the embedding test explicitly verifies the two spaces differ — cross-space cosine 0.904 against a 0.999 identity threshold); every repeat gets its own cache key after an early bug reused cached answers across noise repeats; output-limit stops count as <em>failed repairs at that budget</em>, not excluded runs.</p>
+<p>Resource limits are matched where possible — same writer token allowance, 128 KiB NOTES cap, same reader context budget, same retrieval settings (event chunks ≈512 chars, cosine top-8, no reranker) — with the honest caveat that KG-fixed reads a larger structured store, so format and access pattern are partially confounded.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>Writer swap (Test 1).</strong> KG-fixed: swap Δ of −0.11 and +0.02 points in the two directions, own-store accuracy 0.845–0.988. NOTES: Llama→Qwen −13.28, Qwen→Llama +9.91. The schema fixes keys, relations, and reading rules so the model only fills in values; free-form prose bakes the writer's competence into the store forever.</li>
+<li><strong>Embedding migration (Test 2).</strong> Old index 0.426 → full re-embed 0.545 (+11.90); 50/50 mixed index only 0.475 (+4.96). Both embedders emit 1024-d vectors, so the mixed index runs without a single error while silently forfeiting most of the upgrade. An ideal version-aware router reaches 0.596 — an upper bound, but it says <em>siloing</em> spaces and routing by index version recovers what mixing loses.</li>
+<li><strong>Retrieval was already the RAG bottleneck pre-migration</strong>: LC-RAW reads score 0.712–0.911 while RAG scores 0.535–0.565 — the top-8 dense retriever surfaces the needed evidence only ~60% of the time regardless of reader. Supplying the correct chunks lifts readers to 0.88–0.95.</li>
+<li><strong>Loss decomposition (Test 4).</strong> NOTES: construction 0.467 of a 0.584 total deficit (80%), retrieval 6%, reader residual 14%. RAG: retrieval 0.364 of 0.450 (81%), construction 1%. Rewriting inherited notes into the new reader's style helps <em>not at all</em> (−0.01 to −0.04; Llama's rewrites dropped exact identifiers 46% of the time). It's missing content, not unfamiliar phrasing.</li>
+<li><strong>Repair (Test 3).</strong> Store-only NOTES rewriting: 0/48 at the 90% target, both directions, every budget. Raw-retained NOTES repair: 34/48 with Qwen as repairer (median ~$0.76), <strong>0/48 with Llama</strong> — every attempt died at the output-token limit. RAG full re-embed: 48/48 at ~$0.013. KG schema rebuild: 45–48/48 at ≈$0. Mechanical rebuilds are cheap and reliable; generative reconstruction is possible but conditional on the repairer.</li>
+<li><strong>Pre-registered scorecard</strong>: mixed-index cost (H2, +6.95pp) and raw-vs-store repair (H7a, +8.90pp) supported after Holm correction; the <em>symmetric</em> writer-swap penalties (H1, H4a) not supported — because the two directions cancel, which is itself the finding.</li>
+</ul>
+<p><img alt="Four-panel key results: NOTES writer-swap changes ±10-13 points by direction while KG-fixed is flat; mixed embedding index captures only ~5 of ~12 available points; NOTES loss is 80% store construction while RAG loss is 81% retrieval; store-only NOTES repair succeeds 0/48 while re-embedding and schema rebuilds succeed 48/48" src="assets/memory-portability-model-upgrades/fig2.png" /></p>
+<p><em>Figure 3 from the paper: the four headline results. Note panel 1's legend — the ±5-point symmetric average would report "no effect" for NOTES.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/skill-library-long-horizon.html">Recuris</a></strong> provided the existence proof from the other side: a structured, component-attributed memory evolved on a mid-size model transferred <em>unchanged</em> to GPT-5.6 Sol (+17.8) and Opus 5 (+15.6). This paper explains why that worked — Recuris's working-memory/skill format is much closer to KG-fixed than to NOTES. Structure is what ports.</li>
+<li><strong>Selective Forgetting</strong> (arXiv 2608.28978, tracked) found graph memory <em>underperforms</em> flat retrieval on LongMemEval — day-one accuracy. Read together, the two papers describe a real tradeoff surface: schemas can cost you expressiveness today and save you portability tomorrow. Neither number alone should pick your format.</li>
+<li><strong>MemHarness</strong> (arXiv 2607.28272, tracked): its thesis that memory is reconstructed, not replayed, is the cognitive-science cousin of the construction-loss result here: what the writer didn't encode, no reader reconstructs. Same lesson, measured with a swap instead of a metaphor.</li>
+<li><strong>Cross-Model KV Cache Transfer</strong> (arXiv 2608.03893, tracked) ports the <em>other</em> memory — the KV cache — across models with a closed-form linear map. Notably that works because KV caches are mechanical structure, exactly the property this paper finds portable; nobody has a linear map for prose notes.</li>
+<li><strong>Agent Zero Memory</strong> (arXiv 2608.29606, tracked) builds provenance and citation-locking into the store; this paper's playbook item — record writer/prompt/schema/embedder version so regressions are attributable — is the migration-era argument for that design.</li>
+<li>Today's crop also pulled in <strong>engrim</strong> (SQLite FTS5 + static vectors as coding-agent project memory): a store whose retrieval layer is lexical+static is quietly making the embedding-migration problem smaller, at the cost this paper would tell you to measure — retrieval recall.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The controls are the paper's strength and its cage. Two sub-10B open-weight models, one cross-family pair, scripted histories with randomized codes that fit entirely in both context windows, a deliberately spartan retriever (single-stage dense, top-8, no reranker, no hybrid) — every headline number is honest <em>for that box</em>. The 40% retrieval miss rate and the 60%-forfeited mixed-index gain will shrink under a production stack with reranking and hybrid search; the KG-fixed near-zero swap penalty rides on a schema hand-built for a synthetic workload whose facts it covers by construction. Real agent memory is dominated by exactly the fuzzy, schema-escaping material (preferences, style, half-decisions) that NOTES exists to hold — so "use KG-fixed" is not the actionable conclusion; "know which of your memories are schema-shaped and migrate the rest with direction-specific tests" is. The repair asymmetry (Qwen repairs 34/48, Llama 0/48 purely on output-limit exhaustion) also conflates repairer capability with migration direction — the authors flag it, but it means the "raw history buys a second chance" number is really "raw history plus a sufficiently capable repairer." And frontier-model swaps, where both writer and reader are far more capable, could compress the NOTES asymmetry substantially — this is the obvious replication someone should run. Still: the roles-decomposition, the direction-specific reporting, and the loss decomposition are immediately reusable, and the failure modes it names all fail <em>silently</em> in production. That's worth the price of admission.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Never average migration directions.</strong> NOTES moved +9.9 one way and −13.3 the other; the symmetric mean is ~0 and both pre-registered symmetric tests "failed" while the system was badly broken in one direction. Test A→B and B→A separately, always.</li>
+<li><strong>Never mix embedding versions in one index</strong> — same dimensionality means it fails silently, and the 50/50 mix kept only ~40% of the re-embedding gain here. Build the new index fully, cut over, or route strictly by version.</li>
+<li><strong>Diagnose before you repair, in this order: retrieved? constructed? read?</strong> NOTES loses 80% at write time (only raw history can fix it — store-only repair went 0/48); RAG loses 81% at retrieval (re-embedding fixes it for ~$0.01). Swapping the reader model is the <em>last</em> lever, not the first.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-07 16:07 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
