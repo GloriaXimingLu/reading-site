@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Large Discovery Models: Empirically-Grounded Model-Based Open-Ended Search</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Large Discovery Models: Empirically-Grounded Model-Based Open-Ended Search</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2608.15669">arXiv:2608.15669</a> · <a href="https://arxiv.org/abs/2608.15669">arXiv</a> · <a href="https://github.com/yzailab/Large-Discovery-Models">GitHub</a> · <a href="https://x.com/jiqizhixin/status/2097011515161461013">X post</a> · <a href="https://largediscovery.net/">largediscovery.net</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li>The Large Discovery Model (LDM; arXiv 2608.15669, Jun Wang's group at UCL, with code and weights released) couples an LLM's structured prior with a <strong>Gaussian-process reward surrogate</strong>, and steers generation with an <em>acquisition</em> value — decision value under uncertainty — rather than a reward-model score: the search policy is the closed-form tilt <span class="arithmatex">\(\pi_t(x)\propto p_{\theta,\alpha}(x\mid\mathcal{C}_t)\exp\{\eta\,a_t(x)\}\)</span>.</li>
+<li>A <strong>fast loop</strong> (propose → score with the surrogate → evaluate empirically → update surrogate + context) runs within a task; a <strong>slow loop</strong> distills accumulated search traces into the LLM's weights via reasoning-augmented SFT, so discovery expertise amortizes across tasks.</li>
+<li>On Karpathy-style AutoResearch (LLM speedrunning of NN training), LDM reaches <strong>0.902291 validation BPB on B200</strong> — ahead of the leaderboard's prior best entries (~0.926–0.927) — with a 2.4× larger BPB reduction than LLM-only reflection; antibody design improves binding energy 18.2% and molecular design Pareto hypervolume by &gt;60%.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Self-improving research agents tracked here (Prime Agent's autoresearch, DataSmith, AQuA) share a weakness: the loop's judgment about <em>what to try next</em> is usually the LLM's own reflection, and LLM self-assessments are miscalibrated exactly where discovery happens — on novel candidates outside the observed distribution. LDM's move is to bolt the oldest tool in sample-efficient optimization, Bayesian optimization, onto the newest one: the LLM proposes and reshapes the reachable frontier (something BO over a fixed space cannot do), while a GP grounded in actual experimental observations decides which proposals deserve compute or costly evaluation. The formal framing — discovery as moving <em>unknown unknowns</em> into the modeled space, exploration as resolving <em>known unknowns</em>, exploitation as harvesting <em>known knowns</em> — gives a vocabulary for why pure-reflection agents plateau: they exploit and discover, but have no calibrated notion of what they don't know.</p>
+<p>The slow loop is the part squarely in this tracker's core interests: it is <strong>distillation of a search policy</strong> — the acquisition-tilted behavior, including its uncertainty-driven decisions — into base weights, on-policy in the sense that the data is the agent's own search traces.</p>
+<p><img alt="Three-stage slow loop: search, augment, distill" src="assets/large-discovery-models/fig1.png" />
+<em>The consolidation pipeline from the paper: (1) high-budget test-time search generates candidates scored by the GP surrogate; (2) traces are filtered by an empirical policy tilt <span class="arithmatex">\(\hat\pi_t^{(N)}(\hat x)\propto\exp\{\eta\,a_t(\hat x)\}\)</span> and augmented with rationales <span class="arithmatex">\(z=\mathrm{Explain}(\mathcal{C}_t,\hat x,\mu_t,\sigma_t,a_t)\)</span> translating BO statistics into chain-of-thought; (3) autoregressive SFT <span class="arithmatex">\(\max_\theta \log p_\theta(z\mid\mathcal{C})+\log p_\theta(\hat x\mid\mathcal{C},z)\)</span> yields a "Discovery LLM" that amortizes the search policy for cheap inference.</em></p>
+<h2>The core idea</h2>
+<p>At iteration <span class="arithmatex">\(t\)</span>, with evaluation history <span class="arithmatex">\(\mathcal{D}_t=\{(x_i,r_i)\}\)</span> and search context <span class="arithmatex">\(\mathcal{C}_t\)</span>, LDM asks for a search distribution that maximizes expected acquisition value while staying close to the LLM prior:</p>
+<div class="arithmatex">\[ \pi_{t}=\operatorname*{arg\,max}_{q\in\Delta(\mathcal{X})}\left\{\mathbb{E}_{x\sim q}\!\left[a_{t}(x)\right]-\frac{1}{\eta}\,\mathrm{KL}\!\left(q\,\middle\|\,p_{\theta,\alpha}(\cdot\mid\mathcal{C}_{t})\right)\right\}, \]</div>
+<p>where <span class="arithmatex">\(p_{\theta,\alpha}\)</span> is the LLM proposal under inference configuration <span class="arithmatex">\(\alpha\)</span> (prompting, temperature, refinement scheme, compute budget) and <span class="arithmatex">\(\eta\)</span> sets the tilt strength. By the Gibbs variational principle the unique maximizer is the exponentially tilted distribution</p>
+<div class="arithmatex">\[ \pi_{t}(x)=\frac{1}{Z_{t}}\;p_{\theta,\alpha}(x\mid\mathcal{C}_{t})\,\exp\{\eta\,a_{t}(x)\}, \]</div>
+<p>the same mathematical object as KL-regularized RLHF policies — but tilted by an <strong>acquisition function</strong>, not a reward model. With a GP surrogate <span class="arithmatex">\(R(x)\sim\mathcal{GP}(m,k)\)</span> posterior-updated on <span class="arithmatex">\(\mathcal{D}_t\)</span>, the running example is UCB:</p>
+<div class="arithmatex">\[ a^{\mathrm{UCB}}_{t}(x)=\mu_{t}(x)+\sqrt{\beta_{t}}\,\sigma_{t}(x), \]</div>
+<p>whose two terms make the triangle explicit: the LLM reservoir term realizes <em>discovery</em> (expanding what is proposable at all), the high-<span class="arithmatex">\(\sigma_t\)</span> tail realizes <em>exploration</em>, the high-<span class="arithmatex">\(\mu_t\)</span> mode <em>exploitation</em>. Taking the mode under a temperature-form prior gives the bandit-style selection rule <span class="arithmatex">\(x_{t+1}=\arg\max_x[\alpha\log p_\theta(x\mid\mathcal{C}_t)+\eta\,a_t(x)]\)</span>; the limits recover pure LLM reflection (<span class="arithmatex">\(\eta\to0\)</span>) and classical BO (<span class="arithmatex">\(\alpha\to0\)</span>) — LDM lives between them. Crucially the acquisition value governs not just which candidates get <em>evaluated</em> but how inference compute is <em>allocated</em> — sampling, ranking, refinement, and branch expansion all consult it.</p>
+<h2>How it works</h2>
+<p><span class="arithmatex">\(Z_t\)</span> is never computed; the tilted policy is approximated by inference-time search (LDM-TTS), and periodically consolidated into weights:</p>
+<pre><code class="language-text">Algorithm: LDM fast loop (within-task) + slow loop (across tasks)
+Input: LLM p_θ, GP surrogate, acquisition a_t (e.g. UCB), tilt η, budgets N, H
+# ---- fast loop: one discovery iteration t ----
+1. Propose: sample N candidates {x̂_i} ~ p_θ,α(· | C_t)      # C_t = history,
+   each expanded into H hypothesis/refinement branches        # stats, feedback
+2. Score: GP posterior gives (μ_t, σ_t) per candidate; compute a_t(x̂_i)
+3. Refine/allocate: spend further reasoning &amp; branch expansion on
+   high-acquisition candidates (approximate draw from tilted π_t)
+4. Select batch B_t (highest acquisition), run REAL experiments
+   (train the NN / fold-score the antibody / dock the molecule)
+5. Update: D_{t+1} = D_t ∪ {(x, r)}; refit GP; write results,
+   surrogate stats, and constraint feedback into context C_{t+1}
+# ---- slow loop: after enough traces across tasks ----
+6. Collect all (C_t, x̂, μ, σ, a) from TTS logs
+7. Filter by empirical tilt  π̂ ∝ exp{η·a}  (keep decision-valuable traces)
+8. Augment: z = Explain(C, x̂, μ, σ, a)   # BO statistics -&gt; CoT rationale
+9. SFT:  max_θ  log p_θ(z|C) + log p_θ(x̂|C,z)
+10. Deploy fine-tuned proposer as stronger prior for the next task
+</code></pre>
+<p>The surrogate is deliberately non-parametric: GPs give exact Bayesian updates and calibrated uncertainty from few samples, which is what makes the loop sample-efficient on-policy learning — every experiment immediately reshapes the acquisition landscape without any gradient step. The three test domains instantiate "experiment" very differently: an autonomous research loop over NN training code (Karpathy's AutoResearch setting), antibody CDRH3 sequence design (a combinatorial space the thread describes as 20^11), and multi-objective small-molecule optimization.</p>
+<h2>Results</h2>
+<ul>
+<li><strong>AutoResearch (validation bits-per-byte, lower better).</strong> From identical initial conditions, LDM on H100 runs 615 experiments to reach 0.93421 vs the Karpathy-baseline agent's 0.9767 (255 runs) — a 2.4× larger absolute BPB reduction than LLM-only reflection. Switching to B200, 59 further experiments reach <strong>0.902291</strong>, past the prior leaderboard entries shown at ~0.9264–0.9274. The annotated trajectory (below) is the most instructive artifact: discrete drops line up with the agent adopting Muon, value embeddings, n-gram memory, window+softcap attention — and with <em>reflection</em> events where the agent, reading its own BO log, widens the search space (e.g. "go wider: dim768 · ngram64").</li>
+<li><strong>Antibody design</strong>: 18.2% lower mean binding energy than LLM-only reflection after 200 evaluation steps, beating both LLM-only and BO-only baselines across five antigens.</li>
+<li><strong>Molecular optimization</strong>: Pareto-front hypervolume +62.4% over LLM-only reflection and +63.1% over classical MOBO.</li>
+<li><strong>Ablations</strong>: acquisition-guided search beats predicted-reward-only guidance (the σ term earns its keep); reasoning-augmented fine-tuned proposers (Qwen3.5-9B) outperform their base counterparts inside the same acquisition-guided loop on both AutoResearch and antibody design — the slow loop transfers.</li>
+<li>A regret analysis separates surrogate error from LLM-search suboptimality (Section 5; not examined in detail here).</li>
+</ul>
+<p><img alt="LDM on AutoResearch: H100 and B200 phases" src="assets/large-discovery-models/fig2.png" />
+<em>AutoResearch trajectory from the paper: LDM (H100, 615 runs) descends past the Karpathy baseline to 0.93421; the B200 phase reaches 0.902291 in 59 runs. Orange annotations mark reflection events where the agent extends the reservoir's support by writing new primitives into its own context.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/prime-agent-harness.html">Prime Agent</a></strong> and Meta-Harness do outer-loop search over <em>harness code</em> with LLM judgment; LDM formalizes what those loops lack — a calibrated, continually-updated model of which experiment is worth running. The obvious hybrid: RLM-style harnesses with a GP surrogate over experiment outcomes.</li>
+<li><strong>AQuA</strong> (tracked under self-improving) is the safety complement: it seals data paths and evaluators so self-improving experiment loops can't build on leaky results. LDM's verification story is thinner — the surrogate grounds <em>value</em>, not experimental <em>validity</em>.</li>
+<li>The slow loop belongs to the <strong>on-policy distillation lineage</strong> (<a href="../tutorials/opd-survey.html">OPD survey</a>, <a href="../tutorials/tgopd-teacher-gated-opd.html">TGOPD</a>): here the "teacher" is the agent's own high-budget acquisition-tilted search, and the reasoning augmentation step — translating GP statistics into CoT — is a nice trick for making numeric supervision distillable as language.</li>
+<li>The tilted-policy form is literally the RLHF/DPO closed form with <span class="arithmatex">\(a_t\)</span> swapped in for reward — connecting BO acquisition to the KL-regularized policy toolkit this tracker's RL section lives in.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline "world #1 on AutoResearch" deserves scrutiny on compute grounds: LDM's H100 phase runs 615 experiments against the baseline's 255, so part of the gap is budget, not intelligence — the fairer evidence is the <em>slope</em> (the B200 phase gains most of its margin in ~59 runs) and the 2.4× claim, which the paper says holds "under identical initial conditions" but is still a single-trajectory comparison in a noisy setting. GPs also need a kernel, and over programs/sequences/molecules the kernel choice (buried in Appendix C) is doing enormous unacknowledged work — "Bayesian non-parametric" sounds assumption-free but the smoothness structure it imposes on, say, the space of training-code edits is exactly where this could fail silently on a new domain (inferred from the setup — verify kernel details in the paper). The four-regime epistemology is elegant, but "unknown knowns" (memory retrieval, federated discovery) is explicitly future work, so the framework is one-third aspiration. Finally, all three domains have cheap-ish, automated, <em>trustworthy</em> evaluators; the authors' own tweet-thread framing ("verification-gated") glosses that LDM has no defense against a corrupted or gameable evaluator — pair it with AQuA-style sealing before believing a self-reported leaderboard number. None of this diminishes the core contribution: acquisition value is the right currency for allocating test-time compute in discovery loops, and someone finally wrote down the LLM version cleanly.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Tilt the LLM by acquisition, not reward</strong>: <span class="arithmatex">\(\pi_t(x)\propto p_{\theta,\alpha}(x\mid\mathcal{C}_t)\exp\{\eta\,a_t(x)\}\)</span> with a GP-posterior UCB — uncertainty gets a vote in what to try, which reward models and self-reflection structurally cannot provide.</li>
+<li><strong>Fast loop grounds, slow loop amortizes</strong>: experiments update a GP surrogate in real time; accumulated tilted search traces, reasoning-augmented into rationales, are SFT-distilled back into the proposer so discovery skill transfers across tasks.</li>
+<li><strong>The numbers</strong>: 0.902291 BPB on AutoResearch (B200, 59 runs; prior entries ~0.926+), 2.4× the BPB reduction of LLM-only reflection, 18.2% better binding energy, &gt;60% hypervolume gains — one framework, three modalities, weights and code released.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-09 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
