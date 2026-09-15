@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breaking the Token Ceiling: Distilling Smaller, Stronger Byte Models</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Breaking the Token Ceiling: Distilling Smaller, Stronger Byte Models</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.12303">arXiv:2609.12303</a> · <a href="https://arxiv.org/abs/2609.12303">arXiv</a> · <a href="https://x.com/omarsar0/status/2099517031796347388">X post</a> · <a href="https://academy.dair.ai/papers/breaking-the-token-ceiling-distilling-smaller-stronger-byte-models-2609.12303">academy.dair.ai</a> · <a href="../index.html#distillation">Distillation</a></p><p><em>Paper: arXiv 2609.12303, "Breaking the Token Ceiling: Distilling Smaller, Stronger Byte Models", by Kalyani Marathe, Artidoro Pagnoni, Tomasz Limisiewicz, Margaret Li, Mike Lewis, Luke Zettlemoyer, Srinivasan Iyer (the announcing thread attributes it to Meta). Grounded in the arXiv HTML full text; figures downloaded from the arXiv HTML version.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>To distill a <strong>byte-level student from a token-level teacher</strong> (Llama 3-8B), the teacher's token logits must become byte logits. The paper introduces two converters: <strong>Marginalize-It</strong> (approximate — renormalizes over vocabulary tokens whose prefixes match the bytes seen so far) and <strong>End-Of-Token</strong> (exact — adds an <code>&lt;eot&gt;</code> symbol that absorbs the probability mass of continuations, at ~30.94% extra compute per unit of data).</li>
+<li>In the first FLOP-controlled overtraining study on this axis — six settings crossing {Tokens, Bytes, Bytes w/ <code>&lt;eot&gt;</code>} × {cross-entropy, distillation}, layer-parameter-matched ~1B models, up to 1T bytes — <strong>token models win at low compute but plateau; byte models start worse and pass them</strong>, reaching a higher downstream ceiling (asymptotic avg accuracy: End-Of-Token Distilled 52.4% vs Token Distilled 48.4% — the "up to 4%" headline).</li>
+<li>Byte distillation is also logistically cheaper: the 256-entry vocabulary means <strong>no top-k truncation</strong> when dumping teacher logits and roughly <strong>one-fifth the logit storage</strong>, and End-Of-Token Distilled matches distilled-token performance with <strong>one-sixth of the training data</strong>.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Distillation practice quietly assumes teacher and student share a tokenizer — that's what makes logit matching well-defined. That assumption pins the student to the teacher's vocabulary, with all the known tokenizer taxes: noise sensitivity, weak character-level understanding, multilingual unfairness, fragility on code and numbers. Byte-level modeling (the BLT line of work) removes the tokenizer but has mostly been studied for <em>pretraining from scratch</em>. This paper connects the two: it makes the standard distillation pipeline tokenizer-crossing, so a small byte model can inherit a large token teacher's distribution. For this tracker's interests the deeper result is the scaling-law shape: the choice of output granularity sets the <em>ceiling</em> of what distillation can transfer, not just the rate — "which vocabulary" turns out to be a first-class distillation design axis, alongside on-policy vs off-policy and logit vs sample matching.</p>
+<p><img alt="Downstream task performance scaling laws: byte models start behind token models and surpass them as training FLOPs grow" src="assets/byte-distillation-token-ceiling/fig1.png" />
+<em>Figure 1 from the paper: downstream performance scaling laws (lr = 4e-3) averaged across six benchmarks. Token-1B leads in the low-FLOP regime and plateaus; Bytes-1B and End-Of-Token-1B start worse but cross over and reach a higher asymptote.</em></p>
+<h2>The core idea</h2>
+<p>The teacher emits a next-token distribution over a ~128K BPE vocabulary; the student needs a next-<strong>byte</strong> distribution over 256 (+ special) symbols. Since every BPE token decodes to a byte string, a byte-level distribution can be derived by marginalizing token probabilities over byte prefixes:</p>
+<ul>
+<li><strong>Marginalize-It (approximate).</strong> The first byte's distribution is exact: sum the probability of every vocabulary token starting with each candidate byte. For each subsequent byte, restrict to vocabulary tokens whose decoded prefix matches the ground-truth bytes so far and renormalize. The flaw: tokens that <em>end</em> inside the prefix get silently dropped. In the paper's worked example (prompt "Tiramisu", predicting byte 3 after teacher probabilities <span class="arithmatex">\(p(\texttt{isu})=0.5\)</span>, <span class="arithmatex">\(p(\texttt{isk})=0.125\)</span>, <span class="arithmatex">\(p(\texttt{is})=0.125\)</span>), the continuation mass of <code>is</code> disappears and gets redistributed:</li>
+</ul>
+<div class="arithmatex">\[
+P(\texttt{u}) = \frac{0.5}{0.5+0.125} = 0.8, \qquad P(\texttt{k}) = \frac{0.125}{0.5+0.125} = 0.2 .
+\]</div>
+<p>Fixing this exactly would need an extra teacher forward pass per early-terminating token — intractable at corpus scale.</p>
+<ul>
+<li><strong>End-Of-Token (exact).</strong> Append an <code>&lt;eot&gt;</code> marker after every BPE token in the training byte stream and expand the byte vocabulary by one (to 261). The residual mass of "the token ends here" is then a <em>predictable symbol</em> rather than lost probability. Same example, now with all tokens sharing prefix <code>is</code> in play (total mass <span class="arithmatex">\(0.5+0.125+0.125=0.75\)</span>):</li>
+</ul>
+<div class="arithmatex">\[
+P(\texttt{u}) = \tfrac{0.5}{0.75} = 0.667,\qquad P(\texttt{k}) = \tfrac{0.125}{0.75} = 0.167,\qquad P(\texttt{&lt;eot&gt;}) = \tfrac{0.125}{0.75} = 0.167 .
+\]</div>
+<p>This is exact, needs no extra teacher inference — and the <code>&lt;eot&gt;</code> insertions (one per ~4.5 bytes) mean the student spends ~30.94% more compute per unit of data, which the paper finds <em>further improves</em> the asymptotic ceiling.</p>
+<h2>How it works</h2>
+<p><strong>Controlled comparison.</strong> Three layer-parameter-matched architectures (all 1.28B layer parameters, Llama-3 design): Token-1B (1.81B total, 128,256-entry vocab), Bytes-1B (260-entry vocab), End-Of-Token-1B (261). Each is trained under cross-entropy and under distillation from Llama 3-8B → six experiments, swept over learning rates {1e-3, 4e-3, 8e-3} and data scales up to 1T bytes of the Llama-2 training mixture, evaluated on eight benchmarks across Multiple Choice QA, Language Generation, and Machine Translation.</p>
+<p><strong>Scaling-law machinery.</strong> Validation bits-per-byte follows a saturating power law in training FLOPs <span class="arithmatex">\(x\)</span>,</p>
+<div class="arithmatex">\[
+y = b\,x^{a} + c ,
+\]</div>
+<p>where <span class="arithmatex">\(c\)</span> is the asymptotic BPB (e.g. Token Supervised: <span class="arithmatex">\(y = 1.075\times10^{9}\,x^{-0.500} + 0.9568\)</span>; End-Of-Token Distilled: <span class="arithmatex">\(y = 2.734\times10^{7}\,x^{-0.405} + 0.8983\)</span>). Downstream top-1 error is then fit as a function of BPB <span class="arithmatex">\(y\)</span>,</p>
+<div class="arithmatex">\[
+z(y) = \epsilon - k\,e^{-\gamma y},
+\]</div>
+<p>with <span class="arithmatex">\(\epsilon, k, \gamma\)</span> fit per setting. Chaining the two gives predicted accuracy at any compute budget; "feather plots" connect iso-FLOP points across methods to visualize when the byte curves cross the token curve.</p>
+<pre><code class="language-text">Algorithm: End-Of-Token byte distillation (condensed from Sections 2-3)
+# One-time teacher logit dump
+for each document in corpus:
+    tokens ← BPE_tokenize(document)              # teacher's tokenizer (Llama 3-8B)
+    logits ← teacher_forward(tokens)             # one pass, full 128K vocab
+    for each position t:
+        for each byte position j inside token t+1:
+            V_j ← {v ∈ vocab : decode(v) matches ground-truth bytes &lt; j}
+            byte_logits[j][b] ← Σ p(v) for v ∈ V_j with j-th byte b
+            byte_logits[j][&lt;eot&gt;] ← Σ p(v) for v ∈ V_j that end before j
+        store byte_logits                        # 261 entries; no top-k needed
+# Student training
+byte_stream ← bytes(document) with &lt;eot&gt; after every BPE token
+minimize  KL( byte_logits || student(byte_stream) )   # distillation loss
+</code></pre>
+<p><em>(Pseudocode reconstructed from the method description; the paper's exact pseudocode is in its Appendix F.1.)</em></p>
+<h2>Results</h2>
+<ul>
+<li><strong>Crossover, then a higher ceiling.</strong> Across benchmarks, Token-1B wins the low-FLOP regime and plateaus; byte models overtake with compute. Predicted asymptotic average accuracies: Token Supervised 46.0%, Token Distilled 48.4%, Marginalize-It Distilled 50.5%, Bytes Supervised 51.2%, Bytes w/ <code>&lt;eot&gt;</code> Supervised 51.6%, <strong>End-Of-Token Distilled 52.4%</strong> — exact conversion beats approximate (Marginalize-It distillation actually lands at-or-below its own supervised baseline, which the paper attributes to the approximation), and distillation only helps bytes when it preserves the teacher distribution exactly.</li>
+<li><strong>Data and storage efficiency.</strong> End-Of-Token Distilled matches distilled Token-1B using <strong>1/6 of the training data</strong>; the 256-ish vocabulary avoids top-k truncation during logit dumping and cuts teacher-logit storage to about <strong>one-fifth</strong>.</li>
+<li><strong>Against real small models,</strong> the fitted laws predict distilled End-Of-Token-1B asymptotically surpasses Llama 3.2-1B by up to 6.5%, Gemma-3-1B-pt by 8.1%, and Gemma 2B by 2.1% on averaged downstream tasks.</li>
+<li><strong>A methodological caveat the authors flag themselves:</strong> BPB is <em>not</em> comparable across tokenization schemes and objectives — byte models beat Token Supervised on BPB while losing on benchmarks in some regimes, so downstream calibration (their equation 2) is a required final step, not an optional nicety.</li>
+</ul>
+<p><img alt="Validation BPB vs training FLOPs with iso-FLOP connections across the six settings" src="assets/byte-distillation-token-ceiling/fig2.png" />
+<em>Figure 3 from the paper: validation-BPB scaling curves across data scales (lr = 4e-3), the raw material for the fitted power laws and crossover analysis.</em></p>
+<h2>How it connects</h2>
+<ul>
+<li>The <a href="../tutorials/opd-survey.html">on-policy distillation survey</a> and <a href="../tutorials/direct-opd.html">Direct-OPD</a> live on the <em>objective</em> axis (whose samples, whose feedback); this paper shows the <em>representation</em> axis has comparable leverage — and it's fully offline, one teacher pass per corpus, so it composes with any OPD-style post-training afterwards.</li>
+<li><a href="../tutorials/privileged-info-self-distillation.html">Privileged information in self-distillation</a> and the new "Privileged Solutions or Context-Induced Teacher Behavior?" entry (this list) both interrogate <em>what signal</em> the teacher actually transmits; the Marginalize-It vs End-Of-Token gap is the same question at the logit level — an approximate teacher distribution measurably lowers the student's ceiling.</li>
+<li>The byte-level architecture entries in this tracker (the BLT-derived work in the feed, tokenizer-free scaling threads) supply the <em>why bytes</em> motivation; this paper supplies the migration path: you don't have to pretrain byte models from scratch if you can distill across the tokenizer boundary.</li>
+<li><a href="../tutorials/switch-distillation.html">Switch distillation</a> studies changing teachers mid-training; changing <em>vocabularies</em> between teacher and student is arguably the more extreme version of the same mismatch problem, solved here by exact marginalization rather than curriculum.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline numbers are extrapolations: 4%, 6.5%, and the crossover points all come from chained scaling-law fits (<span class="arithmatex">\(y=bx^a+c\)</span> into <span class="arithmatex">\(z(y)=\epsilon-ke^{-\gamma y}\)</span>), and the interesting regime — past the crossover — is exactly where the fits are least constrained by data. The study is also 1B-scale, dense, single-teacher (Llama 3-8B), and layer-parameter-matched rather than inference-cost-matched: byte sequences are ~4.5× longer than token sequences, so serving cost per generated character is higher for the byte student, and the paper's FLOPs-per-unit accounting covers training, not deployment latency (inferred from the setup description — verify in the paper's efficiency appendix). The <code>&lt;eot&gt;</code> finding is the most intriguing loose thread: 31% more compute on the same data improving the <em>asymptote</em> suggests part of the "byte ceiling" story is really a compute-per-byte story, and the paper itself notes the supervised <code>&lt;eot&gt;</code> variant already beats plain bytes. Still, the engineering wins are unconditional: exact conversion with no extra teacher passes, no top-k truncation, 5× cheaper logit storage — if you're distilling small models at all, the byte option just became practical to try.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Tokenizer-crossing distillation is now a solved plumbing problem</strong>: End-Of-Token conversion turns token logits into <em>exact</em> byte logits with one teacher pass, a 261-entry vocab, no top-k, and ~5× less logit storage.</li>
+<li><strong>Granularity sets the ceiling</strong>: token students learn faster but plateau lower; byte students cross over and asymptotically win (52.4% vs 48.4% predicted average), and only <em>exact</em> teacher distributions realize the gain — Marginalize-It's dropped continuation mass costs real accuracy.</li>
+<li><strong>Don't compare BPB across tokenization schemes</strong> — byte models can win BPB and lose benchmarks; always calibrate through a downstream-error mapping before declaring a better model.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-15 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

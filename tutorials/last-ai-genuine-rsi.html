@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Last AI Built by Humans: Toward Genuine Recursive Self-Improvement</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>The Last AI Built by Humans: Toward Genuine Recursive Self-Improvement</h1><p class="meta">8 min read · <a href="https://arxiv.org/abs/2609.11873">arXiv:2609.11873</a> · <a href="https://arxiv.org/abs/2609.11873">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2099090716186038640">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.11873">alphaxiv.org</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2609.11873, "The Last AI Built by Humans: Toward Genuine Recursive Self-Improvement", by Yi Duan, Ying Liu, Zirui Tang, et al. (33 authors, incl. Kaiyan Zhang, Conghui He, Guoliang Li, Bowen Zhou, Zhiyuan Liu). Position/survey paper. Grounded in the arXiv HTML full text; figures downloaded from the arXiv HTML version.</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>This is the survey that gives the RSI corner of this tracker a shared coordinate system: a five-level <strong>autonomy ladder</strong> — L1 improvement <em>execution</em>, L2 improvement <em>strategy</em>, L3 <em>experience acquisition</em>, L4 <em>deployment/environment adaptation</em>, L5 <em>recursive meta-improvement</em> (revising the improver/verifier/successor-generation machinery itself) — where each level is defined by <strong>which improvement decision moves from human to AI control</strong>, not by capability.</li>
+<li>It backs the framing with measurement: a <strong>Headroom-Closed Index (HCI)</strong> normalizing 393 model–benchmark observations (2023–Sep 2026) across ten domains shows sharply <em>uneven</em> progress — advanced math at 86.4 and graduate science at 85.8 versus software engineering at 52.6 and tool agents at 39.9 — arguing that RSI's value concentrates exactly in the long-horizon, interactive domains where human-led iteration is slowest.</li>
+<li>"Genuine RSI" is defined by persistence and compounding: improvements must <strong>outlive the episode, feed the next generation, and improve the improvement process itself</strong>. Most systems celebrated as RSI today sit at L1–L2 by this taxonomy.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>"Recursive self-improvement" is currently applied to everything from a harness that edits its own prompt to Noam Brown's "top priority by a wide margin" statements about frontier-lab strategy. When one term covers FineWeb-Edu-style data labeling and a system that rewrites its own verifier, arguments about safety, timelines, and research bets talk past each other. The ladder here is the most usable disaggregation I've seen because it carves at <em>decision ownership</em>: what the AI changes vs which improvement decisions it controls. It also gives this tracker a scoring rubric — <a href="../tutorials/darwin-godel-machine.html">Darwin Gödel Machine</a> mutates its own variation machinery (L5-flavored, with human-fixed evaluation), <a href="../tutorials/meta-harness.html">Meta-Harness</a> and <a href="../tutorials/recursive-harness-self-improvement.html">recursive harness self-improvement</a> are L2, SIMA-2-style self-curricula are L3, and the new RSIAgent entry (this list) — frozen weights, self-chosen exploration tasks, verified memory writes — is a clean L3-with-L4-elements build. The paper's own examples anchor the levels the same way: FineWeb-Edu (L1), Self-Harness (L2), SIMA 2 (L3), PANDO (L4), A-Evolve-Training (L5).</p>
+<p><img alt="Overview of the five RSI autonomy levels and representative systems" src="assets/last-ai-genuine-rsi/fig1.png" />
+<em>Figure 1 from the paper: autonomy expands from executing prescribed improvements (L1) to revising the mechanisms that generate future improvements (L5), with representative systems mapped onto each level.</em></p>
+<h2>The core idea</h2>
+<p>Two ideas, one conceptual and one empirical.</p>
+<p><strong>The ladder.</strong> Every self-improvement loop decomposes into decisions: what to improve, how to improve it, what experience to learn from, when to update deployed state, and what machinery generates the next round of improvements. Levels are defined by the highest decision the AI owns:</p>
+<ul>
+<li><strong>B0 / in-task improvement</strong>: gains that don't persist past the episode (in-context adaptation) — explicitly <em>below</em> the RSI threshold.</li>
+<li><strong>L1 — execution autonomy</strong>: humans fix objective, method, and success criteria; AI executes the update at scale.</li>
+<li><strong>L2 — strategy autonomy</strong>: objective and evaluation stay human-fixed; AI diagnoses weaknesses and chooses interventions (harness edits, data recipes).</li>
+<li><strong>L3 — experience autonomy</strong>: AI also decides what practice/data it needs next, generating tasks targeted at its own observed weaknesses.</li>
+<li><strong>L4 — environment-adaptation autonomy</strong>: the loop runs <em>in deployment</em>, revising persistent state (rules, memory, skills) under external acceptance/governance gates.</li>
+<li><strong>L5 — recursive inheritance autonomy</strong>: AI persistently revises a mechanism that governs subsequent improvement — the improver, the verifier, or the successor-generation procedure. Only here does the "recursion" in RSI become literal: the improvement <em>process</em> is itself the object of improvement.</li>
+</ul>
+<p><strong>The measurement.</strong> To argue where RSI matters, the paper builds cross-domain capability trajectories. Scores from multiple sources are pooled by a weighted consensus (benchmark-owner tables weighted 3, independent common-harness evals 2.5, combined reports 2, model-author tables 1, first-party values further ×0.75):</p>
+<div class="arithmatex">\[
+\bar{s}_{mbh}=\frac{\sum_{i}\widetilde{w}_{i}\,s_{imbh}}{\sum_{i}\widetilde{w}_{i}},
+\]</div>
+<p>then normalized by the <strong>Headroom-Closed Index</strong>, where <span class="arithmatex">\(F_{b,0}\)</span> is the 90th-percentile model score in the benchmark's entry year (0 = entry-year frontier, 100 = perfect):</p>
+<div class="arithmatex">\[
+H_{mbh}=100\times\frac{\bar{s}_{mbh}-F_{b,0}}{100-F_{b,0}},
+\]</div>
+<p>and aggregated into domain trajectories with square-root model-count weights so well-covered benchmark families count more without dominating:</p>
+<div class="arithmatex">\[
+T_{d,y}=\frac{\sum_{b\in\mathcal{B}_{d,y}}\sqrt{n_{b,y}}\,Q_{b,y}}{\sum_{b\in\mathcal{B}_{d,y}}\sqrt{n_{b,y}}} .
+\]</div>
+<h2>How it works</h2>
+<p>The body of the survey walks the ladder level by level — for each: where the loop closes, what persists between rounds, which decisions remain human, and the implementation techniques (with representative-system tables). Figure 2 is the load-bearing visual: the same loop diagram five times, with the green "AI-controlled" frame swallowing one more component at each level.</p>
+<p><img alt="Loop patterns of the five levels: the AI-controlled frame expands from execution to the improvement machinery itself" src="assets/last-ai-genuine-rsi/fig2.png" />
+<em>Figure 2 from the paper: gray dashed frames are human-controlled components, green frames sit inside the RSI loop, orange outlines mark the component newly internalized at each level.</em></p>
+<pre><code class="language-text">Algorithm: the generalized RSI loop, parameterized by autonomy level
+(reconstruction from Figure 2's loop patterns — the paper presents
+these as diagrams, not pseudocode)
+Given: system S, persistent state M (weights / harness / memory / skills),
+       improver I, verifier V, objective O
+loop over improvement rounds:
+    w  ← diagnose_weaknesses(S, M)        # L2+: AI-owned; L1: human-owned
+    x  ← acquire_experience(w)            # L3+: AI generates its own tasks/data
+    u  ← I(S, M, x)                       # candidate update (all levels: AI executes)
+    ok ← V(u, O)                          # human-fixed until L5
+    if ok: M ← commit(M, u)               # L4: commits happen in deployment,
+                                          #      under external acceptance rules
+    if level == L5:
+        I, V ← revise_improvement_machinery(I, V, outcomes)
+        # the revised improver/verifier persists into the next round --
+        # this inheritance is what makes the recursion genuine
+</code></pre>
+<p>Around the ladder, the paper adds three supporting studies: the HCI measurement layer (Section 2); an applications tour — science, embodied intelligence, software engineering, healthcare — arguing each domain climbs the ladder at different speeds because verification and experience costs differ; and an industrial-evidence section synthesizing what labs (DeepSeek's automated environment construction among them) have disclosed about closing parts of the loop in production pipelines.</p>
+<h2>Results</h2>
+<p>For a position paper, the HCI analysis carries the empirical weight:</p>
+<ul>
+<li><strong>Progress is uneven in level and shape.</strong> By 2026: advanced mathematics 86.4, graduate science 85.8, broad knowledge 77.2 — versus legal reasoning 64.5, multimodal reasoning 62.2, frontier academic breadth 60.4. Math's annual increment <em>grew</em> from 32.8 to 53.6 points, while multimodal gained 59.7 in 2025 and only 2.5 in 2026. A single aggregate benchmark would hide all of this.</li>
+<li><strong>Interactive capabilities lag most.</strong> Software engineering 52.6, search/terminal agents 56.8, tool agents 39.9 (lowest, despite jumping from 8.2 in one year) — 33–46 points of normalized headroom behind graduate science. Bounded benchmarks exercise L1–L2 capability; long, stateful workflows expose the L3–L4 verification/memory/adaptation machinery that barely exists yet.</li>
+<li><strong>The RSI upside is illustrated, not measured.</strong> The hatched post-2026 region of Figure 3 applies an explicitly illustrative endpoint,</li>
+</ul>
+<div class="arithmatex">\[
+R_{d}=100-0.22\,(100-T_{d,2026}),
+\]</div>
+<p>i.e. closing 78% of each domain's remaining headroom — moving software engineering 52.6 → 89.6 and tool agents 39.9 → 86.8. The hypothesis: RSI's experience generation, validation, and update retention preferentially attack exactly the domains where human-led iteration (environment construction, trajectory collection, failure diagnosis, regression testing) is the bottleneck.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/darwin-godel-machine.html">Darwin Gödel Machine</a></strong> / <a href="../tutorials/mendel-godel-machine.html">Mendel</a> / <a href="../tutorials/red-queen-godel-machine.html">Red Queen</a>: the Gödel-machine lineage is the L5 aspiration made concrete — and the ladder clarifies that editing your own <em>variation</em> machinery while humans hold the verifier is L5-on-one-axis only.</li>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong>, <strong><a href="../tutorials/ecdysis-harness-training.html">Ecdysis</a></strong>, <strong><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></strong>: today's harness-evolution wave is L2 by this taxonomy — human-fixed benchmarks and promotion rules, AI-chosen interventions. The survey cites Self-Harness as its canonical L2 example.</li>
+<li><strong><a href="../tutorials/rsi-limit-1338-runs.html">RSI limits from 1,338 runs</a></strong> and <strong><a href="../tutorials/aide2-rsi-evidence.html">AIDE-2's RSI evidence</a></strong>: the empirical skeptic literature — worth reading against the illustrative 78%-headroom-closure extension here.</li>
+<li><strong>RSIAgent and Dream-RSI (this list, added the same week)</strong>: frozen-weight L3 systems where the persistent substrate is memory rather than weights or code — the ladder predicts exactly this design as the near-term frontier, since L3 needs verification but not deployment governance.</li>
+<li><strong><a href="../tutorials/living-harness.html">Living-Harness</a></strong> and the Microsoft verify-then-write memory entry (this list): L4's "external acceptance rules for persistent state" is precisely the admission-gate discipline these systems implement.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The taxonomy is genuinely useful; the trimmings deserve skepticism. The HCI machinery makes many discretionary choices — source weights of 3/2.5/2/1, the ×0.75 first-party haircut, 90th-percentile entry-year anchoring, √n family weights — which the authors themselves call a "practical sensitivity adjustment"; treat the trajectory <em>shapes</em> as robust and the specific values as soft. The post-2026 extension is the weakest element: <span class="arithmatex">\(R_d = 100 - 0.22(100-T_{d,2026})\)</span> has no empirical basis (the 22% residual is chosen for illustration), yet it's the part most likely to be screenshot into "RSI will close 78% of the gap" claims. The industrial-evidence section leans on lab disclosures that are unauditable by construction. And the title overpromises: nothing in the paper argues <em>this generation</em> of methods achieves L5 — the honest reading is a roadmap in which today's systems are L1–L3 and every level transition above L3 is gated on verification and governance problems the survey names but does not solve. That, ironically, is its best contribution to the safety conversation: the binding constraint on genuine RSI is trustworthy verification of self-generated improvements, the same conclusion the skeptic papers reach from the other direction.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Grade RSI claims by decision ownership, not capability</strong>: L1 executes human improvements, L2 chooses interventions, L3 chooses its own experience, L4 commits persistent state in deployment, L5 revises the improver/verifier itself — and "genuine RSI" requires improvements that persist, compound, and improve the improvement process.</li>
+<li><strong>The headroom map points at agents</strong>: normalized frontier closure in 2026 is 86.4 (math) and 85.8 (grad science) vs 52.6 (software engineering) and 39.9 (tool agents) — RSI's economic case lives in long-horizon interactive domains where human-led iteration is the bottleneck.</li>
+<li><strong>The 78%-headroom-closure endpoint is an illustration, not a forecast</strong> — cite the ladder and the HCI trajectories from this paper, not the post-2026 curves.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-15 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

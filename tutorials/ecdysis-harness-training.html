@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ecdysis: Efficient Training of Runtime Harnesses via Cross-Task Failure Diagnosis</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Ecdysis: Efficient Training of Runtime Harnesses via Cross-Task Failure Diagnosis</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.11677">arXiv:2609.11677</a> · <a href="https://arxiv.org/abs/2609.11677">arXiv</a> · <a href="https://x.com/dair_ai/status/2098460821693341885">X post</a> · <a href="https://academy.dair.ai/papers/ecdysis-efficient-and-effective-training-of-runtime-harnesses-for-llm-agents-2609.11677">academy.dair.ai</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><p><em>Paper: arXiv 2609.11677, "Ecdysis: Efficient and Effective Training of Runtime Harnesses for LLM Agents", by Ruiqing Yue, Yu Cui, Zhuoyu Sun, et al. (14 authors). Grounded in the arXiv HTML full text; the algorithm figure is rendered from the paper's PDF (the paper contains no figures, only tables and Algorithm 1).</em></p>
+<h2>TL;DR</h2>
+<ul>
+<li>Ecdysis reframes harness self-evolution around a failure-attribution question the rest of the genre skips: is a given failure a <strong>model-specific deficiency</strong> (patching it overfits the harness to this model) or a <strong>systematic harness deficiency</strong> (patching it generalizes)? Its answer: only failure patterns that <strong>recur across distinct tasks</strong> are strong evidence for harness-level repair.</li>
+<li>Mechanically, it replaces per-failure serial patching with <strong>batch-level failure aggregation</strong> (one coding-agent call per evolution round instead of one per failure) plus <strong>Failure-Driven Collaborative Refinement (FDCR)</strong>: Analyst/Critic/Engineer roles debate the aggregated evidence over a shared transcript, and a Moderator emits a structured modification spec that a coding agent then implements.</li>
+<li>Results across five LLMs and τ²-Bench Airline/Retail: highest average accuracy (59.33%), a <strong>27.1% relative gain over serial self-evolution</strong> and 14.8% over a human-optimized harness, up to <strong>1.84× faster harness training</strong> (3.23× without FDCR), and a 14.5-percentage-point reduction in model-accommodating (overfitting) modifications. Comparable performance is reached with <strong>one-quarter of the training data</strong>.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Harness evolution is having its moment — <a href="../tutorials/meta-harness.html">Meta-Harness</a>, <a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a>, <a href="../tutorials/recursive-harness-self-improvement.html">recursive harness self-improvement</a> — and almost all of it shares one inner loop: observe a failure, prompt a coding agent to patch the harness, keep the patch if a score goes up. Ecdysis attacks the two costs of that loop that everyone experiences but few model explicitly. First, <strong>search is slow</strong>: every candidate needs repeated agent executions and code edits, and per-failure patching multiplies coding-agent calls. Second, <strong>fixes overfit</strong>: the paper's preliminary study is a genuinely useful negative result — across six Qwen3 model-domain combinations, no harness gets 29.72%, a fixed human-configured harness gets 50.28%, and <em>serially patching the harness after each failure gets only 43.33%</em> — naive self-evolution is <strong>worse than doing nothing to a good hand-built harness</strong>. The mechanism the paper identifies is precise: local failure-driven evolution promotes a particular training-task answer into a general runtime constraint, or deletes a legitimate action option to route around one model's mistake, shrinking the valid action space and hurting cross-model transfer.</p>
+<p>For anyone building self-improving harnesses, this is the same lesson <a href="../tutorials/fragility-self-improving-agents.html">the fragility literature</a> keeps circling — the improvement signal is confounded — but with a concrete, cheap fix: aggregate before you attribute.</p>
+<h2>The core idea</h2>
+<p>Decompose the aggregate harness update in an evolution round into two components:</p>
+<div class="arithmatex">\[
+\Delta H = t\,\Delta H_{\mathrm{model}} + (1-t)\,\Delta H_{\mathrm{harness}}, \qquad t\in[0,1],
+\]</div>
+<p>where <span class="arithmatex">\(\Delta H_{\mathrm{model}}\)</span> is the part of the update that <em>accommodates limitations of the current task model</em>, <span class="arithmatex">\(\Delta H_{\mathrm{harness}}\)</span> is the part that <em>repairs systematic harness deficiencies</em>, and <span class="arithmatex">\(t\)</span> is the fraction of modification decisions that are model-specific accommodation. High-<span class="arithmatex">\(t\)</span> updates resolve observed failures efficiently but overfit to the current model and training tasks. A single failure gives you almost no evidence about which component you're touching. A failure pattern that recurs across <em>distinct task instances</em> is much stronger evidence of a systematic harness deficiency — the paper is careful to call this an <strong>inductive bias, not causal attribution</strong>.</p>
+<p>So Ecdysis does three things per round: aggregate all failures in the round into structured evidence, group them into cross-task patterns, and only then spend one coding-agent call implementing a spec that prioritizes the recurring patterns.</p>
+<p><img alt="Algorithm 1 from the paper: the Ecdysis training loop for harness self-evolution" src="assets/ecdysis-harness-training/fig1.png" />
+<em>Algorithm 1 (rendered from the paper's PDF): per round — collect trajectories, aggregate failures, group into patterns, run K passes of Analyst/Critic/Engineer over a shared transcript, Moderator emits the modification spec, coding agent edits the harness, accept only on training-score improvement.</em></p>
+<h2>How it works</h2>
+<p><strong>Setup.</strong> A fixed task model <span class="arithmatex">\(\theta\)</span>, a runtime environment <span class="arithmatex">\(\mathcal{E}\)</span>, a training task set <span class="arithmatex">\(\mathcal{D}_{\mathrm{train}}\)</span>, and an initial harness <span class="arithmatex">\(H_0 = H_{\mathrm{base}}\)</span>. Model parameters and environment stay frozen throughout; only harness code evolves.</p>
+<p><strong>Stage 1 — Batch-level failure aggregation.</strong> Round <span class="arithmatex">\(i\)</span> executes the training tasks with harness <span class="arithmatex">\(H_{i-1}\)</span>, collecting trajectories <span class="arithmatex">\(\mathcal{T}_i\)</span>. Each trajectory <span class="arithmatex">\(\tau\)</span> gets a task score <span class="arithmatex">\(S(\tau)\)</span> from the <em>fixed</em> evaluation framework, and a binary failure signal</p>
+<div class="arithmatex">\[
+f_\lambda(\tau) = \mathbb{I}\!\left[S(\tau) &lt; \lambda\right],
+\]</div>
+<p>with <span class="arithmatex">\(\lambda\)</span> a predefined threshold. Failing trajectories become structured records (task id, failure decision, termination reason, tool-call history, execution context) forming the evidence set <span class="arithmatex">\(\mathcal{B}_i\)</span>, which is grouped into failure groups <span class="arithmatex">\(\mathcal{G}_i\)</span>. Groups covering <strong>at least two distinct tasks</strong> are prioritized; single-task groups are retained only as auxiliary evidence. Crucially, groups are <em>diagnostic evidence, not mandatory repair targets</em> — a candidate harness need not address every group. Aggregation is also where the efficiency comes from: per-failure processing needs one coding-agent call per failure record, whereas Ecdysis makes <strong>one call per nonempty round</strong> <em>(the paper states this as a strict inequality whenever any round has multiple failures; symbolically, calls drop from <span class="arithmatex">\(\sum_i |\mathcal{B}_i|\)</span> to <span class="arithmatex">\(\sum_i \mathbb{I}[\mathcal{B}_i \neq \varnothing]\)</span> — notation reconstructed from the prose)</em>.</p>
+<p><strong>Stage 2 — Failure-Driven Collaborative Refinement (FDCR).</strong> Three roles iterate over a shared transcript for <span class="arithmatex">\(K\)</span> passes: the <strong>Analyst</strong> proposes minimal, targeted harness updates for suspected deficiencies; the <strong>Critic</strong> stress-tests them against the failure evidence — overly broad triggers, blocking legitimate behavior, runtime-contract violations, regressions on previously successful tasks; the <strong>Engineer</strong> tracks agreements, disagreements, and open questions. A <strong>Moderator</strong> then reads everything and emits a conservative, structured modification specification <span class="arithmatex">\(q_i\)</span> — identified patterns, proposed changes, implementation guidance — <em>without touching code</em>. A separate coding agent (OpenCode running DeepSeek-V4-Pro in the experiments) edits <span class="arithmatex">\(H_{i-1}\)</span> into candidate <span class="arithmatex">\(H_i^{\mathrm{c}}\)</span>. Diagnosis and implementation are deliberately separated.</p>
+<p><strong>Stage 3 — Validation.</strong> Candidates are accepted only on strict training-set improvement:</p>
+<div class="arithmatex">\[
+H_i=\begin{cases}H_i^{\mathrm{c}}, &amp; \text{if } J_{\mathrm{train}}\!\left(H_i^{\mathrm{c}}\right) &gt; J_{\mathrm{train}}(H_{i-1}),\\ H_{i-1}, &amp; \text{otherwise},\end{cases}
+\]</div>
+<p>where <span class="arithmatex">\(J_{\mathrm{train}}\)</span> is the overall training score — individual tasks may regress as long as the aggregate improves. After <span class="arithmatex">\(R\)</span> rounds the harness is frozen.</p>
+<pre><code class="language-text">Algorithm: Ecdysis harness training (condensed from Algorithm 1)
+Input: frozen model θ, env E, tasks D_train, harness H_base,
+       threshold λ, rounds R, refinement passes K
+H_0 ← H_base
+for i = 1 .. R:
+    T_i ← Collect(θ, H_{i-1}, E, D_train)          # execution trajectories
+    B_i ← Aggregate({τ ∈ T_i : S(τ) &lt; λ})          # structured failure evidence
+    if B_i = ∅: H_i ← H_{i-1}; continue
+    G_i ← Group(B_i)                                # cross-task failure patterns
+    M_i ← ∅                                         # shared role transcript
+    for k = 1 .. K:
+        for A in {Analyst, Critic, Engineer}:
+            M_i ← M_i ∘ A(G_i, M_i)
+    q_i ← Moderator(G_i, M_i)                       # modification specification
+    H_c ← Edit(H_{i-1}, q_i)                        # one coding-agent call
+    H_i ← H_c if J_train(H_c) &gt; J_train(H_{i-1}) else H_{i-1}
+return H_R (frozen)
+</code></pre>
+<h2>Results</h2>
+<p><strong>Setup:</strong> five task LLMs (Qwen3-8B/14B/32B, MiniMax-M2.7 230B, Llama-3.1-8B), τ²-Bench Airline and Retail (20 train / 20 test tasks each, three held-out trials per task) plus AgentBench; the Life-Harness framework as the base; all evolution methods start from the same human-optimized harness and evolve with Qwen3-8B, then the frozen harnesses are transferred unchanged to the other four models.</p>
+<ul>
+<li><strong>Task performance:</strong> Ecdysis w/ FDCR reaches the highest average accuracy, <strong>59.33%</strong> — relative improvements of <strong>27.1% over Self-Evolution (SE)</strong> and <strong>14.8% over the human-augmented harness</strong>. Pass^3 (success on all three trials) hits 45.00, a 55.2% relative gain over SE — the harness makes success <em>consistent</em>, not just occasional.</li>
+<li><strong>Ablation:</strong> SE 46.67% → batch aggregation alone (w/o FDCR) 54.67% → + FDCR 59.33%. Aggregation is the bigger single contributor; FDCR adds accuracy on top.</li>
+<li><strong>Training efficiency:</strong> w/o FDCR trains in 1,292s (τ²-Retail) and 2,511s (τ²-Airline), speedups of 1.42× and 3.23× over SE; w/ FDCR the speedups are 1.30× and 1.84×. API cost: SE $8.48/$6.38 per run vs $2.49/$2.14 (w/o FDCR) and $5.76/$2.61 (w/ FDCR). FDCR is explicitly framed as an accuracy module that trades back some of aggregation's efficiency win.</li>
+<li><strong>Overfitting, quantified:</strong> manual analysis of modification decisions finds SE's model-accommodation fraction <span class="arithmatex">\(t\)</span> is <strong>14.5 percentage points higher</strong> than Ecdysis's — direct evidence for the mechanism, not just the outcome. Ecdysis harnesses also transfer better across the five LLMs and consume fewer inference tokens.</li>
+<li><strong>Data efficiency:</strong> performance comparable to full-data training using <strong>one-quarter of the training data</strong> (a five-failure curated subset), suggesting failure <em>diversity</em>, not volume, drives harness learning.</li>
+</ul>
+<h2>How it connects</h2>
+<ul>
+<li><strong><a href="../tutorials/meta-harness.html">Meta-Harness</a></strong> gives the optimizer rich filesystem access to past traces and code; Ecdysis is about <em>which</em> failures deserve a response at all. The two are composable: Meta-Harness's diagnostic visibility with Ecdysis's cross-task recurrence filter.</li>
+<li><strong><a href="../tutorials/darwinx-harness-evolution.html">DarwinX</a></strong> and <strong><a href="../tutorials/recursive-harness-self-improvement.html">recursive harness self-improvement</a></strong> control overfitting <em>selection-side</em> (preserve-and-extend contracts, populations); Ecdysis controls it <em>attribution-side</em>, before an edit is even proposed. Its prelim result (serial patching &lt; fixed human harness) is the cleanest motivation yet for either discipline.</li>
+<li><strong><a href="../tutorials/rethinking-harness-evolution.html">Rethinking Harness Evolution</a></strong> argued much of harness-evolution's gain is repeated sampling; Ecdysis's ablation (aggregation alone +8.0 points over SE at <em>lower</em> cost) is a partial answer — the organization of failure evidence itself carries signal.</li>
+<li><strong><a href="../tutorials/living-harness.html">Living-Harness</a></strong> gates what enters persistent memory; Ecdysis gates what enters harness <em>code</em>. Same admission-control philosophy, different substrate. The new verify-before-write memory entry from Microsoft (this list) makes the same move for agent memory.</li>
+<li><strong>AutoDesign (<a href="../tutorials/autodesign-meta-harness.html">tutorial</a>)</strong> optimizes harnesses for long-horizon design; its per-failure repair loop is exactly the SE baseline Ecdysis shows is overfit-prone.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The core insight is durable, but the evaluation is small: 20+20 tasks per subset, evolution driven by a single model (Qwen3-8B), and at most three candidate-generation rounds — this is a short evolution trajectory compared to what Meta-Harness or DarwinX run, so we don't see whether the recurrence filter still helps after dozens of accepted edits (inferred from the setup description — verify in the paper). The multi-role FDCR machinery is the least persuasive part: it wins accuracy but gives back most of the cost savings, and role-play diagnosis pipelines have historically been brittle to the underlying model (everything here is DeepSeek-V4-Pro). The strongest, most reusable contributions are the <span class="arithmatex">\(t\)</span>-decomposition framing, the ≥2-distinct-tasks recurrence heuristic, and the honest quantification that naive per-failure self-evolution <em>underperforms a fixed human harness</em> — a baseline result every self-improving-harness paper should now have to report against.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>A failure is not a training signal until you know whose failure it is</strong> — model-specific accommodation vs harness-level repair; patching the former shrinks the harness's valid action space and kills cross-model transfer (SE's <span class="arithmatex">\(t\)</span> is 14.5pp higher than Ecdysis's).</li>
+<li><strong>Recurrence across distinct tasks is the cheapest attribution proxy</strong>: aggregate a round's failures, prioritize patterns spanning ≥2 tasks, and spend one coding-agent call per round — up to 3.23× faster and +8 accuracy points before any role-play refinement is added.</li>
+<li><strong>Serial per-failure self-evolution (43.33%) is worse than a fixed human harness (50.28%)</strong> — the genre's default inner loop is below baseline, and efficiency and generalization improve <em>together</em> when attribution is fixed, because both costs come from responding to unrepresentative failures.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-15 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

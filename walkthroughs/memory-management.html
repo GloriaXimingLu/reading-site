@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Memory: Notes, Search, and Compression</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: Notes, Search, and Compression</h1><p class="meta">26 min · 31 papers · 2026-09-15</p><p class="meta">Research cut: 15 September 2026. A decision guide, not a leaderboard. Frozen APIs, trainable policies, and learned representations are all in scope. Recommendations and proposed experiments are my synthesis; numerical results are the papers’ reports, not reproductions.</p>
+
+<h2>Start here: a broad map, not a single recipe</h2>
+<p>The goal is to understand <strong>what each family of work makes possible</strong>, where its evidence stops, and which ideas can be recombined. A useful memory system must decide what to preserve, how to represent it, how to find it, when to use it, and how to revise it. Different papers improve different parts of that cycle.</p>
+<p>Three questions organize the literature:</p>
+<ol>
+<li><strong>What should survive?</strong> Exact evidence, factual notes, reusable lessons, executable skills, or a learned representation? These preserve different kinds of information.</li>
+<li><strong>What should enter the next context?</strong> Retrieved passages, a running summary, recoverable source pointers, or compressed latent states? Keeping the source does not require displaying it all.</li>
+<li><strong>What should learn from experience?</strong> The memory contents, retrieval scores, writing/search policy, compressor, task model, or outer optimizer? “Continuous learning” can refer to any of these.</li>
+</ol>
+<p><strong>Your first experiment remains inner-agent notes + grep after restart.</strong> That sets implementation order, not reading scope. Compression, consolidation, trained memory, and outer-loop learning remain substantial parts of this review. The <a href="memory-baseline-experiments.html#first-run">experiment companion</a> is optional until you are ready to implement.</p>
+<p><strong>Reading routes:</strong> <a href="#notes">notes and restart</a> · <a href="#compression">compression</a> · <a href="#outer-loop">outer-loop learning</a> · <a href="#inspiration">ideas to borrow</a> · <a href="#frontier">newest work and cautions</a>.</p>
+<p>For the first experiment, read <strong>ShadowFrog → PRO-LONG → ReasoningBank</strong>, then <strong>AutoMem</strong> to understand how the writer/searcher could eventually be trained. For compression, read <strong>Memex → MemAgent → Cartridges</strong>, then <strong>Still/ContextPilot</strong>. For later outer-loop learning, read <strong>Meta-Harness → HCL</strong>. These routes are prioritized subsets; the rest is a reference shelf, not a prerequisite reading list.</p>
+<h2>The map: what is actually changing?</h2>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Useful baseline</th>
+<th>What changes</th>
+<th>Main qualification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Can the agent find its own notes after restart?</td>
+<td>ShadowFrog-style notes; raw archive + PRO-LONG-style search</td>
+<td>Files and access tools</td>
+<td>A discoverable file is not automatically a useful lesson</td>
+</tr>
+<tr>
+<td>What should a task teach the next task?</td>
+<td>ReasoningBank</td>
+<td>Distilled strategies</td>
+<td>Self-judged failures can produce wrong lessons</td>
+</tr>
+<tr>
+<td>How do notes grow without repeated summary damage?</td>
+<td>ACE</td>
+<td>Local playbook edits</td>
+<td>Growth still needs a retrieval/budget policy</td>
+</tr>
+<tr>
+<td>Which similar memory is worth reading?</td>
+<td>MemRL</td>
+<td>Per-memory utility values</td>
+<td>Reward association is not causal credit</td>
+</tr>
+<tr>
+<td>Can note-writing/search become a trained skill?</td>
+<td>AutoMem</td>
+<td>Memory scaffold, then a memory specialist</td>
+<td>Separate scaffold gains from training gains</td>
+</tr>
+<tr>
+<td>Can context shrink without losing the underlying evidence?</td>
+<td>Memex</td>
+<td>Summary + indices + external blocks</td>
+<td>A bad pointer can make retained evidence practically lost</td>
+</tr>
+<tr>
+<td>Can a bounded text state digest a long document?</td>
+<td>MemAgent</td>
+<td>RL-trained memory overwrite</td>
+<td>Its question is known during compression</td>
+</tr>
+<tr>
+<td>When and how much should an agent summarize?</td>
+<td>AgentFold; ContextPilot</td>
+<td>Learned context-editing policy</td>
+<td>SFT, RL, tools, and training compute must be disentangled</td>
+</tr>
+<tr>
+<td>Can I shorten text before a frozen API call?</td>
+<td>LLMLingua-2</td>
+<td>Extractive token selection</td>
+<td>Keep/drop decisions remain lossy</td>
+</tr>
+<tr>
+<td>Can many queries share a compact learned corpus?</td>
+<td>Cartridges</td>
+<td>Per-corpus trained KV prefix</td>
+<td>Offline fitting must amortize</td>
+</tr>
+<tr>
+<td>Can new contexts be compacted without fitting each one?</td>
+<td>Still</td>
+<td>Trained KV-to-KV compressor</td>
+<td>Promising; release not verified in this review</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Do not collapse four different budgets into “memory.”</strong> Disk bytes, prompt tokens, GPU KV bytes, and training FLOPs are different resources. Keeping everything on disk can coexist with aggressive prompt compression. Keeping a fixed <em>compression ratio</em> does not imply a fixed <em>absolute memory size</em>.</p>
+<h2 id="notes">Track A — taking notes, restarting, and grepping later</h2>
+
+<h3>1. ShadowFrog — make the location predictable</h3>
+<p><a href="https://microsoft.github.io/debug-gym/blog/2026/06/shadow-frog/">Report</a> · <a href="https://github.com/microsoft/ShadowFrog">Code</a> · June 2026 engineering report/release.</p>
+<p><strong>Mechanism.</strong> Knowledge about <code>src/auth.py</code> goes in <code>.shadow/src/auth.py.md</code>, with symbol-level sections and cross-file links. The source path becomes an address for its corresponding notes. These are curated discoveries, not a complete transcript archive. The larger system also explores through experiments and consolidates notes.</p>
+<p><strong>The 97.6% versus 36.2% result.</strong> The authors plant facts, then ask the agent to retrieve relevant prior knowledge. In the highlighted Django setting there are roughly 2,500 planted facts, the file path is supplied, and the agent gets eight tool calls. Mirrored files achieve 97.6% recall; one large notes file achieves 36.2%. With much more search budget, the flat layout catches up. This is a <strong>retrieval-under-budget</strong> experiment, not a 61.4-point coding improvement.</p>
+<p><strong>Sharp takeaway.</strong> Organization can substitute for search intelligence when the task supplies a good address. A research question often does not supply a file path: test topic/source/entity indices as well as literal mirroring.</p>
+<p><strong>Try:</strong> identical note content in a monolith, flat files, and a hierarchical index. Keep the model and read budget fixed. Disable autonomous “dream” exploration in this comparison: extra experience is a different intervention.</p>
+<h3>2. PRO-LONG — archive the evidence, compute over it</h3>
+<p><a href="https://arxiv.org/html/2607.20064v2">Paper, §2.2 and §3.2</a> · <a href="https://github.com/alexisfox7/PRO-LONG">Code</a> · July 2026 preprint · <a href="../tutorials/pro-long-programmatic-memory.html">existing deeper tutorial</a>.</p>
+<p><strong>Mechanism.</strong> Append structured actions, outcomes, board states, and summarized plans to a log. The agent reads selectively using grep/regex and Python. The archive is not pasted wholesale into the prompt.</p>
+<p><strong>Evidence to focus on:</strong> the tool ladder scores 23.1 with read-only access, 27.2 after adding grep/regex, 38.3 after adding Python, and 41.2 with the full tools. These are the paper’s ARC-AGI-3 scores, not binary percentages of all games solved. The largest increment is programmatic analysis, not grep alone. Each game/run starts fresh; the experiment does <strong>not</strong> transfer memories between games.</p>
+<p><strong>Sharp takeaway.</strong> “Keep everything and search” includes computation: find a score change, compare states, reconstruct an event sequence. Grep is a candidate generator, not the whole reader.</p>
+<p><strong>Try:</strong> raw archive + grep versus raw archive + grep/Python, then add notes on top. This tests whether notes contribute abstraction beyond what a competent archive reader can reconstruct. Treat cross-task reuse as your extension, not a published PRO-LONG result.</p>
+<h3>Companion: Recursive Language Models — make the source a programmable object</h3>
+<p><a href="https://arxiv.org/html/2512.24601v3">Paper, v3 §2 and §5</a> · <a href="https://github.com/alexzhang13/rlm">Code</a> · December 2025; revised May 2026.</p>
+<p><strong>Mechanism.</strong> Put the long input in an external REPL variable. The model writes programs to inspect, partition, and invoke sub-models on selected pieces; intermediate results also live outside the main prompt. This extends selective access into semantic computation over many pieces, not just finding one passage.</p>
+<p><strong>Why read it.</strong> Its evaluations distinguish sparse retrieval from information-dense aggregation. A task depending on nearly every record cannot be solved by finding one excellent snippet. The revised paper also trains smaller models to use this interface.</p>
+<p><strong>Sharp takeaway.</strong> “External memory” can be an execution substrate, not merely a database. The new bottleneck is choosing a sound decomposition and controlling sub-call cost. The paper reports wide cost/runtime variation and warns about exploding sub-calls. Its persistent REPL within an invocation does not, by itself, establish cross-task memory.</p>
+<p><strong>Idea to borrow:</strong> let a reader compute over accumulated notes/evidence and use bounded semantic sub-calls where lexical search cannot answer the question. Keep grep-only access as the simpler comparison.</p>
+<h3>3. ReasoningBank — save the lesson, not just the episode</h3>
+<p><a href="https://arxiv.org/html/2509.25140v2">Paper, §3.2; Table 2; Appendix A.2</a> · <a href="https://github.com/google-research/reasoning-bank">Code</a> · September 2025; revised March 2026; ICLR 2026 acceptance stated on arXiv.</p>
+<p><strong>Mechanism.</strong> After a task, judge success/failure and extract up to three items with title, description, and reusable reasoning content. Retrieve items from similar previous experiences before solving the next task. The default retrieves one experience’s items. “Consolidation” in the core implementation is simply appending—not sophisticated merging or forgetting.</p>
+<p><strong>Evidence.</strong> With Gemini-2.5-Pro, SWE-bench Verified resolve rate is 54.0 without memory and 57.4 with ReasoningBank; average interaction steps fall from 21.1 to 19.8. The paper also evaluates web tasks. Its MaTTS extension adds extra trajectories and should be evaluated separately from the memory-only method.</p>
+<p><strong>Sharp takeaway.</strong> The key experimental variable is <strong>what gets written</strong>: a transferable strategy versus a raw trace or successful routine. This is a particularly clean baseline because the surrounding retrieval pipeline is deliberately simple.</p>
+<p><strong>Try:</strong> the same reader over raw episodes, success-only lessons, and success-plus-failure lessons. Audit failure explanations against available evidence: an agent can confidently teach itself the wrong diagnosis.</p>
+<h3>4. ACE — edit individual notes instead of rewriting your memory</h3>
+<p><a href="https://arxiv.org/html/2510.04618">Paper, §3 and §4.2</a> · <a href="https://github.com/ace-agent/ace">Code</a> · October 2025; arXiv lists ICLR 2026.</p>
+<p><strong>Mechanism.</strong> A generator acts, a reflector identifies lessons, and a curator proposes small playbook changes. Identified bullets carry helpful/harmful counters. Deterministic merge logic applies deltas; refinement controls duplicates. Online evaluation predicts before updating from the current example.</p>
+<p><strong>Why it belongs here.</strong> A running summary repeatedly exposes old knowledge to rewriting. ACE instead makes preservation the default and local change explicit. Its context-collapse case study includes an 18,282-token playbook rewritten into 122 tokens; this is a motivating example, not a universal probability of summary failure.</p>
+<p><strong>Sharp takeaway.</strong> The benefit is not “longer prompts are always better.” It is <strong>update locality</strong>: adding one new lesson should not require regenerating every old lesson. A long playbook still needs scoped retrieval when it no longer fits.</p>
+<p><strong>Try:</strong> whole-summary rewrite versus append-only versus ID-addressed deltas, with the same writer and prompt budget. An “ACE writer + grep reader” is a useful adaptation, but label it as such; it is not automatically the original paper configuration.</p>
+<h3>5. MemRL — learn usefulness without updating the LLM</h3>
+<p><a href="https://arxiv.org/html/2601.03192">Paper, §4; Table 2</a> · <a href="https://github.com/MemTensor/MemRL">Code</a> · January 2026 preprint.</p>
+<p><strong>Mechanism.</strong> Store intent, experience, and a utility value. First retrieve semantically compatible candidates; then rank using normalized similarity and utility. After observing reward, update the utilities of memories actually injected. The LLM stays frozen.</p>
+<p>The implemented Monte Carlo-style update is Eq. 4:</p>
+<div class="arithmatex">\[
+Q_{\mathrm{new}}\leftarrow Q_{\mathrm{old}}+\alpha(r-Q_{\mathrm{old}}).
+\]</div>
+<p>Here <span class="arithmatex">\(Q\)</span> is a memory’s estimated utility, <span class="arithmatex">\(r\)</span> the observed reward, and <span class="arithmatex">\(\alpha\)</span> the learning rate. Intuitively: nudge the note’s score toward how the task turned out.</p>
+<p><strong>Evidence.</strong> Held-out BigCodeBench success is 50.8% versus 48.5% without memory; ALFWorld is 97.9% versus 83.6%. These transfer results are more relevant than its cumulative “solved at least once” score over ten training epochs.</p>
+<p><strong>Sharp takeaway.</strong> A high-Q note may merely be used on easier tasks. When several notes are injected together, all receive ambiguous credit. The stationarity assumptions in the analysis do not guarantee safety after a repository, task distribution, or model changes.</p>
+<p><strong>Try:</strong> freeze the note content and compare similarity-only retrieval against utility ranking. Then test on new tasks with utilities frozen; separately evaluate online updating under drift.</p>
+<h3>6. AutoMem — train the note-taker/searcher as a specialist</h3>
+<p><a href="https://arxiv.org/abs/2607.01224">Paper, §2; Table 1</a> · <a href="https://github.com/autoLearnMem/AutoMem">Code</a> · July 2026 preprint.</p>
+<p><strong>Mechanism.</strong> LOG writes memory files; PLAN reads/searches them before acting. Loop 1 optimizes prompts, schemas, and tools by reviewing full trajectories. Loop 2 selects good memory-operation turns from the agent’s own traces and trains a LoRA memory specialist. The task-action model remains unchanged. For the first notes + grep baseline, borrow the LOG/PLAN separation without running either optimization loop.</p>
+<p><img alt="AutoMem’s two loops: scaffold optimization and memory-specialist training around a filesystem" src="../tutorials/assets/memory-management/automem.png" /></p>
+<p><em>Actual AutoMem framework figure. Read the split at the bottom: the trained component manages memory; a separate frozen model commits world actions. Source: authors’ repository, commit 1987b8f.</em></p>
+<p><strong>Evidence.</strong> Crafter progression goes 25.00 → 47.27 after scaffold optimization → 51.36 after memory training. Thus the headline roughly 2–4× gains are not the incremental benefit of fine-tuning. The evaluations are games, with limited seed counts and repeated evaluation used for scaffold selection.</p>
+<p><strong>Sharp takeaway.</strong> This is a strong fit for training “write, search, read, update” independently. But freezing task-model weights does not freeze task behavior: the revised scaffold and supplied memory still change its decisions.</p>
+<p><strong>Try:</strong> fixed scaffold → optimized scaffold → optimized scaffold plus specialist, on held-out task seeds/families. For your setting, add a cold-start reader test and quantify whether the specialist writes notes that a different model can understand.</p>
+<h3>7. PlugMem — a richer second-wave comparator</h3>
+<p><a href="https://arxiv.org/html/2603.03296">Paper, §3; Appendix F</a> · <a href="https://github.com/TIMAN-group/PlugMem">Code</a> · March 2026 preprint.</p>
+<p><strong>Mechanism.</strong> Separate source episodes, factual propositions, and procedural prescriptions. Concepts/intents route retrieval to complete knowledge blocks; a reasoning stage condenses retrieved material for the current task. Source traces remain available for verification.</p>
+<p><strong>Why second wave?</strong> It tests whether structured facts plus skills beat simpler notes. The package changes writing, indexing, retrieval, and read-time condensation together, making attribution harder. Its WebArena transfer protocol also adds human demonstrations between online accumulation and offline evaluation.</p>
+<p><strong>Sharp takeaway.</strong> Fewer tokens <em>injected into the task agent</em> do not mean fewer total tokens. The appendix reports additional construction and abstraction costs. Account for those before claiming cheaper memory.</p>
+<p><strong>Try:</strong> add structure only after the simple note baseline is competitive; ablate graph routing and read-time condensation independently.</p>
+<h2 id="compression">Track B — compression is a first-class objective</h2>
+
+<h3>Two older conceptual anchors</h3>
+<ul>
+<li><strong><a href="https://arxiv.org/abs/2310.08560">MemGPT, 2023/2024</a>:</strong> separates a small active context from larger external memory and lets the model manage movement between them. Read it for the virtual-memory analogy and control flow—not for a claim of literally unlimited usable knowledge. It connects multi-session memory and document analysis under one interface.</li>
+<li><strong><a href="https://arxiv.org/abs/2307.06945">ICAE, ICLR 2024</a> · <a href="https://github.com/getao/icae">code</a>:</strong> trains an encoder to turn context into compact continuous memory slots that a frozen decoder can use. Reconstruction/language-model pretraining precedes instruction tuning. It is a useful ancestor for understanding the representation question: preserving text exactly and preserving the ability to answer downstream questions are different objectives. These anchors are conceptual summaries, not full reviews here.</li>
+</ul>
+<h3>8. LLMLingua-2 — the inexpensive discrete-text control</h3>
+<p><a href="https://arxiv.org/abs/2403.12968">Paper</a> · <a href="https://github.com/microsoft/LLMLingua">Code and model links</a> · Findings of ACL 2024.</p>
+<p>Although older, this is a useful practical anchor: a small bidirectional encoder classifies which tokens to keep, producing ordinary compressed text that a frozen API model can consume. No custom KV interface is needed.</p>
+<p><strong>Sharp takeaway.</strong> Extractive does not mean semantically lossless. Dropping “not,” a unit, a condition, or a source attribution can change a claim without introducing any new token. Compare it with simple truncation and an abstractive summary at the <strong>same final input budget</strong>, including compressor latency.</p>
+<p>This is prompt compression, not cross-task learning. That is a scope label, not a reason to exclude it.</p>
+<h3>9. Memex / MemexRL — compress the working view, retain source blocks</h3>
+<p><a href="https://arxiv.org/html/2603.04257">Paper, §3 and §5.1</a> · <a href="https://github.com/Accenture/MemexRL">Code</a> · March 2026 preprint.</p>
+<p><strong>Mechanism.</strong> Replace a long working context with a compact summary containing stable indices. Archive underlying blocks separately; <code>ReadExperience(index)</code> restores details. MemexRL trains the writing and reading decisions, including penalties for context overflow, redundant tool calls, and malformed calls.</p>
+<p><strong>Evidence and caveat.</strong> Reported success rises from 24.2% to 85.6%, with peak working context falling from 16,934 to 9,634 tokens. But this is a modified ALFWorld setup: <code>look</code> is allowed once and summaries are truncated to 300 tokens, explicitly creating a need for archived IDs. Do not treat that gain as a general research-agent effect size.</p>
+<p><strong>Sharp takeaway.</strong> The design is more transferable than the headline number. “The archive contains it” is weaker than “the reader can find it.” A summary that deletes the only useful pointer has effectively lost the information under a finite search budget.</p>
+<p><strong>Try:</strong> keep summary text identical and toggle dereferencing. First test a prompted implementation; add RL only after the archive/index mechanics work. Persisting the store across tasks is an additional experiment, not established by this within-episode evaluation.</p>
+<h3>10. MemAgent — a learned, bounded textual memory</h3>
+<p><a href="https://arxiv.org/html/2507.02259v2">Paper, §2.1; Tables 1 and 3</a> · <a href="https://github.com/BytedTsinghua-SIA/MemAgent">Code</a> · <a href="https://huggingface.co/BytedTsinghua-SIA/RL-MemoryAgent-14B">14B checkpoint</a> · July 2025; revised July 2026; ICLR 2026 Oral stated on arXiv.</p>
+<p><strong>Mechanism.</strong> Read a document chunk, overwrite a bounded ordinary-text memory, repeat, then answer. RL uses final-answer reward to train memory-writing turns across their distinct contexts. The question is available during reading.</p>
+<p><img alt="MemAgent processes successive document chunks while carrying a compact text memory" src="../tutorials/assets/memory-management/memagent.png" /></p>
+<p><em>Actual MemAgent method figure. The memory is text, not an embedding or KV cache. Each overwrite is an information bottleneck. Source: arXiv v2.</em></p>
+<p><strong>Evidence.</strong> The v2 table gives 14B accuracy of 80.47 at 7K and 71.09 at 3.5M tokens on RULER-HQA. That is a 9.38-percentage-point drop; do not repeat “lossless” or the abstract’s under-5% wording without checking the version and comparison. LongBench-QA offers a more varied complement to needle retrieval.</p>
+<p><strong>Sharp takeaway.</strong> <strong>Knowing the question while compressing is a major advantage.</strong> A note-taker preserving information for unknown future tasks faces a harder problem. Test both query-aware and query-blind compression; do not attribute their difference solely to compressor quality.</p>
+<p><strong>Try:</strong> prompted overwrite and trained overwrite at identical chunk/memory sizes. Add unseen query types, growing evidence density, and repeated re-use of the same compressed document.</p>
+<h3>11. AgentFold and ContextPilot — learned context editing</h3>
+<p><a href="https://arxiv.org/abs/2510.24699">AgentFold paper</a> · <a href="https://openreview.net/pdf?id=IuZoTgsUws">ICLR 2026 version</a> · <a href="https://github.com/Alibaba-NLP/DeepResearch/tree/main/WebAgent/AgentFold">inference code</a>.</p>
+<p><strong>AgentFold:</strong> keep the latest interaction intact, summarize individual older steps, and merge a completed multi-step investigation into a coarser block. Train these folding decisions with SFT. Its reported BrowseComp score is 36.2% for the 30B-A3B agent. The baseline lesson is that <strong>a finished subproblem is a natural compression boundary</strong>; a still-uncertain lead often is not. Lossy folding can nevertheless erase evidence needed later. The public directory inspected contains inference/serving code; I did not verify a complete matching training-data release.</p>
+<p><a href="https://arxiv.org/abs/2608.28476">ContextPilot paper</a> · <a href="https://github.com/Tencent/ContextPilot">code</a> · August 2026; accepted EMNLP 2026 Main per arXiv · <a href="../tutorials/contextpilot.html">existing tutorial</a>.</p>
+<p><strong>ContextPilot:</strong> combine notes, structured memory, search, planning, and recoverable context offloading. RL branches at sensitive context decisions and estimates snapshot value from descendant outcomes. On its four long-context QA benchmarks, the 8B SFT average is 65.78; RL reaches 69.40. The trained system uses a 32K window. Giving the untrained 8B model the tools alone scores only 27.61.</p>
+<p><strong>Sharp takeaway.</strong> A tool interface is a skill requirement, not free capability. The strongest training comparison is <strong>SFT versus RL within the same interface</strong>, then uniform versus targeted branching at matched rollout cost. Do not compare AgentFold’s headline directly with ContextPilot’s deep-search table: the latter mixes pass@3 and pass@1 metrics across benchmarks.</p>
+<h3>12. Cartridges — fit a reusable latent representation of a corpus</h3>
+<p><a href="https://arxiv.org/html/2506.06266v3">Paper, §4</a> · <a href="https://github.com/HazyResearch/cartridges">Code</a> · June 2025.</p>
+<p><strong>Mechanism.</strong> For a particular corpus, generate varied synthetic conversations and optimize a small KV prefix so the frozen model behaves like a teacher with the corpus in context. At serving time, load the cartridge and answer many different queries.</p>
+<p><strong>Evidence.</strong> The paper reports matching ICL quality with up to 38.6× less KV memory and 26.4× higher throughput. Those are KV/serving results—not 38.6× less total GPU memory or 26.4× lower request latency.</p>
+<p><strong>Sharp takeaway.</strong> This is closer to <strong>compiling a corpus</strong> than taking a running note. The key variable is reuse: a frequently queried stable paper collection may justify fitting; a rapidly changing stream may not. Also test which kinds of questions the synthetic self-study failed to cover.</p>
+<p><strong>Try:</strong> a fixed corpus with many held-out queries; sweep cartridge size and queries per corpus. Compare total preparation plus serving cost with cached full-context and retrieval baselines. Measure rebuild cost after source changes.</p>
+<h3>13. Still — learn the compactor once, apply it to new caches</h3>
+<p><a href="https://arxiv.org/html/2606.07878">Paper, §2.3–2.4</a> · June 2026 preprint. No official implementation/checkpoint was located in this review; treat it as a research/reimplementation candidate, not a verified drop-in baseline.</p>
+<p><strong>Mechanism.</strong> Small per-layer Perceivers transform full KV states into synthesized compact KV states. Train the compactor against a frozen full-context teacher; perform one compactor forward pass per new context. Unlike Cartridges, the optimization is amortized across contexts rather than performed separately for each corpus.</p>
+<p><strong>Evidence.</strong> The matched-training RULER comparison reports 8–22-point gains over KV-Distill in 16 of 18 cells. The paper also evaluates summarization and iterative ingestion; the latter experiments are single-seed, explicitly labeled.</p>
+<p><strong>Sharp takeaway.</strong> Its iterative cache grows as <span class="arithmatex">\(T/c+ct\)</span>, where <span class="arithmatex">\(T\)</span> is ingested length, <span class="arithmatex">\(c\)</span> the local compression ratio, and <span class="arithmatex">\(t\)</span> the compact block length. This is <strong>linear growth at a reduced rate</strong>, not constant-sized infinite memory. Full KV construction is also required before compaction.</p>
+<p><strong>Try:</strong> static and repeated compaction separately. Compare with token selection at matched retained KV bytes and include prefill/compaction time and temporary peak memory.</p>
+<h2 id="outer-loop">Later: memory for the optimizer, not only the task solver</h2>
+
+<p>An inner agent remembers how to solve a task. An outer agent remembers which interventions improved a solver, which failed, and under what evaluation conditions. Their memory tools can be identical; the evidence they should store is not. Treat this as a later experiment after inner-agent notes + grep is established.</p>
+<h3>14. Meta-Harness — search the history of optimization attempts</h3>
+<p><a href="https://arxiv.org/html/2603.28052">Paper, §3; Table 3</a> · <a href="https://github.com/stanford-iris-lab/meta-harness-tbench2-artifact">released TerminalBench artifact</a> · March 2026 · <a href="../tutorials/meta-harness.html">existing tutorial</a>.</p>
+<p><strong>Mechanism.</strong> An outer coding agent navigates directories containing candidate code, scores, and full execution traces, then proposes a new harness. Grep makes a large optimization history selectively readable.</p>
+<p><strong>Evidence.</strong> In the classification interface ablation, median candidate accuracy is 34.6 with code/scores, 34.9 with added summaries, and 50.0 with raw-trace access. These are search-set outcomes, not held-out gains. The inspected public artifact contains the discovered TerminalBench agent, not a complete general-purpose search engine.</p>
+<p><strong>Sharp takeaway.</strong> Optimizer summaries can discard the very evidence needed to diagnose an unsuccessful edit. But this comparison does not prove all compression is harmful: it tests particular summaries and readers. Keeping searchable raw traces is a strong control.</p>
+<p><strong>Try later:</strong> optimizer with no history, score/code history, raw searchable traces, then traces plus distilled lessons. Transfer the <strong>optimizer’s memory</strong> to a new benchmark while resetting the starting inner harness. Otherwise, improved performance may only reflect transfer of the already-optimized harness. The paper’s TerminalBench search/final evaluation uses the same 89 tasks, so it does not supply this held-out transfer test.</p>
+<h3>15. Harness Continual Learning — successful updates can still cause forgetting</h3>
+<p><a href="https://arxiv.org/html/2608.19013">Paper, §3.3; Table 2</a> · August 2026 preprint · <a href="../tutorials/harness-continual-learning.html">existing tutorial</a>. No official implementation was verified in this review.</p>
+<p><strong>Mechanism.</strong> Propose a new harness state, then gate commitment on current improvement, historical retention, and validity. The state includes interface, memory, capabilities, and routing. Prior cases used for the retention gate are separate from final test cases.</p>
+<p><strong>Evidence.</strong> On ALFWorld, the stability-oriented variant has final average 61.74 and forgetting 2.64; the permissive variant has 62.98 and 10.94. These are averages across task categories, with memory baselines reimplemented inside the authors’ framework.</p>
+<p><strong>Sharp takeaway.</strong> Even zero allowed loss on retained anchors does not imply zero loss on held-out old tasks. A gate is a finite regression test, not a proof against forgetting. Repeated selection also makes its evaluation budget part of the method.</p>
+<p><strong>Try later:</strong> the same note/update proposer with and without retention checks. Preserve an untouched final test set and charge for every candidate evaluation. This is a gate ablation, not yet evidence that the outer optimizer’s own policy has learned.</p>
+<h2 id="worked-example">A shared example: what should survive?</h2>
+
+<p>This is an invented example for reasoning about the designs, not a paper result.</p>
+<p>A research agent spends 40 tool calls investigating a result. It learns that a reported “20% improvement” is relative, applies only to a particular subgroup, and uses a changed evaluation script. Tomorrow it must explain another result from the same project. During a later update, that script changes again.</p>
+<pre><code class="language-text">Durable evidence: source versions, passages, scripts, observed outputs
+       │
+       ├─ searchable notes: claim, condition, caveat, exact evidence pointer
+       │       └─ new task → search → verify applicability → read evidence
+       │
+       └─ compact working state: current goal, checked facts, open questions
+               └─ restart → restore state → dereference only what is needed
+</code></pre>
+<p>The raw archive preserves the qualifier, but the reader must locate it. A useful note says <strong>when the claim holds and where it is supported</strong>, not “be careful comparing results.” A reusable lesson says “verify denominator, split, and evaluator version before comparing scores.” Those are different memory objects.</p>
+<p>Lossy compression might retain “20% improvement” while removing the subgroup condition. Pointer-based offloading can recover the passage, but only if the pointer remains discoverable. A learned KV representation might answer the original evaluation question well yet fail an unexpected question about the script version.</p>
+<p>When the script changes, an old successful procedure may become harmful. Preserve provenance and validity scope; do not merely increment its success count forever. The same issue appears in coding as commit/API drift, but it is equally important in research, document QA, and evolving user requirements.</p>
+<h2 id="frontier">What else is worth reading—and why it is not all first-batch work</h2>
+
+<ul>
+<li><strong><a href="https://arxiv.org/abs/2609.11192">FlexComp, September 2026</a>:</strong> particularly relevant for adaptive compression budgets. Train one soft-token compressor with variable slot counts, then choose a budget per input. Different budgets require different encodings—not simply truncating one vector sequence. The reported 98% retention is relative to the <em>mildest compressed setting</em>, not full context. Work in progress; an official release was not located. Read after Cartridges/ICAE, before implementing your own budget selector.</li>
+<li><strong><a href="https://arxiv.org/abs/2607.14327">PReM, July 2026</a>:</strong> learned KV preservation and refresh during generation. Promising for adapting compression to changing evidence needs. Screened at abstract level here; implementation and full experimental controls need further checking before treating it as a reproduction target.</li>
+<li><strong><a href="https://arxiv.org/abs/2609.00865">MemoryWalker, September 2026</a>:</strong> important training-engineering warning. Eviction changes what each generated token was conditioned on; reconstructing a single final transcript can introduce conditioning mismatch or leakage. Read before training any compaction policy; not itself a note-store baseline.</li>
+<li><strong><a href="https://arxiv.org/abs/2607.05378">CompactionRL, July 2026</a></strong> and <strong><a href="https://arxiv.org/abs/2606.28434">SWE-MeM, June 2026</a>:</strong> task-plus-summary RL and credit assignment across compaction boundaries. Good follow-ons when training a tool-use policy. Their coding results motivate experiments, but do not establish cross-task persistence or general document compression.</li>
+<li><strong><a href="https://arxiv.org/abs/2604.20572">ProactAgent, April/June 2026</a>:</strong> pairs continuations with and without retrieval from the same interaction prefix. Useful inspiration for crediting retrieval’s incremental value, rather than rewarding every note in a successful rollout. Public implementation not verified here.</li>
+<li><strong><a href="https://arxiv.org/abs/2607.08716">Proactive Memory Agent, July 2026</a>:</strong> a separate memory agent chooses when to remind an unchanged action agent, including the option to remain silent. Relevant when the problem is using remembered constraints at the right time, not failing to store them.</li>
+<li><strong><a href="https://arxiv.org/abs/2607.28272">MemHarness, July 2026</a>:</strong> reconstruct retrieved experience for the current state rather than replaying it literally. A useful negative-transfer comparator after the basic reader works.</li>
+<li><strong><a href="https://arxiv.org/abs/2601.02553">SimpleMem, January 2026</a></strong> and <strong><a href="https://aclanthology.org/2026.acl-demo.27/">Hindsight, December 2025 / ACL 2026 demo</a>:</strong> useful compact/structured conversational memory controls. Include them for a conversation-history slice; their recall scores are not direct evidence of research-agent learning.</li>
+<li><strong><a href="https://arxiv.org/abs/2609.04915">RSM-full, September 2026</a>:</strong> budgeted merging and context packing. Its RealMem result does not significantly beat BM25-RAG. That is a reason to keep a strong lexical baseline, not to discard the paper. New preprint; not an established general winner.</li>
+<li><strong><a href="https://arxiv.org/abs/2607.27919">Memory Decoder at Scale, July 2026</a>:</strong> trains a separate parametric model to imitate retrieval distributions and mixes its predictions with a frozen backbone. Interesting for domain knowledge, but much heavier than a note manager or context compactor. <a href="../tutorials/memory-decoder.html">Existing tutorial</a>.</li>
+</ul>
+<h2 id="inspiration">Ideas to borrow—not claims that the combinations already work</h2>
+
+<p>The following are research hypotheses suggested by reading the papers together:</p>
+<ol>
+<li><strong>Use summaries as navigation, not the only surviving truth.</strong> Combine the selective access of PRO-LONG/Meta-Harness with Memex-style recovery. A note can compress <em>where to look</em> while the archive preserves <em>what happened</em>. The open question is whether a fresh reader can discover the right pointer when its future question was unknown.</li>
+<li><strong>Let notes change abstraction level over time.</strong> Keep a concrete episode first; extract a conditional lesson after repeated support; promote a validated procedure into a skill. ReasoningBank and PlugMem motivate different stages. The risk is premature generalization: three successes under the same hidden condition do not establish a universal rule.</li>
+<li><strong>Consolidate locally and preserve disagreement.</strong> ACE motivates ID-addressed changes; ShadowFrog motivates offline inspection and consolidation. Instead of repeatedly rewriting one master summary, preserve evidence links and superseded versions. Investigate whether consolidation reduces search cost without silently deleting exceptions.</li>
+<li><strong>Train the reader as well as the writer.</strong> AutoMem and ContextPilot suggest that searching, query reformulation, choosing what to read, and deciding when to recover evidence are learnable skills. A bad retrieval result may reflect a poor query, not an inadequate store. Cross a fixed archive with different readers before attributing gains to memory representation.</li>
+<li><strong>Make compression depend on uncertainty and future use.</strong> MemAgent knows the question; Cartridges amortizes across queries; FlexComp varies the retained budget. A possible hybrid spends more memory on unresolved evidence and less on verified, stable conclusions. Test unexpected future questions: confidence about today’s answer is not coverage of tomorrow’s needs.</li>
+<li><strong>Separate remembering from intervening.</strong> MemRL, ProactAgent, and Proactive Memory Agent ask whether and when retrieved content helps. A stored note need not be injected every time it matches. A useful memory manager may improve the agent by remaining silent.</li>
+<li><strong>Learn from unsuccessful optimization, not just successful artifacts.</strong> Meta-Harness preserves diagnostic history; HCL checks old behavior before accepting updates. An optimizer could remember “this edit failed under this evaluator and budget” without turning it into “never try this edit.” The challenge is crediting a change when several components and task conditions moved together.</li>
+</ol>
+<p>One promising overall hypothesis is <strong>durable evidence + editable abstractions + a small working context</strong>, with independent learning at the read/write boundaries. But it should compete with simpler notes, pure retrieval, and lossy compression—not be assumed correct because it combines more components.</p>
+<h2>Three conclusions worth carrying into the reading group</h2>
+<ol>
+<li><strong>Notes and compression belong together, but at different layers.</strong> Preserve recoverable evidence; learn which small working view supports the next decision. Compare summary-only and archive-backed systems explicitly.</li>
+<li><strong>Write policy, read policy, and representation need separate controls.</strong> ReasoningBank, MemRL, AutoMem, and Cartridges change different things. An end-to-end score alone cannot tell you which component improved.</li>
+<li><strong>Test the boundary the system must survive.</strong> New context, new task, unknown future query, source update, and model upgrade are distinct tests. No single “long-memory” score covers them all.</li>
+</ol>
+<p>Next: the <a href="memory-baseline-experiments.html">concrete baseline and evaluation recipe</a> gives the first batch, a restart protocol, a compression protocol, budget controls, and the failure diagnostics to log.</p>
+<h2>Research and release notes</h2>
+<p>I started from this tracker’s notes on ShadowFrog, PRO-LONG, PlugMem, ReasoningBank, ACE, ContextPilot, Cartridges, and Memory Decoder, then followed primary papers and author repositories. Full method/results sections were checked for the main entries; frontier items explicitly marked “screened” are not full reviews. This is a targeted survey, not an exhaustive systematic review or independent replication.</p>
+<p>Official repositories were checked read-only for concrete files. Examples: ReasoningBank’s <code>third_party/src/minisweagent/memory/</code>; MemRL’s <code>memrl/service/retrievers.py</code>; AutoMem’s <code>scaffolds/</code> and <code>loop2_training_engine/</code>; MemexRL’s <code>src/agents/memory/</code> and <code>training/</code>; MemAgent’s <code>quickstart.py</code> and <code>run_memory_7B.sh</code>; ContextPilot’s <code>infer/</code> and <code>train/</code>. “Code available” means implementation files were found—not that dependencies, checkpoints, and all reported results were reproduced.</p>
+<p>Pin a repository commit before experimenting. Read-only audit snapshots: ShadowFrog <code>6ae4fc8</code>; PRO-LONG <code>9d2f2d4</code>; ReasoningBank <code>ed80611</code>; ACE <code>82709de</code>; MemRL <code>c1b322c</code>; PlugMem <code>3b2ce75</code>; AutoMem <code>1987b8f</code>; MemexRL <code>dbb1f12</code>; MemAgent <code>ef4219b</code>; AgentFold/DeepResearch <code>f72f75d</code>; ContextPilot <code>782cbb6</code>; Cartridges <code>ef34ba9</code>; LLMLingua <code>5a4c78a</code>; Meta-Harness TerminalBench artifact <code>57fefdb</code>; RLM <code>854e688</code>; ICAE <code>469a468</code>.</p></article>
+<footer>Generated 2026-09-15 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
