@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Memory &amp; Continual Learning: Benchmark Review</title>
+<title>Memory Benchmarks: Across Tasks vs Within One Long Task</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,64 +13,71 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory &amp; Continual Learning: Benchmark Review</h1><p class="meta">23 min · 15 papers · 2026-09-15</p><p class="meta">A guided review of 15 papers plus benchmark releases, infrastructure, and a field report. Source cut: 15 September 2026. Recommendations and experimental extensions are my synthesis—not reproduced results.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Benchmarks: Across Tasks vs Within One Long Task</h1><p class="meta">28 min · 15 papers · 2026-09-16</p><p class="meta">Two-setting framing updated 16 September 2026. A guided review of 15 papers plus benchmark releases, infrastructure, and a field report; source cut: 15 September. Recommendations and experimental extensions are my synthesis—not reproduced results.</p>
 
 <p><strong>Companions:</strong> <a href="memory-management.html">memory methods</a> · <a href="memory-baseline-experiments.html">baseline experiments</a>. This page asks a different question: <strong>what evidence would convince us that a memory system is actually useful?</strong></p>
 <h2>The two-minute version</h2>
-<p>Start with <strong>LongMemEval-V2 → STATE-Bench’s Agent Learning Track → CL-Bench</strong>. They form a useful evidence ladder: can the system recover experience, can that experience improve actions on held-out tasks, and can it improve while encountering a stream of tasks? Add <strong>MemoryArena</strong> for dependent sessions and <strong>HELMET + OOLONG</strong> for compression. <strong>SWE-Marathon</strong> is a later, expensive horizon stress test—not the only definition of agent memory.</p>
-<p>The most important distinction is between <strong>remembering an answer</strong>, <strong>using experience</strong>, and <strong>learning online</strong>. A system can be excellent at the first and poor at the others. Equally, a good task solver can hide a bad memory module by re-solving everything.</p>
-<p><strong>Reading routes:</strong> <a href="#map">decision map</a> · <a href="#learning">continual learning</a> · <a href="#experience">notes, search, and resumption</a> · <a href="#compression">compression</a> · <a href="#workflows">non-coding work</a> · <a href="#pointers">Reef and Trajectory</a> · <a href="#protocol">fair experiments</a> · <a href="#readiness">versions and readiness</a>.</p>
+<p>We now have <strong>two independent research settings</strong>, not one ladder of increasingly difficult benchmarks:</p>
+<ol>
+<li><strong>Across tasks within one benchmark:</strong> multiple separately scored short-horizon tasks share a memory store. Start with a <strong>CL-Bench domain stream</strong>, with a declared per-task budget; add <strong>ContinualSkillBench</strong> for skill consolidation. <strong>STATE-Bench’s Learning Track</strong> is the complementary <em>offline, frozen-memory</em> variant—not online learning.</li>
+<li><strong>Within one super-long-horizon task:</strong> one continuing objective spans a long action trajectory, possibly multiple sessions and compactions. <strong>SWE-Marathon</strong> is the main long-task substrate; controlled memory comparisons are our extension. <strong>MemoryArena</strong> is a shorter dependent-session precursor, not evidence of the same horizon.</li>
+</ol>
+<p><strong>A session boundary is not a task boundary.</strong> Start a fresh memory store for each independent stream in Setting 1, and for each independent long-task trial in Setting 2. Do not carry experience between SWE-Marathon tasks and call the resulting score purely within-task memory.</p>
+<p><strong>Shared diagnostics:</strong> use <strong>LongMemEval-V2</strong> for searching experience and <strong>HELMET + OOLONG</strong> for compression. They help explain failures in either setting, but do not replace end-to-end evaluation. Remembering an answer, using evidence in an action, and improving from prior tasks remain different capabilities.</p>
+<p><strong>Reading routes:</strong> <a href="#map">decision map</a> · <a href="#setting-1">Setting 1: across tasks</a> · <a href="#setting-2">Setting 2: one long task</a> · <a href="#lme-v2">archive retrieval</a> · <a href="#compression">compression in both</a> · <a href="#workflows">non-coding work</a> · <a href="#pointers">Reef and Trajectory</a> · <a href="#protocol">two evaluation protocols</a> · <a href="#readiness">versions and readiness</a>.</p>
 <h2 id="map">Choose the claim, then the benchmark</h2>
 
 <table>
 <thead>
 <tr>
-<th>Claim we want evidence for</th>
+<th>Setting or diagnostic</th>
 <th>Strong starting point</th>
 <th>Boundary of the evidence</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Search a large archive of past agent experience</td>
-<td><a href="#lme-v2">LongMemEval-V2</a></td>
-<td>Answers questions; does not execute the next live task</td>
-</tr>
-<tr>
-<td>Turn past experience into better new-task actions</td>
-<td><a href="#state">STATE-Bench Learning Track</a></td>
-<td>Offline extraction and read-only test retrieval, not ongoing online updates</td>
-</tr>
-<tr>
-<td>Improve through sequential feedback</td>
+<td><strong>1 · Online experience across tasks</strong></td>
 <td><a href="#clbench">CL-Bench</a>, <a href="#skills">ContinualSkillBench</a></td>
-<td>Must compare with a matched stateless agent, not just an upward score curve</td>
+<td>One benchmark/domain stream at a time; measure each task's horizon rather than assume every domain is short</td>
 </tr>
 <tr>
-<td>Carry information between dependent sessions</td>
-<td><a href="#arena">MemoryArena</a></td>
-<td>Workflow continuity is not necessarily transfer to independent new tasks</td>
+<td><strong>1 · Offline experience → held-out tasks</strong></td>
+<td><a href="#state">STATE-Bench Learning Track</a></td>
+<td>Training histories become a frozen artifact; read-only test retrieval, not online updates</td>
 </tr>
 <tr>
-<td>Sustain work through a very long task</td>
+<td><strong>2 · One super-long task</strong></td>
 <td><a href="#marathon">SWE-Marathon</a></td>
-<td>Controlled reset/resume is an extension we would add</td>
+<td>Native long tasks; memory arms and checkpoint resets are our additions</td>
 </tr>
 <tr>
-<td>Preserve useful information with less context</td>
+<td><strong>2 · Shorter continuity proxy</strong></td>
+<td><a href="#arena">MemoryArena</a></td>
+<td>Dependent sessions inside one episode; do not equate this with super-long execution</td>
+</tr>
+<tr>
+<td><strong>Shared · Find past evidence</strong></td>
+<td><a href="#lme-v2">LongMemEval-V2</a>, <a href="#workflows">Mem2ActBench</a></td>
+<td>Supplied histories test retrieval/use, not an online stream or full long-task rollout</td>
+</tr>
+<tr>
+<td><strong>Shared · Preserve information under a budget</strong></td>
 <td><a href="#compression">HELMET, OOLONG, MemoryAgentBench</a></td>
-<td>Compression is not automatically continual learning</td>
+<td>Long input and incremental ingestion are not themselves long action horizons</td>
 </tr>
 <tr>
-<td>Use memory for real work beyond coding</td>
+<td><strong>Extensions · Non-coding work</strong></td>
 <td><a href="#workflows">LAB, HANDBOOK.md, τ³-Banking</a></td>
-<td>Native versions generally do not isolate learned persistent memory</td>
+<td>Define a within-benchmark stream or a genuinely long objective; memory protocol is usually an adaptation</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Why use a portfolio?</strong> Recall exposes missing information; action exposes unusable information; a task stream exposes failure to update; compression exposes the quality–resource trade-off. One aggregate leaderboard cannot identify all four failures.</p>
-<h2 id="learning">A. Does experience improve later tasks?</h2>
+<p><strong>Why use a portfolio?</strong> The two settings determine what memory is allowed to cross. Retrieval, action, updating, and compression diagnose what fails <em>inside</em> that setting. Neither cross-benchmark transfer nor outer-harness optimization is required by either primary definition.</p>
+<p><span id="learning"></span></p>
+<h2 id="setting-1">A. Setting 1 — memory across short tasks within one benchmark</h2>
 
+<p>The experimental unit is a stream of separately scored tasks. Carry only declared memory between tasks; reset task-local context and environments as required by the benchmark. Compare the same task sequence with and without prior-task experience. Keep domains and independent streams isolated unless a broader transfer experiment is explicitly declared.</p>
 <h3 id="clbench">1. CL-Bench — the anchor for online learning</h3>
 
 <p><a href="https://arxiv.org/abs/2606.05661">Paper, June 2026</a> · <a href="https://arxiv.org/html/2606.05661v1">Methods</a> · <a href="https://github.com/pgasawa/continual-learning-bench">Code</a>. <strong>Priority: core.</strong></p>
@@ -83,11 +90,13 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <p>Here <span class="arithmatex">\(r_t\)</span> is reward on instance <span class="arithmatex">\(t\)</span>, the bars are averages, and <span class="arithmatex">\(r_{\max}\)</span> is the task’s maximum reward. The second quantity expresses improvement relative to remaining headroom. Report raw reward too: near-ceiling denominators make normalized gains fragile.</p>
 <p><strong>Sharp takeaway.</strong> A rising score is not enough—later instances might simply be easier. A strong absolute score is not enough either—it might come entirely from pretrained ability.</p>
 <p><strong>For notes + grep.</strong> Add an external-file memory adapter. The paper’s notepad baseline carries notes into context; it is not automatically a filesystem-search baseline. Compare with no persistence and full-history ICL. The reported strength of simple ICL makes it an essential control, not a straw man to omit. The repository supplies containerized tasks and system implementations; domain setup still needs validation.</p>
+<p><strong>Setting fit: native across-task learning.</strong> For our short-horizon setting, select a domain and predeclare the per-task action/time budget; report observed lengths. Do not pool six domains into one shared memory or silently truncate official tasks to manufacture a short-horizon score.</p>
 <h3 id="state">2. STATE-Bench Agent Learning Track — experience to held-out action</h3>
 
 <p><a href="https://github.com/microsoft/STATE-Bench">Repository</a> · <a href="https://github.com/microsoft/STATE-Bench/blob/5644b1838d96bc4483da29642d058ecaa6f80f7f/docs/AGENT_LEARNING_TRACK.md">Learning-track protocol</a>. <strong>Priority: core; official release documentation reviewed.</strong></p>
 <p><strong>Walkthrough.</strong> For each of travel, customer support, and shopping, use 100 provided training trajectories to build a memory artifact. Evaluate on 50 held-out tasks per domain. The agent must gather information, follow policy, and take appropriate actions; remembering a fact alone is not the endpoint.</p>
 <p>The learning interface is unusually direct: <code>retrieve_learnings(query, top_k=3)</code> returns relevant strings. The official track fixes five runs, top-three retrieval, and the simulator/judge configuration. Retrieval is read-only during evaluation; offline memory construction is up to the researcher.</p>
+<p><strong>Setting fit: offline Setting 1.</strong> Training-task experience helps other tasks within the benchmark. Freeze memory before held-out evaluation; each test task reads the same artifact rather than learning from preceding test tasks.</p>
 <p><strong>Sharp takeaway.</strong> This isolates “did prior experience help a new task?” more cleanly than appending a memory store to an unrelated leaderboard. It does <strong>not</strong> establish continuous online improvement: test-time memory writes would change the official protocol.</p>
 <p><strong>For notes + grep.</strong> Build query-blind notes from training trajectories, then implement retrieval with lexical search over those files. Compare identical task agents with no retrieval, raw-trajectory search, and distilled-note search. Keep the official hook constraints; free-form shell navigation is a separate variant.</p>
 <p><strong>Caution.</strong> Task completion, five-run reliability, and judged conversational quality answer different questions. The official cost field need not include offline extraction or embedding costs: add those to the research accounting. Synthetic environments and a fixed LLM judge also deserve spot checks before interpreting small gains.</p>
@@ -95,34 +104,41 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 
 <p><a href="https://arxiv.org/abs/2608.03874">Paper, August 2026</a> · <a href="https://github.com/gtynnn060110-hash/continual-skill-bench-final">Code</a>. <strong>Priority: second wave, especially consolidation.</strong></p>
 <p>Five streams—healthcare, law, mathematics, finance, and office—each contain 100 tasks, ordered for increasing difficulty and possible skill reuse. After task feedback, the agent may create or revise skills for later tasks. Evaluation mixes exact, numerical, rubric, and programmatic scoring.</p>
+<p><strong>Setting fit: native Setting 1.</strong> Use separate stores for domain streams and independent trials. Log per-task horizon and retain the benchmark's task boundaries; a long sequence of tasks is not one long task.</p>
 <p><strong>Insight.</strong> Learning a procedure and accumulating task-specific notes are different. Measure skill reuse and the downstream benefit, not the number of files produced. More skills can mean fragmentation rather than better learning.</p>
 <p><strong>Caution.</strong> Sequential execution combines history, feedback, and explicit skills. In the paper’s <strong>three-domain ablation</strong>, ordinary ICL and explicit skill maintenance have similar average normalized reward; this is not a universal five-domain conclusion. Preserve matched independent-task baselines, inspect invalid-output handling, and report domain results separately. The deliberately curated ordering is a useful learning opportunity, but not evidence of robustness to arbitrary deployment order.</p>
-<h2 id="experience">B. Can an agent find and use its past experience?</h2>
+<p><span id="experience"></span></p>
+<h2 id="setting-2">B. Setting 2 — memory within one super-long-horizon task</h2>
 
-<h3 id="lme-v2">4. LongMemEval-V2 — closest to a searchable experience archive</h3>
+<p>The experimental unit is one continuing objective and its terminal evaluation. Sessions, compactions, and subgoals remain inside that unit. Start every independent task/trial with fresh memory; retaining work products inside the task is allowed and must be accounted for. Test complete trajectories, with checkpoint recovery as a diagnostic—not as a substitute for the full task.</p>
+<h3 id="marathon">4. SWE-Marathon — the main long-task substrate</h3>
 
-<p><a href="https://arxiv.org/abs/2605.12493">Paper, May 2026</a> · <a href="https://github.com/xiaowu0162/LongMemEval-V2">Code and release updates</a>. <strong>Priority: core; paper marked work in progress.</strong></p>
+<p><a href="https://arxiv.org/abs/2606.07682">Paper, June 2026</a> · <a href="https://arxiv.org/html/2606.07682v1">Methods and task descriptions</a> · <a href="https://www.swe-marathon.org/">Project/release</a>. <strong>Priority: primary Setting 2 candidate; pilot cost and variance first.</strong></p>
+<p><strong>Walkthrough.</strong> Twenty tasks cover library reproduction, product clones, ML engineering, and optimization. Executable environments and layered verifiers assess the resulting work. The paper uses five trials per agent–model/task combination, with per-task limits of 2–10 hours; four tasks need GPUs.</p>
+<p><strong>Important correction.</strong> The headline 27.2M tokens per attempt is cumulative input plus output accounting, including cached input. It is <strong>not</strong> 27.2M unique facts, nor a 27.2M-token simultaneous context window.</p>
+<p><strong>Sharp takeaway.</strong> A long task can fail because of memory, planning, bad tests, premature stopping, or inability to implement the solution. Low success by itself does not diagnose memory failure.</p>
+<p><strong>Our extension.</strong> Compare the normal context-management policy, summaries, searchable notes, and source-backed notes over complete task rollouts. Also fork an identical checkpoint; preserve its environment/work products, clear conversational context, and resume under each memory condition. Charge both checkpoint construction and recovery; keep final hidden verifiers inaccessible to the writer. Report final success, total cost, and duplicated work after compaction. These are memory/reset experiments <strong>on</strong> SWE-Marathon, not an existing official memory leaderboard. Pin release and harness: twenty task identities make uncertainty important, even with repeated rollouts.</p>
+<p><strong>Do not mix settings.</strong> A new SWE-Marathon task starts with an empty experience store. Carrying notes from earlier benchmark tasks would add Setting 1 and require a separately labeled experiment. Setting 2 can be pursued independently of any cross-task result.</p>
+<h3 id="arena">5. MemoryArena — remembering must change what the agent does</h3>
+
+<p><a href="https://arxiv.org/abs/2602.16313">Paper, February 2026</a> · <a href="https://github.com/ZexueHe/MemoryArena">Code</a>. <strong>Priority: shorter continuity proxy for Setting 2.</strong></p>
+<p><strong>Walkthrough.</strong> Solve interconnected subtasks across sessions in bundled shopping, group travel, progressive information search, and formal reasoning. Earlier actions and observations supply information needed later. Memory is accumulated within the episode instead of treating all questions as independent recall tests.</p>
+<p><strong>Setting fit.</strong> Use the whole dependent episode as the continuing objective, and reset memory between independent episodes. Session-level subtasks do not make this Setting 1 under our definition. It tests continuity, but does not by itself demonstrate super-long-horizon capability.</p>
+<p><strong>Read the score carefully.</strong> Partial success counts passed subtasks. Overall success is domain-dependent: shopping/travel check joint constraints; search/formal reasoning depend on the final subtask. “Success” does not mean the identical all-subtasks-pass rule across every domain.</p>
+<p><strong>Sharp takeaway.</strong> This tests whether memory is usable under action, where a mistaken note can create more mistaken experience. It complements an offline archive benchmark, whose histories are fixed regardless of the candidate memory system.</p>
+<p><strong>For notes + grep.</strong> Use the memory boundary between sessions, with the same solver and tools. Add an oracle-evidence diagnostic: if even correct evidence does not rescue performance, retrieval may not be the bottleneck. Do not mistake a long dependent workflow for broad transfer to unrelated tasks. The public code calls itself a preview and has separate setup guides for each environment; pilot one domain before committing to all four.</p>
+<h3>Shared diagnostic: archive retrieval is neither full setting</h3>
+<h3 id="lme-v2">6. LongMemEval-V2 — closest to a searchable experience archive</h3>
+
+<p><a href="https://arxiv.org/abs/2605.12493">Paper, May 2026</a> · <a href="https://github.com/xiaowu0162/LongMemEval-V2">Code and release updates</a>. <strong>Priority: shared retrieval diagnostic; paper marked work in progress.</strong></p>
 <p><strong>Walkthrough.</strong> Insert histories of web/enterprise agent trajectories into memory. Then ask a question about a local workflow, changing state, interface detail, recurring trap, or mistaken assumption. The memory system gathers evidence, and a fixed reader answers. There are 451 manually curated questions, with histories reaching roughly 500 trajectories and 115M tokens. Histories include screenshots—not just plain text.</p>
 <p><strong>Why it is particularly relevant.</strong> The released baselines include raw retrieval, retrieval plus notes, and <strong>AgentRunbook-C</strong>, which stores trajectories as files and uses a coding agent with manifests and inspection helpers. This gives notes + search a concrete competitor beyond vector retrieval.</p>
 <p><strong>Sharp takeaway.</strong> A memory system is a writer <strong>and</strong> a reader. Better search can rescue an uncompressed archive; clever summaries cannot recover evidence they discarded. Factor the two components rather than attributing every gain to note quality.</p>
 <p><strong>Boundary.</strong> This is evidence-gathering QA, not a closed-loop agent success test. The paper allows up to 200K returned-context tokens, so it is not already a stringent small-memory test. Sweep smaller budgets explicitly and label that extension. Keep the same downstream reader, compare query latency, and charge preprocessing separately. The August AgentRunbook-C update must not be silently equated with the May paper configuration.</p>
-<h3 id="arena">5. MemoryArena — remembering must change what the agent does</h3>
-
-<p><a href="https://arxiv.org/abs/2602.16313">Paper, February 2026</a> · <a href="https://github.com/ZexueHe/MemoryArena">Code</a>. <strong>Priority: core for dependent sessions.</strong></p>
-<p><strong>Walkthrough.</strong> Solve interconnected subtasks across sessions in bundled shopping, group travel, progressive information search, and formal reasoning. Earlier actions and observations supply information needed later. Memory is accumulated within the episode instead of treating all questions as independent recall tests.</p>
-<p><strong>Read the score carefully.</strong> Partial success counts passed subtasks. Overall success is domain-dependent: shopping/travel check joint constraints; search/formal reasoning depend on the final subtask. “Success” does not mean the identical all-subtasks-pass rule across every domain.</p>
-<p><strong>Sharp takeaway.</strong> This tests whether memory is usable under action, where a mistaken note can create more mistaken experience. It complements an offline archive benchmark, whose histories are fixed regardless of the candidate memory system.</p>
-<p><strong>For notes + grep.</strong> Use the memory boundary between sessions, with the same solver and tools. Add an oracle-evidence diagnostic: if even correct evidence does not rescue performance, retrieval may not be the bottleneck. Do not mistake a long dependent workflow for broad transfer to unrelated tasks. The public code calls itself a preview and has separate setup guides for each environment; pilot one domain before committing to all four.</p>
-<h3 id="marathon">6. SWE-Marathon — stress the working state of a long-running agent</h3>
-
-<p><a href="https://arxiv.org/abs/2606.07682">Paper, June 2026</a> · <a href="https://arxiv.org/html/2606.07682v1">Methods and task descriptions</a> · <a href="https://www.swe-marathon.org/">Project/release</a>. <strong>Priority: horizon stress test after cheaper diagnostics.</strong></p>
-<p><strong>Walkthrough.</strong> Twenty tasks cover library reproduction, product clones, ML engineering, and optimization. Executable environments and layered verifiers assess the resulting work. The paper uses five trials per agent–model/task combination, with per-task limits of 2–10 hours; four tasks need GPUs.</p>
-<p><strong>Important correction.</strong> The headline 27.2M tokens per attempt is cumulative input plus output accounting, including cached input. It is <strong>not</strong> 27.2M unique facts, nor a 27.2M-token simultaneous context window.</p>
-<p><strong>Sharp takeaway.</strong> A long task can fail because of memory, planning, bad tests, premature stopping, or inability to implement the solution. Low success by itself does not diagnose memory failure.</p>
-<p><strong>Our extension.</strong> Fork an identical task checkpoint; preserve its environment/work products, clear conversational context, and resume with either no notes, a summary, or searchable notes. Count the cost of reaching the checkpoint as well as recovery. Keep final hidden verifiers inaccessible to the writer. Report end-to-end success and duplicated work after reset. This is a reset experiment <strong>on</strong> SWE-Marathon, not an existing official reset leaderboard. Pin release and harness: twenty task identities also make uncertainty important, even with repeated rollouts.</p>
+<p>Use it to debug archive organization or compression in either setting. Its supplied histories do not establish online learning across short tasks, and their size does not establish a single super-long task.</p>
 <h2 id="compression">C. Compression: what was lost, and did it matter?</h2>
 
-<p>Compression needs a curve, not one ratio: task quality versus retained tokens or KV bytes, plus write/read latency and compute. Distinguish <strong>query-aware compression</strong> (the question is already known) from <strong>query-blind memory</strong> (future questions are unknown). The latter is the relevant default for notes saved for a new task.</p>
+<p>Compression needs a curve, not one ratio: task quality versus retained tokens or KV bytes, plus write/read latency and compute. In <strong>Setting 1</strong>, the next task is normally unknown when notes are written: preserve reusable knowledge without seeing future requests. In <strong>Setting 2</strong>, the current objective is already known, so task-aware compression is legitimate—but future observations and hidden grading data are not available. Long-context suites below isolate information loss; neither long input nor a large corpus proves a long action horizon.</p>
 <h3>7. HELMET — application diversity instead of needle-only confidence</h3>
 <p><a href="https://arxiv.org/abs/2410.02694">Paper, ICLR 2025</a> · <a href="https://github.com/princeton-nlp/HELMET">Code</a>.</p>
 <p>Seven long-context task categories provide configurable lengths and application-oriented evaluations. The paper finds synthetic needle-style performance is a poor proxy for downstream capabilities. Use retrieval, long-document understanding, and summarization tasks to catch different losses.</p>
@@ -149,7 +165,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <p><strong>Useful extension:</strong> cross writer A/B with reader A/B; separately change the embedder; then try repair with and without the raw source. If only the original writer can use its notes, the system has acquired a hidden interface dependency. Keep raw evidence where feasible: store-only rewriting cannot recreate a discarded fact.</p>
 <h2 id="workflows">D. Broader work: research, professional tasks, and enterprise agents</h2>
 
-<p>These are not all native memory benchmarks. They test whether a memory improvement survives contact with useful work. The adaptation must make the opportunity to reuse information explicit, rather than merely adding a notes tool and hoping it matters.</p>
+<p>These are not all native memory benchmarks. They test whether a memory improvement survives contact with useful work. For <strong>Setting 1</strong>, define a sequence of separately scored tasks within the chosen benchmark and an explicit opportunity for reusable experience. For <strong>Setting 2</strong>, select a genuinely extended, single-objective trajectory and report its action/time horizon. A 100M-token corpus or difficult question alone does not establish that horizon. These are adaptations unless stated otherwise.</p>
 <h3 id="lab">13. Harvey Legal Agent Bench — work products, not isolated legal QA</h3>
 
 <p><a href="https://www.harvey.ai/blog/introducing-harveys-legal-agent-benchmark">Original release</a> · <a href="https://github.com/harveyai/harvey-labs">Code, tasks, and evaluation</a>. <strong>Priority: professional-work extension; cost pilot required.</strong></p>
@@ -157,11 +173,13 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <p><strong>Version trap.</strong> The launch described 1,250 tasks. The repository inspected for this review describes 1,671. Trajectory’s report uses a 120-task holdout. These are not interchangeable denominators or directly comparable protocols.</p>
 <p><strong>Memory extension.</strong> Group allowed inputs by matter or organization, construct notes without seeing future requests, and evaluate on held-out matters or requests with the same agent. Prevent source-document or rubric leakage across the split. Generic task improvements do not automatically demonstrate persistent memory.</p>
 <p><strong>Particularly relevant variant: <a href="https://www.harvey.ai/blog/legal-agent-bench-law-firm-knowledge">Law Firm Knowledge</a>.</strong> Its synthetic firm corpus spans 9,288 files and 108M tokens, with 250 tasks. This is a compelling setting for searchable notes, corpus compression, and amortization over many queries. Repeated use of one corpus is still <strong>reuse</strong>, not necessarily learning online. Broad corpus access, parsing, and rubric judging make a full run a potentially substantial project; no all-in cost was reproduced here.</p>
+<p><strong>Placement.</strong> Multiple requests over the same allowed corpus can support a Setting 1 adaptation. Distinguish an artifact built once from documents from memory updated after task experience. The corpus size alone does not make this Setting 2.</p>
 <h3 id="browse">14. BrowseComp-Plus — research with a fixed evidence collection</h3>
 
 <p><a href="https://arxiv.org/abs/2508.06600">Paper</a> · <a href="https://github.com/texttron/BrowseComp-Plus">Code</a>. <strong>Priority: research-agent extension.</strong></p>
 <p>Unlike live-web BrowseComp, this supplies a fixed corpus with human-verified supporting documents and hard negatives. That lets us study retrieval, citation, and context management without changing search-engine results confounding each run.</p>
 <p><strong>Experiment to borrow.</strong> Compare query-time raw search with query-blind precomputed notes and compressed corpus representations. Evaluate answer quality and evidence support, and amortize ingestion over the number of queries actually served. Make clear whether the agent can reopen original documents: recoverable compression and source-free compression are different problems.</p>
+<p><strong>Placement.</strong> Primarily a shared retrieval/compression diagnostic here. Repeated independent research questions can become an adapted Setting 1 stream if task experience is carried forward; answering one long-input question is not automatically a super-long agent trajectory.</p>
 <p><strong>Scaling watchlist:</strong> <a href="https://arxiv.org/abs/2608.20317">BrowseCompPlusCM, August 2026</a>, projects the task into a much larger corpus but retains a smaller fully grounded question set. Interesting for extreme-scale retrieval; not automatically a better first measurement because bigger corpora do not supply more independent questions.</p>
 <h3 id="handbook">15. HANDBOOK.md — when remembered policy becomes dangerous</h3>
 
@@ -205,9 +223,69 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <h2 id="protocol">F. Turn these readings into a fair experiment</h2>
 
 <h3>Start small without narrowing the research question</h3>
-<p>My suggested first portfolio is <strong>LongMemEval-V2 small-tier pilot + STATE-Bench Learning Track pilot + a CL-Bench stream</strong>. It separates evidence retrieval, held-out action, and online adaptation. Add <strong>MemoryArena</strong> when session dependencies matter. Run <strong>HELMET/OOLONG</strong> alongside, not only after coding succeeds, if compression is a main contribution. Promote <strong>SWE-Marathon</strong> after establishing a cheaper signal.</p>
+<p>Run <strong>two independent pilots</strong>:</p>
+<ul>
+<li><strong>Setting 1:</strong> one CL-Bench domain stream with measured per-task horizons; add STATE-Bench for an explicitly offline held-out variant or ContinualSkillBench for consolidation. Do not combine their scores into one learning number.</li>
+<li><strong>Setting 2:</strong> a predeclared SWE-Marathon task subset, with complete rollouts and a few paired checkpoints. MemoryArena can debug continuity more cheaply, but does not replace the long-task endpoint.</li>
+</ul>
+<p>Use <strong>LongMemEval-V2</strong> to diagnose search and <strong>HELMET/OOLONG</strong> to diagnose compression in parallel. Neither primary setting must succeed before the other is worth studying.</p>
 <p>“Pilot” means a predeclared subset for integration, cost, and variance estimates—not a new official benchmark score. There is no verified dollar estimate in this review; measure one before committing to full runs.</p>
-<h3>A clean notes + grep comparison</h3>
+<h3>The boundaries and scores must stay separate</h3>
+<table>
+<thead>
+<tr>
+<th>Protocol choice</th>
+<th>Setting 1: across tasks</th>
+<th>Setting 2: within one task</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New memory store</td>
+<td>Each independent benchmark/domain stream and seed</td>
+<td>Each independent long-task instance/trial</td>
+</tr>
+<tr>
+<td>Write boundary</td>
+<td>After a task, using permitted feedback; no next-task request</td>
+<td>During the current task, before/around compaction or when useful</td>
+</tr>
+<tr>
+<td>What is reset</td>
+<td>Task-local context/environment between tasks; declared memory survives</td>
+<td>Working context may be cleared; same task's allowed work products and memory survive</td>
+</tr>
+<tr>
+<td>Main outcome</td>
+<td>Per-task reward and gain over matched stateless runs, versus cumulative cost</td>
+<td>Final task quality/success and completion cost</td>
+</tr>
+<tr>
+<td>Diagnostic outcome</td>
+<td>Reuse, harmful transfer, update failures, forgetting</td>
+<td>Repeated work, lost constraints, recovery latency, delayed-dependency failures</td>
+</tr>
+<tr>
+<td>Forbidden mixing</td>
+<td>Cross-benchmark experience or hidden future tasks</td>
+<td>Experience imported from other task instances</td>
+</tr>
+</tbody>
+</table>
+<p>For Setting 1, the minimal <strong>online</strong> loop is:</p>
+<pre><code class="language-text">Choose one benchmark stream, order, feedback rules, budgets, and seeds.
+Initialize an empty declared memory store for each method and stream.
+For each separately scored task in that stream:
+    Reset task-local context and environment as the benchmark requires.
+    Solve using only current inputs and allowed prior-task memory.
+    Score the task before writing lessons from its permitted feedback.
+    Update memory without seeing the next task or hidden grading data.
+    Charge solving, note-writing, indexing, retrieval, and maintenance.
+Compare with the matched stateless run on the same task schedule.
+Repeat independent streams; report gains, costs, and uncertainty.
+</code></pre>
+<p><strong>Offline exception:</strong> STATE-Bench builds memory from training histories, freezes it, and uses read-only retrieval on held-out tasks. Do not silently enable the online update step during its test phase.</p>
+<h3>Shared arms, applied independently in each setting</h3>
 <table>
 <thead>
 <tr>
@@ -218,9 +296,9 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 </thead>
 <tbody>
 <tr>
-<td>No persistence</td>
-<td>Nothing beyond allowed task/environment state</td>
-<td>Is past experience needed?</td>
+<td>No explicit memory across the tested boundary</td>
+<td>Only declared task/environment state; no carried notes or archive</td>
+<td>What benefit comes from the explicit memory channel?</td>
 </tr>
 <tr>
 <td>Full history, where feasible</td>
@@ -250,7 +328,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 </tbody>
 </table>
 <p>These are <strong>proposed interventions</strong>, not six official baselines shared by every benchmark. Use each benchmark’s permitted interface. Keep model, tools, inference effort, feedback access, and evaluator fixed; also compare quality–cost frontiers, since equal prompt tokens alone are not equal compute.</p>
-<p>For a reset/resume extension, a minimal loop is:</p>
+<p>For a Setting 2 <strong>checkpoint diagnostic</strong>, a minimal loop is:</p>
 <pre><code class="language-text">Choose tasks, reset points, budgets, and seeds before running.
 Run to a checkpoint using only allowed task-visible information.
 Snapshot environment and work products; protect hidden grading data.
@@ -264,11 +342,11 @@ Keep post-reset work and task verification identical in scope.
 Record task quality, repeated work, reads, latency, tokens, and cost.
 Repeat across tasks and seeds; report paired differences and uncertainty.
 </code></pre>
-<p>This <strong>fixed-checkpoint test</strong> isolates recovery. It cannot measure how a memory system would have changed earlier behavior. Follow it with a <strong>closed-loop test</strong> where each system writes and acts throughout the trajectory. Diverging experiences are then part of the outcome, not a reason to force identical actions.</p>
+<p>This <strong>fixed-checkpoint test</strong> isolates recovery. It cannot measure how a memory system would have changed earlier behavior. Also run a <strong>complete closed-loop task</strong> where each system writes and acts throughout the trajectory, including repeated compactions and delayed dependencies. Diverging experiences are then part of the outcome, not a reason to force identical actions. Compare the normal context-management policy too; forced resets are a stress test, not the definition of Setting 2. Clear all cross-task memory before the next independent task/trial.</p>
 <h3>Six traps worth discussing in reading group</h3>
 <ol>
 <li><strong>What survives the reset?</strong> Repository files, browser state, caches, server-side session IDs, and tool logs can all act as memory. A context reset is not necessarily a memory reset.</li>
-<li><strong>What was the writer allowed to know?</strong> Query-aware compression, query-blind notes, post-task feedback, and access to final rubrics are different information regimes. Hold out future questions and hidden graders.</li>
+<li><strong>What was the writer allowed to know?</strong> In Setting 1, future task requests are hidden; in Setting 2, the current objective is known. Neither grants future observations or hidden graders. Post-task feedback and task-aware compression are different information regimes.</li>
 <li><strong>What is the memory unit?</strong> Disk bytes, prompt tokens, GPU KV bytes, and trained weights are different resources. A tiny prompt backed by an unlimited searchable archive is not source-free compression.</li>
 <li><strong>What did the extra compute buy?</strong> Extra exploration can help before any note is written. Charge write, index, search, maintenance, and training costs; report amortization assumptions rather than hiding them in “offline.”</li>
 <li><strong>What is the independent unit?</strong> Correlated questions, repeated seeds, and tasks from one environment do not provide interchangeable evidence. Use paired comparisons and uncertainty clustered by task/history where appropriate.</li>
@@ -327,10 +405,10 @@ Repeat across tasks and seeds; report paired differences and uncertainty.
 <p>Before accepting a benchmark, verify the complete data/scorer path and license, pin the canonical configuration, run a small cost-and-variance pilot, and inspect whether failures actually involve memory. <strong>Unknown cost is unknown—not zero, and not automatically prohibitive.</strong> Prefer complementary failure modes over collecting many nearly redundant leaderboards.</p>
 <h2>If you remember three things</h2>
 <ol>
-<li><strong>Find experience → use experience → improve with experience</strong> are three separate tests. LongMemEval-V2, STATE-Bench, and CL-Bench make that distinction tangible.</li>
-<li><strong>Compression must preserve what future work needs</strong>, not just what reads like a good summary. Include aggregation, updates, stale-policy traps, and non-coding action.</li>
-<li><strong>A benchmark name is not a protocol.</strong> Versions, information boundaries, reset semantics, costs, and controls determine what a score actually means.</li>
+<li><strong>Across-task learning and within-task continuity need separate evidence.</strong> Start with CL-Bench for the former and SWE-Marathon for the latter; neither is a prerequisite for the other.</li>
+<li><strong>Compression matters in both settings.</strong> Preserve reusable experience for unknown later tasks, or actionable state for the known current objective. Archive QA and long-context suites diagnose losses; they do not prove the full agent claim.</li>
+<li><strong>A benchmark name is not a protocol.</strong> Declare task identity, what survives each boundary, information access, versions, and total costs. Report native evaluations separately from our adaptations.</li>
 </ol></article>
-<footer>Generated 2026-09-16 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-16 18:54 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
