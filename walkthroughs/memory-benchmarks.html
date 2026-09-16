@@ -13,9 +13,9 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Benchmarks: Across Tasks vs Within One Long Task</h1><p class="meta">41 min · 15 papers · 2026-09-16</p><p class="meta">Two-setting framing and concrete task descriptions updated 16 September 2026. A guided review of 15 papers plus benchmark releases, infrastructure, and a field report. Task formats checked against primary sources; prior results/release audit through 15 September. Recommendations and experimental extensions are my synthesis—not reproduced results.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Benchmarks: Across Tasks vs Within One Long Task</h1><p class="meta">45 min · 15 papers · 2026-09-16</p><p class="meta">Two-setting framing and concrete task descriptions updated 16 September 2026. A guided review of 15 papers plus benchmark releases, infrastructure, and a field report. Task formats checked against primary sources; prior results/release audit through 15 September. Recommendations and experimental extensions are my synthesis—not reproduced results.</p>
 
-<p><strong>Companions:</strong> <a href="memory-management.html">memory methods</a> · <a href="memory-baseline-experiments.html">baseline experiments</a>. This page asks a different question: <strong>what evidence would convince us that a memory system is actually useful?</strong></p>
+<p><strong>Companions:</strong> <a href="memory-management.html">memory methods</a> · <a href="memory-baseline-experiments.html">baseline experiments</a> · <a href="../qa/memory-benchmarks.html">Q&amp;A notes</a>. This page asks a different question: <strong>what evidence would convince us that a memory system is actually useful?</strong></p>
 <h2>The two-minute version</h2>
 <p>We now have <strong>two independent research settings</strong>, not one ladder of increasingly difficult benchmarks:</p>
 <ol>
@@ -74,6 +74,15 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </tbody>
 </table>
 <p><strong>Why use a portfolio?</strong> The two settings determine what memory is allowed to cross. Retrieval, action, updating, and compression diagnose what fails <em>inside</em> that setting. Neither cross-benchmark transfer nor outer-harness optimization is required by either primary definition.</p>
+<h3>What does “related tasks” mean here?</h3>
+<p>Read each entry with four questions in mind: <strong>What is shared? What changes? What resets? Does the agent's earlier action change the later problem?</strong> There are several different answers:</p>
+<ul>
+<li><strong>Reusable knowledge:</strong> new requests benefit from a familiar schema, codebase, or procedure. The previous answer need not become an input to the next task.</li>
+<li><strong>Accumulating evidence:</strong> successive observations reveal different parts of one hidden world. Memory must combine evidence, not just retain a better problem-solving recipe.</li>
+<li><strong>Continuing work:</strong> earlier edits, purchases, or decisions become the state from which later steps proceed. This is the dependency inside our Setting 2.</li>
+<li><strong>Shared source only:</strong> separately scored questions consult a fixed archive or corpus. Repeated source access alone is not learning from the agent's task experience.</li>
+</ul>
+<p><strong>“Separately scored” does not mean iid; “related” does not mean a chain of actions.</strong> Where a source does not establish a sampling model, this walkthrough describes the concrete relationship instead of claiming statistical independence. The <a href="#clbench-relationships">six CL-Bench streams below</a> illustrate why this matters.</p>
 <p><span id="learning"></span></p>
 <h2 id="setting-1">A. Setting 1 — memory across short tasks within one benchmark</h2>
 
@@ -85,13 +94,61 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <ul>
 <li><strong>Codebase adaptation:</strong> receive a bug report and a repository at its starting commit; inspect/edit code through the shell and submit a patch. Hidden regression tests determine correctness; solving with fewer steps earns more reward.</li>
 <li><strong>Database exploration:</strong> receive a natural-language question about an unfamiliar SQLite database; discover its schema, run SQL, and submit an answer. Reward requires correctness and favors fewer exploratory queries. A midstream migration invalidates some schema knowledge.</li>
-<li><strong>Cohort studies:</strong> receive patient data and coding notes from successive studies of a fictional disease; use analysis tools to submit survival probabilities for 36 cohorts at three time points. Predictions are scored against population truth, relative to a study-average baseline. <strong>Scores are not revealed between instances.</strong></li>
-<li><strong>Spectrum monitoring:</strong> receive a radio-frequency scan; report occupied frequency intervals, retaining evidence of transmitters that are temporarily silent. Scoring uses overlap between predicted and true occupied spectrum.</li>
+<li><strong>Cohort studies:</strong> receive patient data and coding notes from successive studies of a fictional disease; use analysis tools to submit survival probabilities for 36 cohorts at three time points. Predictions are scored against population truth, relative to a study-average baseline. <strong>Population-level evaluation scores are not revealed between instances</strong>; in-tool fit feedback on the current biased sample is different.</li>
+<li><strong>Spectrum monitoring:</strong> receive a radio-frequency scan; report occupied frequency intervals, retaining evidence of transmitters that are temporarily silent. Reward measures channel-map overlap; see the paper/code scoring distinction below.</li>
 <li><strong>Poker:</strong> play a complete heads-up hand through betting actions against an opponent with a recurring strategy. Stacks reset each hand; reward is chip profit measured in big blinds.</li>
 <li><strong>Sales prediction:</strong> receive one store's recent sales and a product catalog; analyze them and submit a five-year demand forecast covering 75 product/location/year cells. Scoring penalizes forecast error; the workspace can retain analysis code and models.</li>
 </ul>
 <p>These are paraphrases of the <a href="https://arxiv.org/html/2606.05661v1#A1">official task specifications and scoring rules</a>.</p>
 <p><strong>What crosses the boundary?</strong> Schema/encoding discoveries, debugging procedures, opponent models, or accumulated statistical evidence—not answers to identical repeated questions. <strong>Terminology warning:</strong> the paper calls the whole sequence a <em>task</em> and each scored problem an <em>instance</em>. Our Setting 1's “short tasks” correspond to those instances.</p>
+<h4 id="clbench-relationships">How exactly are successive CL-Bench instances related?</h4>
+
+<p>The default streams have different dependencies. <strong>They are not six versions of “solve unrelated questions one by one.”</strong></p>
+<table>
+<thead>
+<tr>
+<th>Stream</th>
+<th>What connects successive instances?</th>
+<th>What changes or resets?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Codebase adaptation</strong></td>
+<td>Learn repository structure, conventions, and debugging routines across bugs in the same project.</td>
+<td>Default: 9 <code>tablib</code> issues, then 10 <code>tenacity</code>. Each issue starts in a fresh container at its own base commit; <strong>your previous patch does not carry over</strong>. The curated issues come from chronological windows, not an iid randomized sample.</td>
+</tr>
+<tr>
+<td><strong>Database exploration</strong></td>
+<td>Forty questions reuse discoveries about one database's hidden schema and encodings—for example, which category stores prices in cents.</td>
+<td>After question 20, a scheduled migration changes schema/data. Queries are read-only: <strong>your previous answer does not alter the next database</strong>. Old schema notes can become wrong.</td>
+</tr>
+<tr>
+<td><strong><a href="https://github.com/pgasawa/continual-learning-bench/blob/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks/cohort_studies/README.md">Cohort studies</a></strong></td>
+<td>Successive studies provide different, biased views of one stable disease population. Earlier evidence helps estimate cohorts poorly represented in the current study.</td>
+<td>Five study blocks, 20 scored instances: measured variables and coding differ. <strong>Predictions do not change later patient data</strong>, and population-level evaluation scores are not given between instances. This is evidence accumulation, not correction from population-level labels.</td>
+</tr>
+<tr>
+<td><strong><a href="https://github.com/pgasawa/continual-learning-bench/blob/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks/blind_spectrum_monitoring/README.md">Spectrum monitoring</a></strong></td>
+<td>Ninety scans reveal parts of one persistent transmitter map. A transmitter seen earlier can remain relevant while silent now.</td>
+<td>Which transmitters are visible changes; the target transmitter set remains fixed. <strong>Reporting a channel map does not change future transmissions.</strong> The challenge is remembering incomplete observations, not adapting to a newly created world.</td>
+</tr>
+<tr>
+<td><strong><a href="https://github.com/pgasawa/continual-learning-bench/blob/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks/exploitable_poker/README.md">Poker</a></strong></td>
+<td>Repeated hands reveal an opponent's policy; previously encountered strategies return, making retained opponent models useful.</td>
+<td>Over 120 hands, opponent policies switch on a preset schedule. Cards, pot, and stacks reset between hands; <strong>previous winnings do not become the next hand's bankroll</strong>. Betting changes the current hand, not the opponent-policy schedule.</td>
+</tr>
+<tr>
+<td><strong><a href="https://github.com/pgasawa/continual-learning-bench/blob/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks/sales_prediction/README.md">Sales prediction</a></strong></td>
+<td>Twelve rounds expose partial sales data generated by stable demand relationships; observations across stores/years help fit a better forecast model.</td>
+<td>Visible store, schema, and distractors change. Forecasts do not determine later sales. <strong>Workspace files/code/models can persist</strong>, so this is not naturally a notes-only comparison.</td>
+</tr>
+</tbody>
+</table>
+<p>Sources: <a href="https://arxiv.org/html/2606.05661v1#A1">paper Appendix A</a> and <a href="https://github.com/pgasawa/continual-learning-bench/tree/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks">pinned task implementations</a>. Counts describe default schedules, not every possible variant.</p>
+<p><strong>The key distinction:</strong> database migration and opponent-policy switches change the environment's rules. In spectrum, cohort, and sales, much of the change is in <strong>what the agent can observe about stable underlying structure</strong>. Forgetting old evidence can therefore hurt even when the current observation is accurate.</p>
+<p><strong>Implication for our memory experiments (our interpretation):</strong> codebase/database streams emphasize searchable environment knowledge; poker emphasizes recognizing and recalling an opponent model; spectrum/cohort/sales also demand retained evidence or statistical summaries. A method that stores only reusable “tips” could miss the last group's main learning opportunity. All remain Setting 1 under our definition because each instance has its own prediction/action score—not because their instances are unrelated.</p>
+<p><strong>Two implementation details to preserve:</strong> sales feedback exposes only the elapsed forecast year, not all five future years. Spectrum's paper describes occupied-spectrum IoU, but the <a href="https://github.com/pgasawa/continual-learning-bench/blob/5f8c50eb1e84b2eda2ef4faff757dfc812a0ea26/src/tasks/blind_spectrum_monitoring/task.py#L138-L177">pinned scorer</a> complements occupied intervals and scores available-spectrum IoU. Pin the evaluator before comparing results.</p>
 <p><strong>What to measure.</strong> The paper compares a stateful system with the same system run statelessly on matched instances. In its notation:</p>
 <div class="arithmatex">\[
 g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
@@ -179,7 +236,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <p><strong>Why it is particularly relevant.</strong> The released baselines include raw retrieval, retrieval plus notes, and <strong>AgentRunbook-C</strong>, which stores trajectories as files and uses a coding agent with manifests and inspection helpers. This gives notes + search a concrete competitor beyond vector retrieval.</p>
 <p><strong>Sharp takeaway.</strong> A memory system is a writer <strong>and</strong> a reader. Better search can rescue an uncompressed archive; clever summaries cannot recover evidence they discarded. Factor the two components rather than attributing every gain to note quality.</p>
 <p><strong>Boundary.</strong> This is evidence-gathering QA, not a closed-loop agent success test. The paper allows up to 200K returned-context tokens, so it is not already a stringent small-memory test. Sweep smaller budgets explicitly and label that extension. Keep the same downstream reader, compare query latency, and charge preprocessing separately. The August AgentRunbook-C update must not be silently equated with the May paper configuration.</p>
-<p>Use it to debug archive organization or compression in either setting. Its supplied histories do not establish online learning across short tasks, and their size does not establish a single super-long task.</p>
+<p><strong>Relationship between instances:</strong> questions probe supplied archives of earlier website runs. Answering a question neither resumes those runs nor generates experience required for the next question. Use it to debug archive organization or compression in either setting; archive size alone does not establish a super-long task.</p>
 <h2 id="compression">C. Compression: what was lost, and did it matter?</h2>
 
 <p>Compression needs a curve, not one ratio: task quality versus retained tokens or KV bytes, plus write/read latency and compute. In <strong>Setting 1</strong>, the next task is normally unknown when notes are written: preserve reusable knowledge without seeing future requests. In <strong>Setting 2</strong>, the current objective is already known, so task-aware compression is legitimate—but future observations and hidden grading data are not available. Long-context suites below isolate information loss; neither long input nor a large corpus proves a long action horizon.</p>
@@ -203,7 +260,8 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <p><a href="https://arxiv.org/abs/2507.05257">Paper, ICLR 2026</a> · <a href="https://github.com/HUST-AI-HYZ/MemoryAgentBench">Code</a>.</p>
 <p><strong>The task, concretely:</strong> feed a long source to a memory system <strong>one chunk at a time</strong>, then ask questions that require the accumulated information. The source is supplied; the agent does not create it by acting in a live environment.</p>
 <p><strong>What the questions ask:</strong> retrieve facts from documents/conversations; infer classification labels from examples; recommend movies; understand a novel; or answer using the latest facts after earlier facts have been superseded. An actual released document-QA example asks whether Scott Derrickson and Ed Wood share a nationality. A consolidation task instead makes remembering the old answer insufficient: later updates must change the answer. <a href="https://huggingface.co/datasets/ai-hyz/MemoryAgentBench">Released data example</a>.</p>
-<p><strong>Scoring:</strong> varies by subset—answer matching, classification accuracy, recommendation Recall@5, or model-based grading. The output contract matters: classification parsing can reject extra prose around an otherwise correct label. Memory crosses source chunks and subsequent questions, not independent live agent tasks. <a href="https://github.com/HUST-AI-HYZ/MemoryAgentBench#-clarification-on-evaluation-metrics">Official metric mapping</a>.</p>
+<p><strong>Scoring:</strong> varies by subset—answer matching, classification accuracy, recommendation Recall@5, or model-based grading. The output contract matters: classification parsing can reject extra prose around an otherwise correct label. <a href="https://github.com/HUST-AI-HYZ/MemoryAgentBench#-clarification-on-evaluation-metrics">Official metric mapping</a>.</p>
+<p><strong>Relationship between instances:</strong> successive chunks build knowledge from a supplied source, including updates or labeled examples. Questions test that accumulated knowledge, not lessons from previously completed live agent tasks. Later source chunks are not consequences of the agent's earlier answers.</p>
 <p><strong>Caution.</strong> Processing a history incrementally is not the same as an agent generating that history through actions. Report the four competency families separately; a compressor that remembers old facts but cannot supersede them may look good in an average while being unsuitable for deployment.</p>
 <h3>10. LongMemEval V1 — a strong conversational control, not the whole story</h3>
 <p><a href="https://arxiv.org/abs/2410.10813">Paper, ICLR 2025</a> · <a href="https://github.com/xiaowu0162/LongMemEval">Code and data revisions</a>.</p>
@@ -236,7 +294,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <li><strong>Actual example, paraphrased:</strong> review eight contracts for change-of-control risks in the fictional acquisition of Crestview Software Solutions. Write a memorandum identifying contract-specific risks, financial exposure, and mitigations—not just a list of retrieved clauses.</li>
 <li><strong>Scoring:</strong> that example has 57 binary rubric criteria covering nine planted issues. <strong>All-pass</strong> requires every criterion; criterion-level scores show partial progress. <a href="https://www.harvey.ai/blog/introducing-harveys-legal-agent-benchmark">Official example and grading</a> · <a href="https://github.com/harveyai/harvey-labs/blob/main/docs/tutorial.md">Agent tool interface</a>.</li>
 </ul>
-<p>Memory for the native task is its matter material and ongoing analysis. Carrying lessons between independently graded matters would be our extension.</p>
+<p><strong>Relationship between instances:</strong> base LAB scores separate assignments over supplied matter files; the Law Firm Knowledge variant below shares one firm corpus across requests. Neither natively makes the agent's answer to one request a prerequisite for the next. Carrying lessons between assignments would be our extension.</p>
 <p><strong>Version trap.</strong> The launch described 1,250 tasks. The repository inspected for this review describes 1,671. Trajectory’s report uses a 120-task holdout. These are not interchangeable denominators or directly comparable protocols.</p>
 <p><strong>Memory extension.</strong> Group allowed inputs by matter or organization, construct notes without seeing future requests, and evaluate on held-out matters or requests with the same agent. Prevent source-document or rubric leakage across the split. Generic task improvements do not automatically demonstrate persistent memory.</p>
 <p><strong>Particularly relevant variant: <a href="https://www.harvey.ai/blog/legal-agent-bench-law-firm-knowledge">Law Firm Knowledge</a>.</strong> Its synthetic firm corpus spans 9,288 files and 108M tokens, with 250 tasks. This is a compelling setting for searchable notes, corpus compression, and amortization over many queries. Repeated use of one corpus is still <strong>reuse</strong>, not necessarily learning online. Broad corpus access, parsing, and rubric judging make a full run a potentially substantial project; no all-in cost was reproduced here.</p>
@@ -250,11 +308,12 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <li><strong>Given:</strong> a difficult factual question and a fixed corpus of 100,195 documents, including verified evidence and hard distractors.</li>
 <li><strong>Do:</strong> issue repeated searches, combine the evidence, and resolve the requested entity or fact. The main paper setup returns five truncated documents per search; full-document fetching is a separate configuration.</li>
 <li><strong>Produce:</strong> an answer with citations and a confidence estimate. The paper gives an illustrative case where a page lists seven publications but never explicitly states the count: retrieval must be followed by reasoning over the evidence.</li>
-<li><strong>Scoring:</strong> answer correctness is judged separately from evidence recall, search cost, and calibration. Native questions are independent; the search index is source access, not experience learned from earlier answers. <a href="https://arxiv.org/html/2508.06600">Task and search setup, §3–4</a>.</li>
+<li><strong>Scoring:</strong> answer correctness is judged separately from evidence recall, search cost, and calibration. <a href="https://arxiv.org/html/2508.06600">Task and search setup, §3–4</a>.</li>
 </ul>
+<p><strong>Relationship between instances:</strong> questions are separately scored against the same searchable corpus and may share source material, but earlier answers are not required inputs to later questions. The index is shared source access, not experience learned from the agent's earlier answers.</p>
 <p><strong>Version detail:</strong> the paper's answer judge is GPT-4.1; the current repository documents a Qwen3-32B default. Pin the evaluator rather than treating those runs as identical. <a href="https://github.com/texttron/BrowseComp-Plus#-evaluation">Released evaluation instructions</a>.</p>
 <p><strong>Experiment to borrow.</strong> Compare query-time raw search with query-blind precomputed notes and compressed corpus representations. Evaluate answer quality and evidence support, and amortize ingestion over the number of queries actually served. Make clear whether the agent can reopen original documents: recoverable compression and source-free compression are different problems.</p>
-<p><strong>Placement.</strong> Primarily a shared retrieval/compression diagnostic here. Repeated independent research questions can become an adapted Setting 1 stream if task experience is carried forward; answering one long-input question is not automatically a super-long agent trajectory.</p>
+<p><strong>Placement.</strong> Primarily a shared retrieval/compression diagnostic here. Separately scored research questions can become an adapted Setting 1 stream if task experience is carried forward; answering one long-input question is not automatically a super-long agent trajectory.</p>
 <p><strong>Scaling watchlist:</strong> <a href="https://arxiv.org/abs/2608.20317">BrowseCompPlusCM, August 2026</a>, projects the task into a much larger corpus but retains a smaller fully grounded question set. Interesting for extreme-scale retrieval; not automatically a better first measurement because bigger corpora do not supply more independent questions.</p>
 <h3 id="handbook">15. HANDBOOK.md — when remembered policy becomes dangerous</h3>
 
@@ -267,6 +326,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <li><strong>Scoring:</strong> deterministic Python checks inspect both files and service state, including forbidden side effects; strict success requires every criterion. Task-specific handbooks change rules/thresholds, so yesterday's remembered rule may be wrong today. <a href="https://surgehq.ai/benchmarks/handbook">Example and rubrics</a> · <a href="https://arxiv.org/html/2607.25398">Task construction and verification</a>.</li>
 </ul>
 <p><strong>Sharp takeaway.</strong> A good procedural memory says <em>where and how to check the current policy</em>, not merely <em>what the old policy said</em>. This is a strong stress test for overgeneralized notes and lossy policy summaries.</p>
+<p><strong>Relationship between instances:</strong> tasks reuse handbook templates and service interfaces, but each starts in its own environment with deliberately altered policy details. They are not successive stages of one company's accumulating workflow.</p>
 <p>Use the current handbook as authoritative, retain source/version pointers in notes, and measure harmful stale-rule reuse as well as success. The release includes containerized tasks and a Harbor/OpenHands-based harness. Cross-task persistence is an experimental extension, and the changed policies mean naïvely sharing notes can legitimately make performance worse.</p>
 <h3 id="tau">16. τ³-Banking — retrieval followed by policy-compliant action</h3>
 
@@ -278,19 +338,21 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <li><strong>Official example, paraphrased:</strong> a customer with a lost wallet asks to freeze a card, but the relevant policy and transaction history require cancellation instead. The agent must determine and carry out the correct operation, not simply echo the requested one.</li>
 <li><strong>Scoring:</strong> the task's declared reward components check database outcomes and required communication; some tasks also require particular actions. A correct policy explanation alone need not pass. <a href="https://arxiv.org/html/2603.04370">Example and task model</a> · <a href="https://github.com/sierra-research/tau2-bench/blob/main/docs/evaluation.md">Exact reward semantics</a>.</li>
 </ul>
-<p>Memory is used inside one customer episode in the native protocol. Pin the agent, user simulator, retriever, and tools: improving document access and improving dialogue policy are different interventions.</p>
+<p><strong>Relationship between instances:</strong> customer episodes share banking documents and tool interfaces but use task-specific initial states. Turns within an episode depend on earlier turns; the native evaluation does not carry one episode's actions or learned notes into the next. Pin the agent, user simulator, retriever, and tools: improving document access and improving dialogue policy are different interventions.</p>
 <p><strong>Version trap.</strong> The official v1.0.1 update corrected banking tasks and changed grades; earlier scores are not directly comparable. Also distinguish one-run success from reliability across repeated runs. It is not a native cross-task learning stream: treat persistent notes across customers as a separate, privacy-scoped extension, and never let one customer’s private facts become another customer’s memory.</p>
 <h3>17. EnterpriseOps-Gym — remember workflow structure, verify final state</h3>
 <p><a href="https://arxiv.org/abs/2603.13594">Paper, March 2026</a> · <a href="https://github.com/ServiceNow/EnterpriseOps-Gym">Code</a>.</p>
 <p><strong>The task, concretely:</strong> the agent receives a work request, operational policies, a seeded enterprise database, and domain tools. It must look up records, resolve identifiers and dependencies, and make the required API changes. The suite covers eight domains, including email, calendars, and service management.</p>
 <p><strong>Official example, paraphrased:</strong> locate a customer case and a relevant knowledge-base article, link them with the correct status, and notify the customer. An automatically discovered article must be marked <code>suggested</code>; finding the correct email address requires further lookups. The deliverable is the case/article link and notification state—not a paragraph claiming the work is done.</p>
-<p><strong>Scoring:</strong> handwritten SQL verifiers inspect completion, policy compliance, state integrity, and unwanted side effects. Different valid action sequences can pass. Each task starts from its specified environment snapshot; retaining workflow/schema notes across tasks is an added experiment. <a href="https://arxiv.org/html/2603.13594">Example, Figure 2, and verifier design</a>.</p>
+<p><strong>Scoring:</strong> handwritten SQL verifiers inspect completion, policy compliance, state integrity, and unwanted side effects. Different valid action sequences can pass. <a href="https://arxiv.org/html/2603.13594">Example, Figure 2, and verifier design</a>.</p>
+<p><strong>Relationship between instances:</strong> tasks share domain tools and schemas, but each starts from its specified database snapshot. Later tasks do not inherit the previous task's database changes; retaining workflow/schema notes across tasks is an added experiment.</p>
 <p><strong>Useful distinction.</strong> The environment is stateful; that does not mean the agent is learning across tasks. Add memory as a controlled intervention with separately reset environments. Reusable schema/tool knowledge is promising; stale record IDs are not. Pin available split, database snapshots, tool-discovery mode, and image digests. The paper’s full task collection and the publicly runnable subset must not be silently treated as the same evaluation.</p>
 <h3>18. LABBench2 — a scientific-research generalization check</h3>
 <p><a href="https://arxiv.org/abs/2604.09554">Paper, April 2026</a> · <a href="https://github.com/EdisonScientific/labbench2">Code</a>.</p>
 <p><strong>The task, concretely:</strong> this is a collection of scientific question/artifact tasks, not one ongoing laboratory project. Depending on the subset, the input is a question plus a figure, a paper, sequence data, files, or a reference that must be retrieved. The declared runner determines search/code tools and whether sources arrive as files, injected text, or retrieved evidence.</p>
 <p><strong>Official task template:</strong> SourceQualQA gives a study DOI and a causal research question; explain the specific reason an expert panel excluded that study from the evidence base. Other families ask for figure/table answers, sequence designs, or a complete cloning protocol in a machine-parseable language. Listing relevant papers is not enough when the requested output is an exclusion rationale or functional design.</p>
 <p><strong>Scoring:</strong> most open responses use model-based judges; sequence/cloning tasks use dedicated functional validators. There is no universal answer metric. Released instances require accepting dataset access conditions, so this review describes documented task templates rather than claiming to inspect gated rows. <a href="https://arxiv.org/html/2604.09554">Task definitions</a> · <a href="https://github.com/EdisonScientific/labbench2/blob/main/evals/evaluators.py">Grader routing</a>.</p>
+<p><strong>Relationship between instances:</strong> these are separately evaluated scientific subtasks, not stages whose outputs feed a continuing research project. Some image/PDF/retrieval variants test the same underlying figure or table question, so different input formats need not mean different scientific problems.</p>
 <p><strong>Use it for:</strong> testing whether corpus notes or compression help scientific evidence handling beyond software. <strong>Watch:</strong> multimodal assets, gated data access, and runner-dependent filesystem support. Run the text-oriented families first if implementation simplicity matters, while labeling the subset honestly. The native benchmark does not itself establish cross-task continual learning. Do not confuse <strong>LABBench2</strong> with Harvey’s <strong>Legal Agent Bench</strong>.</p>
 <h3>19. Mem2ActBench — the small bridge from recall to action</h3>
 <p><a href="https://aclanthology.org/2026.acl-long.370/">Paper, ACL 2026</a> · <a href="https://github.com/Cantaloupe-M/Mem2ActBench">Code</a>.</p>
@@ -301,7 +363,7 @@ g_t = r_t^{\mathrm{sf}} - r_t^{\mathrm{sl}}, \qquad
 <li><strong>Official illustrative example:</strong> an earlier interaction establishes a $500 flight budget; a later request refers back to it. The call must use the remembered value, such as <code>price=500</code>, rather than ask the user to repeat it or invent another budget.</li>
 <li><strong>Scoring:</strong> 400 tasks, with parameter F1, BLEU-1, and the authors' Tool Accuracy metric. The output is a generated call—not a verified completed booking in a live environment. <a href="https://arxiv.org/html/2601.19935">Task definition, examples, and metrics</a>.</li>
 </ul>
-<p>Histories are supplied rather than generated by the evaluated agent online. Treat Tool Accuracy as a call-level metric, not end-to-end action success; its interpretation should be checked against the pinned evaluator alongside parameter F1.</p>
+<p><strong>Relationship between instances:</strong> each request uses supplied historical conversations and recorded tool interactions. It does not depend on tool calls generated by the evaluated agent for earlier benchmark requests. Treat Tool Accuracy as a call-level metric, not end-to-end action success; check the pinned evaluator alongside parameter F1.</p>
 <p><strong>Why keep it:</strong> “Can state be recalled?” and “Does the correct value reach the tool argument?” are different tests. This is a focused probe of that gap, with less scope than a full enterprise environment. It is not a substitute for an online, self-generated multi-session trajectory, and synthetic consistency may underrepresent messy real histories.</p>
 <h2 id="pointers">E. Your other pointers: useful, but different kinds of evidence</h2>
 
@@ -509,6 +571,6 @@ Repeat across tasks and seeds; report paired differences and uncertainty.
 <li><strong>Compression matters in both settings.</strong> Preserve reusable experience for unknown later tasks, or actionable state for the known current objective. Archive QA and long-context suites diagnose losses; they do not prove the full agent claim.</li>
 <li><strong>A benchmark name is not a protocol.</strong> Declare task identity, what survives each boundary, information access, versions, and total costs. Report native evaluations separately from our adaptations.</li>
 </ol></article>
-<footer>Generated 2026-09-16 20:10 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-16 21:49 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

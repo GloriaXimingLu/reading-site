@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A: Memory Benchmarks — How Tasks Are Related</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Q&amp;A: Memory Benchmarks — How Tasks Are Related</h1><p><a href="../walkthroughs/memory-benchmarks.html#clbench-relationships">Back to the benchmark walkthrough</a>.</p>
+<h2>Session 2026-09-16</h2>
+<p><strong>Q: Are CL-Bench Codebase Adaptation questions iid, or related?</strong></p>
+<p><strong>A:</strong> They share repository knowledge, not an accumulating sequence of the agent's patches. The default stream has nine <code>tablib</code> issues followed by ten <code>tenacity</code> issues, selected from chronological windows. Each issue starts in a fresh container at its own base commit. Remembered architecture, conventions, and debugging procedures can help; the agent's previous patch is not carried into the next issue. This is not an iid-randomized task stream, although shared repository context alone would not mathematically disprove conditional independence. Correctness plus step efficiency is rewarded, so less repeated exploration can help even without solving more bugs. <a href="https://arxiv.org/html/2606.05661v1#A1.SS2">Specification</a>.</p>
+<p><strong>Q: What connects instances in the other CL-Bench domains?</strong></p>
+<p><strong>A:</strong> Database questions reuse schema knowledge, with a scheduled migration that makes some notes stale. Poker hands reveal recurring opponent strategies, but stacks reset each hand. Spectrum scans accumulate evidence about a fixed transmitter set. Cohort studies reveal different biased views of a stable population. Sales rounds expose partial data from stable demand relationships, while files and fitted models may persist. The latter three emphasize combining observations, not merely learning a better procedure. Earlier predictions do not themselves change the later ground-truth data. <a href="https://arxiv.org/html/2606.05661v1#A1">Task specifications</a>.</p>
+<p><strong>Q: Does “related” make these one long task, rather than our across-task setting?</strong></p>
+<p><strong>A:</strong> Not under our definitions. CL-Bench instances are separately scored prediction/action problems in a stream: Setting 1. SWE-Marathon instead continues one implementation toward a terminal deliverable: Setting 2. The important distinction is the evaluation unit and continuing objective, not whether history matters. A third case—separate questions over a fixed supplied archive—tests evidence access without natively testing online learning. The walkthrough now distinguishes shared knowledge, accumulated observations, continuing work, and shared-source QA explicitly.</p></article>
+<footer>Generated 2026-09-16 21:49 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
