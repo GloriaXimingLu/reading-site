@@ -226,6 +226,7 @@ Correct evidence available but answer still wrong? → reasoning failure
 </code></pre>
 <p>Diagnose these with controlled interventions: inspect the allowed source, search the complete store, or provide the correct evidence to the reader. Label such oracle-assisted tests <strong>diagnostics</strong> and keep them out of the main leaderboard. Latent memories need intervention-based probes; failure to regenerate exact text alone does not prove the relevant information is absent.</p>
 <h2>Benchmark shortlist and critical checks</h2>
+<p>For the expanded survey, see the <a href="memory-benchmarks.html">benchmark review</a>: it adds LongMemEval-V2, STATE-Bench’s Agent Learning Track, MemoryArena, compression suites, and non-coding professional/scientific workflows, while distinguishing official protocols from proposed extensions.</p>
 <ul>
 <li><strong><a href="https://arxiv.org/abs/2606.05661">Continual Learning Bench, June 2026</a>:</strong> six domains with shared latent structure and drift. Especially useful for learning beyond coding. Its results make naive ICL a necessary strong control; dedicated memory does not automatically win. Match each method to its own stateless baseline.</li>
 <li><strong><a href="https://arxiv.org/abs/2608.03874">ContinualSkillBench, August 2026</a>:</strong> five 100-task domain streams; useful for reusable procedures. In its three-domain ablation, ICL and explicit skills average 0.605 and 0.602 normalized reward. Separate general exposure to feedback from the value of skill abstraction.</li>
@@ -237,6 +238,6 @@ Correct evidence available but answer still wrong? → reasoning failure
 <h2>If only one research question survives</h2>
 <p><strong>Under a fixed end-to-end budget, when is it better to preserve raw evidence and learn retrieval, versus learn a compact representation—and does a hybrid keep the benefits of both?</strong></p>
 <p>The answer is likely to depend on query predictability, evidence density, source stability, reuse count, and the reader’s search skill. The experiments above vary those factors explicitly instead of hiding them inside an aggregate memory score.</p></article>
-<footer>Generated 2026-09-15 16:05 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-16 01:26 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
