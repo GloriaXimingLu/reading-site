@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Never Give Up: Adaptive Sampling Against the Matthew Effect in RL for LLMs</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Never Give Up: Adaptive Sampling Against the Matthew Effect in RL for LLMs</h1><p class="meta">11 min read · <a href="https://arxiv.org/abs/2609.13443">arXiv:2609.13443</a> · <a href="https://arxiv.org/abs/2609.13443">arXiv</a> · <a href="https://github.com/mnoukhov/never-give-up">GitHub</a> · <a href="https://x.com/mnoukhov/status/2099933311552397424">X post</a> · <a href="https://mnoukhov.github.io/posts/ngu/">mnoukhov.github.io</a> · <a href="../index.html#rl">Reinforcement Learning &amp; Post-Training</a></p><h2>TL;DR</h2>
+<ul>
+<li>Michael Noukhovitch (Mila/UdeM), Hamish Ivison (UW), Nathan Lambert (Trillium Labs) and Aaron Courville (Mila) document a <strong>Matthew Effect in RL for LLMs</strong>: across three open RL-trained models in three domains, gains land almost entirely on problems the base model already solved. On AIME, Olmo 3.1 RL-Zero gains +0.63 pass@1 on easy problems and <strong>+0.03 on hard</strong>. DeepSWE gains +0.18 on sub-15-minute SWE-Bench tasks and <strong>+0.00 on &gt;4-hour tasks</strong>.</li>
+<li>The intuitive explanation — hard problems produce all-wrong groups, so no gradient — turns out to be wrong. Holding total batch size fixed, raising completions-per-prompt <span class="arithmatex">\(K\)</span> from 4 to 32 makes things <em>worse</em>, including on the hardest problems. The real cost is <strong>signal efficiency</strong>: large <span class="arithmatex">\(K\)</span> keeps easy prompts in the batch (one wrong sample out of 32 is enough) and spends compute re-solving them.</li>
+<li><strong>Never Give Up (NGU)</strong> is the fix, and it is four lines: sample a small <span class="arithmatex">\(K\)</span>; if all correct, drop the prompt as too easy; if mixed, train on it; if all wrong, put it back in the queue with probability <span class="arithmatex">\(p\)</span>. Asynchronous RL turns the freed capacity into harder prompts. On Manufactoria, standard GRPO plateaus at ~80% of individual coding tests and <strong>never passes all tests on a single problem</strong>; NGU keeps climbing on hard tests and learns to fully solve problems.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The default mental model of RL post-training is that you throw a difficulty-mixed dataset at GRPO and the model improves across it. This paper measures that assumption on three released models and finds it false in a specific, load-bearing way: RL improves performance <em>in proportion to initial competence</em>. If your evaluation averages over a difficulty-mixed benchmark, a run that moved only the easy half looks like broad improvement.</p>
+<p>That matters most for exactly the workloads people now care about. Long-horizon agentic tasks are the hard tail by construction — the SWE-Bench panel of Figure 1 shows RL buying nothing at all on the &gt;4-hour bucket. If the effect is driven by compute allocation rather than by some information-theoretic wall, it is an infrastructure problem with an infrastructure fix, and this paper makes the case that it is.</p>
+<p><img alt="The Matthew Effect across three domains: gains from RL scale with initial model performance" src="assets/never-give-up-rl/fig1_matthew.png" /></p>
+<p><em>Figure 1 from the paper: Olmo 3.1 RL-Zero on AIME, DeepCoder on LCBv5, DeepSWE on SWEBenchVerified, each compared to its initial model (Olmo 3 7B Base, Deepseek-Qwen-14B, Qwen3-32B). Grey is the initial model, green is what RL added.</em></p>
+<h2>The core idea</h2>
+<p>GRPO computes each completion's advantage against an empirical group baseline over <span class="arithmatex">\(K\)</span> samples:</p>
+<div class="arithmatex">\[ A_i = r_i - \frac{1}{K}\sum_{j=1}^{K} r_j \]</div>
+<p>If all <span class="arithmatex">\(K\)</span> completions fail, every advantage is zero and the prompt contributes no gradient. That observation motivates the <strong>signal loss hypothesis</strong>: hard problems don't improve because correct solutions are never sampled, so raise <span class="arithmatex">\(K\)</span>.</p>
+<p>The authors test it directly on GSM8k Platinum with Qwen 2.5 0.5B Instruct, sweeping <span class="arithmatex">\(K \in \{4, 8, 16, 32\}\)</span> with <span class="arithmatex">\(N \in \{64, 32, 16, 8\}\)</span> prompts to hold <span class="arithmatex">\(N \times K\)</span> constant. Every setting shows the Matthew Effect, and <span class="arithmatex">\(K=4\)</span> is best overall — most clearly on the hardest problems. Holding batch size fixed, the expected number of times each problem is sampled doesn't change with <span class="arithmatex">\(K\)</span>; what changes is <em>which prompts survive filtering</em>. A prompt is kept only if it yields a nonzero gradient, and with <span class="arithmatex">\(K=32\)</span> a single wrong completion out of 32 is enough to keep an otherwise-solved prompt in the batch.</p>
+<p>So the authors propose the <strong>signal efficiency hypothesis</strong>: the problem is not undersampling hard prompts, it is oversampling easy ones. NGU makes the sampling budget per prompt adaptive rather than fixed. On an all-wrong group, continue with probability <span class="arithmatex">\(p_{\mathrm{NGU}}\)</span> and give up otherwise, which makes the total sample count per prompt geometric with mean</p>
+<div class="arithmatex">\[ \mathbb{E}[\text{samples}] = \frac{K}{1 - p_{\mathrm{NGU}}} \]</div>
+<p>so <span class="arithmatex">\(K=16\)</span> with <span class="arithmatex">\(p = 0.5, 0.75, 0.875\)</span> gives theoretical averages of 32, 64 and 128 — but spent where they're needed instead of uniformly.</p>
+<p>One subtlety makes NGU more than "resample hard prompts." Because NGU accumulates completions across rounds, once a correct answer finally appears it forms one large GRPO group with all the previous failures, so a rare success gets a much larger advantage than the <span class="arithmatex">\(1 - \tfrac{1}{4}\)</span> ceiling that <span class="arithmatex">\(K=4\)</span> would allow. Stale negatives are filtered from the loss (only completions younger than <span class="arithmatex">\(T\)</span> steps are kept; <span class="arithmatex">\(T=4\)</span> is best, <span class="arithmatex">\(T=8,16\)</span> degrade) but their rewards still inform the baseline. To keep advantages summing to zero after that filtering, the paper introduces <strong>anchoring the positives</strong>: leave positive advantages alone and rescale the surviving negatives to</p>
+<div class="arithmatex">\[ \frac{n_+}{n_-}\,(1 - \bar{r}) \]</div>
+<p>with <span class="arithmatex">\(n_+, n_-\)</span> the counts of positive and remaining negative completions and <span class="arithmatex">\(\bar{r}\)</span> the NGU-wide mean reward. This beats both no-rescaling and the downsampling approach from prior work — discarding useful negatives turns out to be actively harmful.</p>
+<h2>How it works</h2>
+<pre><code class="language-text">NGU sampling for an asynchronous RL trainer
+(generator G, trainer L, completions per prompt K,
+ continuation prob p_NGU, buffer S, age cutoff T)
+
+ 1. while trainer running:
+ 2.     receive y_1..y_K ~ π_θ(·|x) from generator G
+ 3.     r_i = R(x, y_i);  r̄ = mean(r)
+ 4.     k = K
+ 5.     if x has previous completions in buffer S(x):
+ 6.         pop y_NGU, r_NGU, k_NGU, r̄_NGU
+ 7.         r̄ = (r̄_NGU * k_NGU + r̄ * K) / (k_NGU + K)   # baseline over ALL samples
+ 8.         k += k_NGU
+ 9.         extend y, r with previous completions of age &lt;= T   # drop stale
+10.
+11.     if all r_i == 1:                      # too easy
+12.         give up on x
+13.     else if any r_i &gt; r̄:                  # mixed -&gt; usable gradient
+14.         emit (x, y, r, r̄) for the GRPO update
+15.     else:                                 # all wrong -&gt; may be hard
+16.         u ~ Uniform(0,1)
+17.         if u &lt; p_NGU:                     # never give up
+18.             push x back onto generator G's queue
+19.             S(x) &lt;- y, k, r̄
+20.         else:
+21.             give up on x
+</code></pre>
+<p>Asynchrony is load-bearing, not incidental. The whole point is that quickly-filtered easy prompts are immediately replaced by harder ones drawn from the queue; in a synchronous trainer that waits for the slowest rollout, the freed capacity has nowhere to go. The paper demonstrates this necessity explicitly and compares against prior synchronous work in the appendix.</p>
+<h2>Results</h2>
+<p><strong>Math at scale.</strong> Qwen 3 4B-base on a 10k Deepscaler subset, evaluated on AIME 2025 and BRUMO Nov 2025, with difficulty buckets from the initial model's pass@64 (hard = pass@64 of 0, <span class="arithmatex">\(n{=}28\)</span>; medium averages 2.9%, <span class="arithmatex">\(n{=}16\)</span>; easy averages 46.1%, <span class="arithmatex">\(n{=}16\)</span>). All runs compute-matched at roughly 120 H100-hours, three seeds. Improvement in pass@1 over the initial model:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Easy</th>
+<th>Medium</th>
+<th>Hard</th>
+<th>Total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N=2, K=64</td>
+<td>23.3 ± 1.9</td>
+<td>15.3 ± 1.5</td>
+<td>2.5 ± 0.2</td>
+<td>11.5 ± 0.5</td>
+</tr>
+<tr>
+<td>N=8, K=16</td>
+<td>26.8 ± 2.6</td>
+<td>14.5 ± 3.6</td>
+<td>1.6 ± 0.3</td>
+<td>11.7 ± 1.0</td>
+</tr>
+<tr>
+<td><strong>+ NGU p=0.875</strong></td>
+<td>26.8 ± 1.7</td>
+<td>16.3 ± 0.9</td>
+<td><strong>4.3 ± 1.2</strong></td>
+<td><strong>13.5 ± 0.6</strong></td>
+</tr>
+<tr>
+<td>+ NGU p=0.75</td>
+<td>28.1 ± 0.2</td>
+<td>16.8 ± 3.3</td>
+<td>3.0 ± 1.2</td>
+<td>13.4 ± 0.7</td>
+</tr>
+<tr>
+<td>+ Sampling Curriculum</td>
+<td>22.7 ± 1.6</td>
+<td>15.5 ± 1.4</td>
+<td>4.0 ± 1.1</td>
+<td>12.1 ± 0.8</td>
+</tr>
+</tbody>
+</table>
+<p>Note the curriculum baseline, which sets <span class="arithmatex">\(K\)</span> per prompt from the model's <em>initial</em> performance. It matches NGU on the hardest bucket but loses 4.1 points on easy — because difficulty is not static, and a fixed difficulty estimate goes stale as training proceeds. NGU re-estimates difficulty implicitly, every step, for free.</p>
+<p><strong>Code, and a sharper version of the effect.</strong> On Manufactoria (Qwen3 4B Instruct; each problem has 14–30 test cases spanning difficulties), the Matthew Effect initially fails to appear — because the task and its long prompt are novel, and the first ~100 steps are the model adapting to the <em>harness</em> rather than learning the task. Re-bucketing difficulty after that adaptation makes the effect reappear cleanly, which the authors name the <strong>harness-aware Matthew Effect</strong>: RL improves performance in proportion to the model's early performance <em>after accounting for adaptation to a prompt or harness</em>. That is a measurement warning worth internalizing — difficulty ratings taken at step 0 on a novel harness measure prompt familiarity, not task difficulty.</p>
+<p><img alt="NGU on Manufactoria: combined tests, hard tests, and all-tests pass rate over 3000 training steps" src="assets/never-give-up-rl/fig9_manufactoria.png" /></p>
+<p><em>Figure 9 from the paper: GRPO plateaus around 80% of combined tests and under 20% on hard tests, and never passes all of a problem's tests. NGU starts slightly worse, keeps improving on hard tests, and converts that into full problem solutions.</em></p>
+<p>Adding only <span class="arithmatex">\(p_{\mathrm{NGU}} = 0.95\)</span> to the baseline changes the outcome qualitatively rather than quantitatively. GRPO with per-test rewards derives most of its reward variation from inconsistently solving medium tests, so compute cycles on near-solved behavior; NGU keeps sampling until harder tests are solved. A final comparison starts both methods from the same 3000-step GRPO checkpoint and finds per-test-reward-with-NGU roughly matches training with the all-tests reward in compute efficiency — which also demonstrates that an LLM can train 3000 steps under a suboptimal objective and still recover, unlike the classic primacy bias in from-scratch RL where plasticity loss makes bad early trajectories permanent.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>It re-scopes what RL is actually buying.</strong> The tracker has several results about RL sharpening rather than expanding — most directly <a href="../tutorials/sequential-beats-joint.html">Sequential Beats Joint</a>, added the same day, where OPD expands pass@<span class="arithmatex">\(k\)</span> coverage and RL redistributes mass within it. The Matthew Effect is the dataset-level shadow of the same phenomenon: RL concentrates where mass already exists.</li>
+<li><strong>Async RL stops being an efficiency story.</strong> Frameworks like <a href="../tutorials/molt-agentic-rl.html">Molt</a>, built around a fully asynchronous streaming loop, sell asynchrony as throughput and trainer simplicity. NGU needs it for <em>correctness of allocation</em>: without a queue to refill from, filtering easy prompts quickly buys nothing. That is a genuinely different argument for the same infrastructure.</li>
+<li><strong>The harness-aware caveat generalizes.</strong> <a href="../tutorials/harness-continual-learning.html">Harness Continual Learning</a> and <a href="../tutorials/evoharness-rl.html">EvoHarness-RL</a> both treat the harness as state that must be learned separately from the task. NGU's Manufactoria finding says the same thing from the measurement side: on a novel harness, the first phase of any RL curve is harness adaptation, and difficulty statistics taken before it has finished are not about the task.</li>
+<li><strong>A cheap alternative to test-time elaboration.</strong> <a href="../tutorials/sample-more-reflect-less.html">Sample More, Reflect Less</a> found repeated sampling beats self-refinement at equal token cost at inference. NGU is the training-time analogue — allocate more <em>samples</em> to hard instances rather than more machinery per sample.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The scale is modest: 0.5B for the mechanism study, 4B for both scaled experiments. The claim that signal loss is not the primary driver rests on a fixed-batch-size sweep on GSM8k Platinum with a 0.5B model, which is a clean experiment but a narrow one — at frontier scale, with much harder data, "we never sample a correct solution" may genuinely bind in a way it doesn't here. The paper's framing ("one cause," "exacerbating") is appropriately hedged; the discourse around it will probably not be.</p>
+<p>NGU also inherits a structural risk it doesn't fully close: it decides a prompt is hard because the <em>current</em> policy fails it, and unsolvable prompts are only bounded by the geometric give-up probability. On a dataset with mislabeled or genuinely impossible items, <span class="arithmatex">\(p = 0.95\)</span> means an average of <span class="arithmatex">\(20K\)</span> samples burned on each one before giving up. The math experiments use a curated 10k subset; the paper does not report what happens with a noisy training set, which is the realistic case.</p>
+<p>Finally, the headline coding result is on Manufactoria — a Flash-game-derived automata benchmark chosen precisely because standard RL stalls on it. That makes it a good stress test and a weak generality claim. The Deepscaler numbers are the honest measure of the method's size: +1.8 total pass@1 over the best baseline, +2.7 on the hard bucket, with overlapping error bars on two of three seeds' worth of spread. Real, reproducible, and much smaller than the framing suggests.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>RL improves what the model could already do.</strong> Across math, code and agentic coding, gains scale with initial competence — +0.63 vs +0.03 pass@1 on easy vs hard AIME problems, +0.18 vs +0.00 on short vs long SWE-Bench tasks. Difficulty-averaged benchmark deltas hide this completely.</li>
+<li><strong>More completions per prompt is the wrong knob.</strong> At fixed batch size, <span class="arithmatex">\(K=4\)</span> beats <span class="arithmatex">\(K=32\)</span> even on hard problems, because large <span class="arithmatex">\(K\)</span> keeps nearly-solved prompts in the batch. The binding constraint is oversampling easy prompts, not undersampling hard ones.</li>
+<li><strong>NGU is a queue policy, not a loss function.</strong> Give up on all-correct groups, train on mixed groups, and re-queue all-wrong groups with probability <span class="arithmatex">\(p\)</span> — then let asynchronous RL refill the freed capacity. Keep stale negatives out of the loss but in the baseline, and anchor the positives when rescaling.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-16 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

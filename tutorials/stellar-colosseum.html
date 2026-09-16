@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stellar Colosseum: A Many-Agent Harness for Long-Horizon Research in Mathematics and TCS</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Stellar Colosseum: A Many-Agent Harness for Long-Horizon Research in Mathematics and TCS</h1><p class="meta">12 min read · <a href="https://arxiv.org/abs/2609.15983">arXiv:2609.15983</a> · <a href="https://arxiv.org/abs/2609.15983">arXiv</a> · <a href="https://x.com/omarsar0/status/2099924717704732699">X post</a> · <a href="https://academy.dair.ai/papers/stellar-colosseum-a-many-agent-harness-for-long-horizon-research-in-mathematics-2609.15983">academy.dair.ai</a> · <a href="../index.html#multi-agent">Multi-Agent Systems</a></p><h2>TL;DR</h2>
+<ul>
+<li>Honghao Lin and David P. Woodruff (co-first authors) with Yuan Deng, Jieming Mao, Song Zuo and Vahab Mirrokni at Google Research build <strong>Colosseum</strong>, a model-agnostic harness that treats a research problem as a five-stage pipeline — strategy exploration, a readiness gate, dependency-aware decomposition, parallel subproblem solving, global verification — with adversarial falsification and tree-structured aggregation running <em>inside</em> every stage.</li>
+<li>It produces real results, not just benchmark numbers: five new theorems addressing open problems from FOCS and JMLR papers, including improving strong-coreset size for <span class="arithmatex">\(\ell_p\)</span> subspace approximation from <span class="arithmatex">\(\tilde{O}_p(k^{p/2}\varepsilon^{-p})\)</span> to <span class="arithmatex">\(\tilde{O}_p(k^{p/2}\varepsilon^{-2})\)</span>, plus 46- and 75-page proof drafts for Knuth's cycles problem.</li>
+<li>On TCS-Bench (300 research-level theorem-proving tasks from FOCS/STOC/SODA), Colosseum reaches <strong>71.0%</strong> via cross-model selection between a Gemini 3.1 Pro run and a Gemini 3.7 Flash run — against 30.3% for Gemini 3.1 Pro called directly and 68.0% for GPT-5.6 Pro (max). On a 222-problem Codeforces suite it solves 218 with a C++ execution probe, 213 without.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>Most inference-scaling machinery assumes a checkable final answer: sample <span class="arithmatex">\(N\)</span> reasoning paths, vote, done. Research proofs break that assumption in a way the paper states plainly — agreement among candidates can hide a shared error, so a flat vote over final answers offers almost no guidance. Worse, a research problem is a chain of interdependent decisions, where a lemma that turns out false invalidates work three sections downstream.</p>
+<p>Colosseum is the most complete published attempt I've seen at spending inference compute on <em>that</em> structure, and it is unusually credible because the evaluation isn't only a benchmark: the harness contributed to five results written up in companion papers, and the workflow shipped into Google Antigravity's Teamwork framework as the "Long Proof" pattern. For this tracker's self-improving-harness thread, it is a strong data point that harness design, with weights untouched, still has large returns at the frontier.</p>
+<p><img alt="Colosseum architecture: five-stage workflow and within-stage sampling and synthesis" src="assets/stellar-colosseum/fig1_architecture.png" /></p>
+<p><em>Figure 1 from the paper. Panel (a): the stage-level workflow with local retry, revision and re-exploration loops. Panel (b): inside a stage, synthesis nodes aggregate overlapping random subsets of candidates, each node paired with a falsifier, feeding a shared research knowledge store.</em></p>
+<h2>The core idea</h2>
+<p>Two ideas do the work, one at each level.</p>
+<p><strong>At the workflow level: gate decomposition on readiness, not on optimism.</strong> Colosseum does not draft a proof around the first plausible idea. It develops competing routes in parallel, then applies a <strong>readiness gate</strong> asking whether a route is concrete enough to support a proof plan — not whether the proof is nearly done. A route passes when its central reduction or mechanism is stable, its unresolved claims are precise enough to assign to sections, and no unresolved bridge is likely to change the target or the architecture of the argument. A central lemma may still be hard; what matters is that its statement and role are explicit. Once through, the decomposer emits a numbered, sectioned skeleton whose dependency edges form a DAG, so independent sections proceed in parallel and a rejected section retries <em>locally</em> without discarding completed work elsewhere.</p>
+<p><strong>At the stage level: aggregate candidates with their critiques attached, through a tree.</strong> Comparing every candidate and critique in one prompt does not scale. Let <span class="arithmatex">\(z_i\)</span> be a candidate bundled with all of its falsification records, and <span class="arithmatex">\(C^{(0)} = \{z_1,\dots,z_n\}\)</span> the initial population. The tree shape is a width schedule</p>
+<div class="arithmatex">\[ (m_0, m_1, \dots, m_L), \qquad m_0 = n, \quad m_L = 1 \]</div>
+<p>where <span class="arithmatex">\(m_\ell\)</span> is the number of nodes at level <span class="arithmatex">\(\ell\)</span>. Each of the <span class="arithmatex">\(m_{\ell+1}\)</span> aggregation nodes independently draws <span class="arithmatex">\(k_\ell\)</span> distinct inputs uniformly from the current population:</p>
+<div class="arithmatex">\[ G_j^{(\ell)} \sim \mathrm{Unif}\Big\{ G \subseteq C^{(\ell)} : |G| = k_\ell \Big\}, \qquad j = 1,\dots,m_{\ell+1} \]</div>
+<p>Sampling is without replacement <em>within</em> a group, but groups at different nodes are drawn independently and may overlap — they deliberately do not form a partition. Given the stage aggregator <span class="arithmatex">\(A\)</span>, input artifact <span class="arithmatex">\(x\)</span> and contextual evidence <span class="arithmatex">\(K\)</span>, node <span class="arithmatex">\(j\)</span> computes <span class="arithmatex">\(s_j^{(\ell+1)} = A(x, K, G_j^{(\ell)})\)</span>. The overlap is quantified by the expected reuse of a fixed level-<span class="arithmatex">\(\ell\)</span> node:</p>
+<div class="arithmatex">\[ \mathbb{E}\big[R_i^{(\ell)}\big] = \frac{m_{\ell+1} k_\ell}{m_\ell} \]</div>
+<p>Contraction layers are configured for expected reuse of roughly two to three — 128 nodes contracting to 64 with sample size five gives 2.5 — so each candidate gets several chances to contribute while every aggregation context stays small.</p>
+<p>The critical design choice is what aggregation <em>does</em>. It is explicitly not a vote or a ranking: it may merge compatible components, retain competing branches, repair a localized flaw, or declare an unresolved conflict. Substantive disagreements and falsification evidence are carried forward rather than averaged away, and the root returns a synthesized candidate together with any unresolved objections.</p>
+<h2>How it works</h2>
+<pre><code class="language-text">Colosseum(problem P)
+ 1. state &lt;- {}                                  # prior attempts, knowledge directory, pitfalls
+ 2. loop:
+ 3.     # Stage 1-2: explore strategies until a route is decomposable
+ 4.     routes &lt;- STAGE(explore, P, state)        # tree widths (32,16,8,5,1), k=5
+ 5.     if not readiness_gate(routes):            # is the mechanism stable?
+ 6.         continue                              # keep exploring
+ 7.
+ 8.     # Stage 3: sectioned skeleton + dependency DAG
+ 9.     skeleton &lt;- decompose(selected_route)
+10.
+11.     # Stage 4: solve eligible subproblems in parallel
+12.     for section in topological_order(skeleton):
+13.         sec &lt;- STAGE(solve, section, completed_dependencies)
+14.         while local_reviewer(sec) finds a defect:
+15.             sec &lt;- STAGE(solve, section, deps + failed_sec + review)   # local retry only
+16.         commit(sec)
+17.
+18.     # Stage 5: verify the assembled argument as one object
+19.     verdict, defects &lt;- STAGE(verify, assembled_proof)   # tree-aggregated reviews
+20.     if verdict == accept: return assembled_proof
+21.     state &lt;- state + {draft, defects, knowledge_directory}
+22.     if strategy_still_viable(defects): revise sections or outline
+23.     else: goto 3                                          # re-explore
+
+STAGE(task, x, ctx):                              # the same three ops everywhere
+ a. generate n typed candidates in parallel        # varied seeds, temps, perspectives, lines of attack
+ b. attack each with targeted falsifiers           # counterexamples, circularity, hypothesis drift,
+ c. reduce through the aggregation tree,           #   statement/target mismatch, missing assumptions
+    keeping each candidate bundled with its critiques
+</code></pre>
+<p>Two supporting mechanisms make the loop compound across rounds. When a round fails, the <strong>draft and the verifier's feedback are passed forward intact</strong>, with objections still attached, so the next attempt doesn't restart from the bare problem. Separately, a <strong>knowledge curator</strong> records four kinds of reusable findings from strategy proposals and falsification reports: theorems and lemmas developed along the way, failed approaches with their precise failure points, references with the hypotheses that matter here, and structural or computational observations. That directory is what lets a later round avoid re-running an approach already known to fail.</p>
+<p>Global verification deserves one note: it is itself multiple independent reviews plus tree aggregation, and explicitly <em>not</em> a majority vote. A single concrete fatal defect rejects the proof, and generic acceptance judgments do not overturn it. Each defect is tied to the section where it arises, and for a cross-section dependency error the review names both the supporting section and the consumer — which makes the feedback routable rather than a flat list of complaints.</p>
+<h2>Results</h2>
+<p><strong>TCS-Bench</strong> (300 theorem-proving tasks from FOCS/STOC/SODA papers, 2020–2026; graded by a reference-assisted automated grader whose prompt was tuned on 100 expert-labeled proofs, reporting &gt;90% accuracy):</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gemini 3.1 Pro (direct)</td>
+<td>30.3%</td>
+</tr>
+<tr>
+<td>Gemini 3.1 DeepThink</td>
+<td>52.0%</td>
+</tr>
+<tr>
+<td>GPT-5.6 Pro (max)</td>
+<td>68.0%</td>
+</tr>
+<tr>
+<td>Colosseum with Gemini 3.1 Pro</td>
+<td>54.0%</td>
+</tr>
+<tr>
+<td>Colosseum with Gemini 3.7 Flash</td>
+<td>55.0%</td>
+</tr>
+<tr>
+<td><strong>Cross-model selection</strong></td>
+<td><strong>71.0%</strong></td>
+</tr>
+<tr>
+<td>Oracle best-of-two</td>
+<td>77.3%</td>
+</tr>
+</tbody>
+</table>
+<p>The harness is worth ~24 points on Gemini 3.1 Pro (30.3 → 54.0). The jump to 71.0% comes from something else: the two runs have nearly identical accuracy but <em>complementary errors</em>, so selecting between them adds 48 problems over the stronger single run. The selection rule is cheap and worth copying — Gemini 3.7 Flash produces eight independent critiques of the Pro proof, and if at least five judge it correct it is submitted, otherwise the Flash proof is. That critique signal separates grader-correct from grader-incorrect proofs with <strong>AUC 0.896</strong>; routing on Gemini 3.1 Pro's own internal verifier instead yields only 64.7%. Cross-model critique beats self-verification by a wide margin.</p>
+<p><strong>Codeforces</strong>: all 222 problems with clist.by difficulty above 1500 from contests 2084–2162 (April–October 2025), median difficulty 2381. Solutions are compiled and run against the full hidden test set with the original checker, accepted only if every test passes. The only addition to the proof-oriented pipeline is a C++ execution probe that runs candidates on public samples and model-generated stress inputs, feeding checker outcomes back into the existing verification–revision loop.</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Accepted</th>
+<th>Performance rating</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Without execution probe</td>
+<td>213 / 222</td>
+<td>3918</td>
+</tr>
+<tr>
+<td>With execution probe</td>
+<td>218 / 222</td>
+<td>4263</td>
+</tr>
+</tbody>
+</table>
+<p>The rating is computed explicitly rather than borrowed, treating a problem of difficulty <span class="arithmatex">\(r\)</span> as an opponent beaten with probability <span class="arithmatex">\( 1/(1 + 10^{(r-x)/400}) \)</span> and solving for the <span class="arithmatex">\(\hat{x}\)</span> matching the observed solve count; the authors stress it is corpus- and calibration-dependent, not an official contestant rating. What matters architecturally is that the <em>proof</em> pipeline transferred to executable code with one addition — the decomposer emits a DAG of mathematical and algorithmic subproblems with a terminal C++ implementation node, rather than partitioning a program into software components.</p>
+<p><strong>Open problems.</strong> Five results, each written up in a companion paper: the <span class="arithmatex">\(\ell_p\)</span> coreset improvement above; a condition-number barrier for sparse least squares showing no fixed sublinear power of <span class="arithmatex">\(\kappa\)</span> can replace the linear dependence, conditional on the randomized exact-volume Small-Set Expansion Hypothesis; a near-tight dimension lower bound <span class="arithmatex">\(D \ge m^{c_\delta/\varepsilon^{2-2\delta}}\)</span> for maximum-inner-product embeddings; a single-stage Hadamard quantizer matching the <span class="arithmatex">\(1/(d 4^b)\)</span> MSE scaling while dropping the residual stage; and a prefix-matrix factorization lower bound <span class="arithmatex">\(\gamma_{2,1}(Q) = \Omega(\log^{3/2} n / (\log\log n)^{3/2})\)</span>, within <span class="arithmatex">\((\log\log n)^{3/2}\)</span> of the known upper bound. The Erdős unit-distance case study is the most striking: run with internet access disabled, over 15 exploration rounds, Colosseum produced a 22-page draft that independently arrived at the central architecture of OpenAI's reported solution.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>The clearest "harness, not weights" result yet.</strong> <a href="../tutorials/argus-agentic-runtime.html">Argus</a> makes long-horizon pivots admissible only when evidence-backed and role-gated; Colosseum's readiness gate is the same instinct applied one level earlier — gate the <em>transition from exploring to committing</em>. Both keep model weights frozen and get large gains from control flow.</li>
+<li><strong>It inverts the usual aggregation assumption.</strong> <a href="../tutorials/llm-as-a-verifier.html">LLM-as-a-Verifier</a> treats verification as a scaling axis; Colosseum agrees but refuses to collapse verification into a score. Critiques stay bundled with the candidates they attack through every aggregation level, precisely because a vote over final answers can be confidently and unanimously wrong.</li>
+<li><strong>Cross-model selection is the cheap lesson.</strong> NVIDIA's model-pool study, added to the tracker the same day, found that mixed-model pools usually <em>underperform</em> the best single model in the pool and that same-family ensembles win. Colosseum is the apparent counterexample that actually clarifies the rule: mixing helped here not because two models were averaged, but because one model <em>critiqued</em> the other's artifact and a threshold routed between them.</li>
+<li><strong>Failure memory over success memory.</strong> The knowledge directory's second category — failed approaches with precise failure points — matches what <a href="../tutorials/adaexplore.html">AdaExplore</a> does with compile/runtime failures turned into constraint rules, and what <a href="../tutorials/coral-multi-agent-evolution.html">CORAL</a> preserves across evolutionary rounds. Recording why a route died is repeatedly more valuable than recording what worked.</li>
+<li><strong>A counterweight to research-agent pessimism.</strong> <a href="../tutorials/aira2-research-agent-bottlenecks.html">AIRA₂</a> formalized how validation-based selection overfits over long horizons. Colosseum's answer is that selection should be adversarial and localized rather than score-based and global — an architectural response to the same bottleneck.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The headline 71.0% is a two-run cross-selection number and should be read as such. The single-harness results are 54.0% and 55.0% — real, large gains over direct calling, but below GPT-5.6 Pro's 68.0%. That comparison deserves more prominence than it gets: a competitor model called directly beats this harness on Gemini 3.1 Pro, and the harness only pulls ahead once you pay for two full runs plus eight critique samples. Cost accounting is absent throughout; the paper says outright that its configurations specify tree widths rather than total model calls, which depend on section count, local retries and revision rounds. With 32-leaf exploration trees, 16 leaves elsewhere, falsifiers on every node and multi-round re-exploration, the per-problem spend is likely enormous and nowhere stated. "71.0% vs 68.0%" means little without it.</p>
+<p>The open-problem results are the strongest evidence and the hardest to evaluate. They are genuine contributions in a hard area, but the author list includes Woodruff and Mirrokni, and several results extend Woodruff's own prior work — the <span class="arithmatex">\(\ell_p\)</span> coreset improvement tightens a bound from Woodruff and Yasuda. That is not a flaw; expert-in-the-loop is how these systems will actually be used. It does mean "the harness solved open problems" is doing less work than it sounds like, and the paper's own framing ("the workflow contributed to") is more accurate than the summaries circulating on X.</p>
+<p>Finally, TCS-Bench is scored by an automated grader that sees the ground-truth proof and self-reports &gt;90% accuracy on a 100-proof calibration set. For research-level proofs whose failure mode is a subtle invalid implication three sections in, a 10% grader error rate is the same order as the gaps between the methods being compared.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Gate the commitment, not the answer.</strong> The readiness gate asks whether remaining uncertainty can be <em>localized within a stable proof architecture</em> — not whether the proof is nearly finished. That single decision is what makes decomposition into a dependency DAG safe, and it is transplantable to any long-horizon agent that must choose when to stop exploring.</li>
+<li><strong>Aggregate with critiques attached, and never by vote.</strong> Candidates travel through the reduction tree bundled with their falsification records, overlapping groups give each candidate ~2–3 chances to contribute, and one concrete fatal defect rejects a proof regardless of how many reviews accept it.</li>
+<li><strong>Cross-model critique beat self-verification by 6+ points.</strong> Flash critiquing Pro separated correct from incorrect proofs at AUC 0.896 and routed to 71.0%; Pro's own internal verifier managed 64.7%. When you have two comparable models, have one attack the other's artifact rather than averaging them.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-16 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="annotate.js"></script>
 </head>
 <body>
-<div class="wrap"><h1>Reading Tracker</h1><p class="meta">808 papers/posts · 151 tutorials · 5 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-09-16</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">141</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">123</span></a><a href="#distillation">Distillation <span class="count">44</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">102</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">34</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">33</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">90</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">26</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">117</span></a><a href="#data">Data &amp; Datasets <span class="count">21</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">48</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">29</span></a></nav><section id="walkthroughs"><h2>Walkthroughs</h2><div class="wt-grid"><a class="wt-card" href="walkthroughs/harness-optimization.html"><span class="wt-title">Harness Optimization</span><span class="wt-meta">10 min · 33 papers · 2026-08-23</span></a><a class="wt-card" href="walkthroughs/memory-baseline-experiments.html"><span class="wt-title">Memory Baselines: What to Run and What to Measure</span><span class="wt-meta">14 min · 6 papers · 2026-09-15</span></a><a class="wt-card" href="walkthroughs/memory-benchmarks.html"><span class="wt-title">Memory &amp; Continual Learning: Benchmark Review</span><span class="wt-meta">23 min · 15 papers · 2026-09-15</span></a><a class="wt-card" href="walkthroughs/memory-management.html"><span class="wt-title">Agent Memory: Notes, Search, and Compression</span><span class="wt-meta">26 min · 31 papers · 2026-09-15</span></a></div></section><section id="latest"><h2>Latest additions</h2><p class="latest-row">2026-09-15 · <a href="#architecture">Architecture &amp; Efficiency</a> · <strong>Recurrent Looped Transformer (RLT): Token-Recurrent Decoder with Causal-Encoder KV Memory</strong></p><p class="latest-row">2026-09-15 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Ecdysis: Efficient Training of Runtime Harnesses via Cross-Task Recurring-Failure Diagnosis</strong> · <a href="tutorials/ecdysis-harness-training.html">📖 tutorial</a></p><p class="latest-row">2026-09-15 · <a href="#roundups">Roundups &amp; Misc</a> · <strong>Stanford CS 312: Deep Learning Alchemy (Hashimoto &amp; Kotha) - Open Course Materials</strong></p><p class="latest-row">2026-09-15 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>The Last AI Built by Humans: An Autonomy-Level Roadmap Toward Genuine Recursive Self-Improvement</strong> · <a href="tutorials/last-ai-genuine-rsi.html">📖 tutorial</a></p><p class="latest-row">2026-09-15 · <a href="#distillation">Distillation</a> · <strong>Breaking the Token Ceiling: Distilling Smaller, Stronger Byte-Level Models from Token Teachers (Meta)</strong> · <a href="tutorials/byte-distillation-token-ceiling.html">📖 tutorial</a></p><p class="latest-row">2026-09-15 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>RSIAgent: Weight-Frozen Recursive Self-Improvement via Autonomous Exploration and Verified Memory (Aether AI / UCSD)</strong></p><p class="latest-row">2026-09-15 · <a href="#self-improving">Self-Improving Agents &amp; Harnesses</a> · <strong>Dream-RSI: Replaying Discovery History Offline to Improve Exploration Policies (Google)</strong></p><p class="latest-row">2026-09-15 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>FlashREINFORCE: Critic-Free, Single-Rollout, Asynchronous RL for Agentic LMs</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="ecdysis-harness-training">
+<div class="wrap"><h1>Reading Tracker</h1><p class="meta">828 papers/posts · 154 tutorials · 5 Q&A notes · from @GXiming's X likes &amp; bookmarks · <strong>updated 2026-09-16</strong></p><nav><a href="#self-improving">Self-Improving Agents &amp; Harnesses <span class="count">141</span></a><a href="#rl">Reinforcement Learning &amp; Post-Training <span class="count">129</span></a><a href="#distillation">Distillation <span class="count">45</span></a><a href="#memory-context">Memory &amp; Context Engineering <span class="count">104</span></a><a href="#multi-agent">Multi-Agent Systems <span class="count">36</span></a><a href="#reasoning">Reasoning &amp; Test-Time Compute <span class="count">35</span></a><a href="#architecture">Architecture &amp; Efficiency <span class="count">92</span></a><a href="#world-models">World Models &amp; Embodiment <span class="count">26</span></a><a href="#benchmarks">Benchmarks &amp; Evaluation <span class="count">120</span></a><a href="#data">Data &amp; Datasets <span class="count">21</span></a><a href="#tools">Tools &amp; Infrastructure <span class="count">49</span></a><a href="#roundups">Roundups &amp; Misc <span class="count">30</span></a></nav><section id="walkthroughs"><h2>Walkthroughs</h2><div class="wt-grid"><a class="wt-card" href="walkthroughs/harness-optimization.html"><span class="wt-title">Harness Optimization</span><span class="wt-meta">10 min · 33 papers · 2026-08-23</span></a><a class="wt-card" href="walkthroughs/memory-baseline-experiments.html"><span class="wt-title">Memory Baselines: What to Run and What to Measure</span><span class="wt-meta">14 min · 6 papers · 2026-09-15</span></a><a class="wt-card" href="walkthroughs/memory-benchmarks.html"><span class="wt-title">Memory &amp; Continual Learning: Benchmark Review</span><span class="wt-meta">23 min · 15 papers · 2026-09-15</span></a><a class="wt-card" href="walkthroughs/memory-management.html"><span class="wt-title">Agent Memory: Notes, Search, and Compression</span><span class="wt-meta">26 min · 31 papers · 2026-09-15</span></a></div></section><section id="latest"><h2>Latest additions</h2><p class="latest-row">2026-09-16 · <a href="#distillation">Distillation</a> · <strong>Sequential Beats Joint: OPD-then-RL Outperforms Joint OPD+RLVR Objectives</strong> · <a href="tutorials/sequential-beats-joint.html">📖 tutorial</a></p><p class="latest-row">2026-09-16 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>How Frontier Labs Run Agent RL: One Sandbox per Rollout and Trainers That Don&#x27;t Wait</strong></p><p class="latest-row">2026-09-16 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Never Give Up: Adaptive Sampling Against the Matthew Effect in RL for LLMs</strong> · <a href="tutorials/never-give-up-rl.html">📖 tutorial</a></p><p class="latest-row">2026-09-16 · <a href="#multi-agent">Multi-Agent Systems</a> · <strong>Stellar Colosseum: A Many-Agent Harness for Long-Horizon Research in Mathematics and TCS</strong> · <a href="tutorials/stellar-colosseum.html">📖 tutorial</a></p><p class="latest-row">2026-09-16 · <a href="#benchmarks">Benchmarks &amp; Evaluation</a> · <strong>CheatBench: Measuring How Often Frontier Agents Game Their Rewards</strong></p><p class="latest-row">2026-09-16 · <a href="#memory-context">Memory &amp; Context Engineering</a> · <strong>TF-IDF and BM25 Are Exact KL Divergences</strong></p><p class="latest-row">2026-09-16 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Final-Token Preference Optimization (FTPO): Anti-Doom-Loop Training with a Custom DPOTrainer</strong></p><p class="latest-row">2026-09-16 · <a href="#rl">Reinforcement Learning &amp; Post-Training</a> · <strong>Inoculation Midtraining: Confining Misalignment to a Learned Neologism Token</strong></p></section><section id="self-improving"><h2>Self-Improving Agents &amp; Harnesses</h2><p class="cat-desc">Agents that improve themselves or their scaffolds: recursive harness self-improvement, skill self-play, self-evolving systems, autonomous research.</p><div class="card" data-key="ecdysis-harness-training">
 <div class="card-head"><span class="title">Ecdysis: Efficient Training of Runtime Harnesses via Cross-Task Recurring-Failure Diagnosis</span><span class="badge like">like</span></div>
 <p class="snippet">Great paper on self-evolving agent harnesses.
 
@@ -41,7 +41,7 @@ We introduce RSIAgent, a framework for recursive self-im…</p>
 <p class="snippet">Dream-RSI: Recursive Self-Improvement
 
 Google&#x27;s new framework turns accumulated discovery history into a replay simulator, letting agents improve exploration policies by dreaming o…</p>
-<p class="card-meta">@HuggingPapers · added 2026-09-15 · <a href="https://x.com/HuggingPapers/status/2099774833512874163">X post</a></p>
+<p class="card-meta">@HuggingPapers, @MaxForAI, @Xudong07452910, @thesupermannx, @itarutomy · added 2026-09-15 · <a href="https://arxiv.org/abs/2609.14858">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2099774833512874163">X post</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2099720607160004886">
 <div class="card-head"><span class="title">auto-gpu-kernel v1.0: An Autonomous Meta-Harness Co-Evolving GPU Kernels and Its Own Harness</span><span class="badge feed">feed</span></div>
@@ -1102,7 +1102,52 @@ They built the Red Queen Gödel Machine, self-improving AI agents that evolve al
 For over 20 years, computer s…</p>
 <p class="card-meta">@HowToPrompt__, @yyyiiillluuu · added 2026-08-03 · <a href="https://arxiv.org/abs/2606.26294">arXiv</a> · <a href="https://x.com/HowToPrompt__/status/2092983677919830336">X post</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/red-queen-godel-machine.html">📖 Tutorial · 19 min</a> </p>
-</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="2099356057558790476">
+</div></section><section id="rl"><h2>Reinforcement Learning &amp; Post-Training</h2><p class="cat-desc">RL for LLMs and agents: RLVR, agentic RL frameworks, reward design, credit assignment, RL scaling laws, reward hacking.</p><div class="card" data-key="2099867835199881586">
+<div class="card-head"><span class="title">How Frontier Labs Run Agent RL: One Sandbox per Rollout and Trainers That Don&#x27;t Wait</span><span class="badge like">like</span></div>
+<p class="snippet">where are frontier labs training their agents?
+
+the answer is similar for all of them → one sandbox per rollout, hundreds of thousands of them running at once, a trainer that does …</p>
+<p class="card-meta">@SergioPaniego · added 2026-09-16 · <a href="https://x.com/SergioPaniego/status/2099867835199881586">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099933311552397424">
+<div class="card-head"><span class="title">Never Give Up: Adaptive Sampling Against the Matthew Effect in RL for LLMs</span><span class="badge feed">feed</span><span class="badge like">like</span></div>
+<p class="snippet">Is RL actually making your LLM better? 
+
+Gains from RL are mostly on easy questions🤯
+
+We&#x27;re calling this the Matthew Effect for RL on LLMs. We then leverage async RL to solve harde…</p>
+<p class="card-meta">@mnoukhov, @natolambert, @askalphaxiv · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.13443">arXiv</a> · <a href="https://github.com/mnoukhov/never-give-up">GitHub</a> · <a href="https://x.com/mnoukhov/status/2099933311552397424">X post</a> · <a href="https://mnoukhov.github.io/posts/ngu/">mnoukhov.github.io</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/never-give-up-rl.html">📖 Tutorial · 11 min</a> </p>
+</div><div class="card" data-key="2099882133284098425">
+<div class="card-head"><span class="title">Final-Token Preference Optimization (FTPO): Anti-Doom-Loop Training with a Custom DPOTrainer</span><span class="badge feed">feed</span></div>
+<p class="snippet">models can get stuck in &quot;doom loops&quot; when
+• the model is small,
+• it has thinking capabilities,
+• and the task is complex
+
+to overcome this issue, at @liquidai we use &quot;antidoom&quot; tr…</p>
+<p class="card-meta">@helloiamleonie · added 2026-09-16 · <a href="https://github.com/Liquid4All/cookbook">GitHub</a> · <a href="https://x.com/helloiamleonie/status/2099882133284098425">X post</a> · <a href="https://github.com/Liquid4All/cookbook/blob/main/finetuning/notebooks/antidoom_with_trl.ipynb">github.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099982123042218159">
+<div class="card-head"><span class="title">Inoculation Midtraining: Confining Misalignment to a Learned Neologism Token</span><span class="badge feed">feed</span></div>
+<p class="snippet">In our new paper, we demonstrate that you can achieve selective generalisation of misalignment by midtraining on synthetic documents that describe how AIs can be misaligned in a sp…</p>
+<p class="card-meta">@GeodesResearch · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.15886">arXiv</a> · <a href="https://x.com/GeodesResearch/status/2099982123042218159">X post</a> · <a href="https://www.lesswrong.com/posts/o4Jmyn25TWm8jRAy8/inoculation-midtraining-with-learned-neologisms">lesswrong.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2100080746056777899">
+<div class="card-head"><span class="title">Koa: Turning Declarative Agent Specs into RL Environments for an Enterprise Agent Model</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger report from Salesforce.
+
+Pretty interesting to see more of these custom enterprise models.
+
+Salesforce trained the enterprise agent model from the same files it uses to conf…</p>
+<p class="card-meta">@omarsar0 · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.15066">arXiv</a> · <a href="https://x.com/omarsar0/status/2100080746056777899">X post</a> · <a href="https://academy.dair.ai/papers/salesforce-koa-an-enterprise-language-model-for-agentic-tool-use-2609.15066">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099937599683256728">
+<div class="card-head"><span class="title">Multi-Agent RL Post-Training for Response Diversity Above a Quality Threshold</span><span class="badge feed">feed</span></div>
+<p class="snippet">LLMs give eerily similar responses to the same prompt, even across different model families. Ask it to name a “well-received book” 6 times, and it will name “To Kill a Mockingbird”…</p>
+<p class="card-meta">@natashajaques · added 2026-09-16 · <a href="https://x.com/natashajaques/status/2099937599683256728">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099356057558790476">
 <div class="card-head"><span class="title">FlashREINFORCE: Critic-Free, Single-Rollout, Asynchronous RL for Agentic LMs</span><span class="badge feed">feed</span></div>
 <p class="snippet">Superintelligence should learn from experience through RL.
 
@@ -1173,7 +1218,7 @@ Fully async agentic RL on a 744B MoE across 64 GB300s, with @sgl_project powerin
 catastrophically forgetting in sequential fine-tuning loses about 98.8% of knowledge after 100 tasks.
 
 So thi…</p>
-<p class="card-meta">@askalphaxiv · added 2026-09-09 · <a href="https://x.com/askalphaxiv/status/2097501696285172193">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.compose-cl">alphaxiv.org</a></p>
+<p class="card-meta">@askalphaxiv, @HuggingPapers · added 2026-09-09 · <a href="https://x.com/askalphaxiv/status/2097501696285172193">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.compose-cl">alphaxiv.org</a></p>
 <p class="card-actions"> </p>
 </div><div class="card" data-key="2097514312424366221">
 <div class="card-head"><span class="title">Evolving Task Environments Beat Co-Evolution for Agentic RL on Terminal-Bench 2.1 (Tencent)</span><span class="badge feed">feed</span></div>
@@ -2012,7 +2057,17 @@ LSPO 给这些“悬崖题”临时装上 LoRA：用标准推导短暂 SFT，再
 So I&#x27;ve been reading prime-rl codebase from @PrimeIntellect, and I&#x27;m turning that into a blog seri…</p>
 <p class="card-meta">@vivek_2332 · added 2026-08-03 · <a href="https://x.com/vivek_2332/status/2084291916221579299">X post</a> · <a href="https://vivekvkashyap.github.io/posts/rl-infra-orchestrator-part-1.html">vivekvkashyap.github.io</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card" data-key="byte-distillation-token-ceiling">
+</div></section><section id="distillation"><h2>Distillation</h2><p class="cat-desc">On-policy distillation, delta/context distillation, teacher replay, experience distillation.</p><div class="card" data-key="2099898800508944871">
+<div class="card-head"><span class="title">Sequential Beats Joint: OPD-then-RL Outperforms Joint OPD+RLVR Objectives</span><span class="badge like">like</span></div>
+<p class="snippet">New 📜 on the interplay between OPD and RLVR
+💡Don’t skip RL after OPD 
+
+We find that after using OPD for reasoning, adding an RL phase consistently improves performance.
+
+Across rea…</p>
+<p class="card-meta">@xiye_nlp · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.04108">arXiv</a> · <a href="https://github.com/StringNLPLAB/opd-rlvr">GitHub</a> · <a href="https://x.com/xiye_nlp/status/2099898800508944871">X post</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/sequential-beats-joint.html">📖 Tutorial · 10 min</a> </p>
+</div><div class="card" data-key="byte-distillation-token-ceiling">
 <div class="card-head"><span class="title">Breaking the Token Ceiling: Distilling Smaller, Stronger Byte-Level Models from Token Teachers (Meta)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Banger paper from Meta.
 
@@ -2070,14 +2125,14 @@ Since the release of Rethinking OPD (https://t.co/DDS4uAbWHb), we&#x27;ve been d
 <p class="snippet">Does on-policy distillation really distill?
 
 New research shows most gains come from suppressing unlikely tokens, not from teacher knowledge. They introduce OPSA, a teacher-free me…</p>
-<p class="card-meta">@HuggingPapers, @_akhaliq, @askalphaxiv · added 2026-09-02 · <a href="https://arxiv.org/abs/2608.31046">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2094639695049207907">X post</a> · <a href="https://huggingface.co/papers/2608.31046">huggingface.co</a></p>
+<p class="card-meta">@HuggingPapers, @_akhaliq, @askalphaxiv, @ethantsliu · added 2026-09-02 · <a href="https://arxiv.org/abs/2608.31046">arXiv</a> · <a href="https://x.com/HuggingPapers/status/2094639695049207907">X post</a> · <a href="https://huggingface.co/papers/2608.31046">huggingface.co</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/opsa-on-policy-distillation.html">📖 Tutorial · 8 min</a> </p>
 </div><div class="card" data-key="2095025584724119837">
 <div class="card-head"><span class="title">Switch Distillation: Entropy-Routed KD Recovers Factual Recall During Mid-Training (Meta)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Knowledge Distillation During Mid-Training Favors Reasoning over Factual Recall
 
 &quot;we find that forward Kullback-Leibler (KL) distillation--the standard KD formulation--with post-tr…</p>
-<p class="card-meta">@iScienceLuvr, @askalphaxiv · added 2026-09-02 · <a href="https://arxiv.org/abs/2609.01532">arXiv</a> · <a href="https://github.com/facebookresearch/midtraining-distillation">GitHub</a> · <a href="https://x.com/iScienceLuvr/status/2095025584724119837">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.01532">alphaxiv.org</a></p>
+<p class="card-meta">@iScienceLuvr, @askalphaxiv, @jcqln_h · added 2026-09-02 · <a href="https://arxiv.org/abs/2609.01532">arXiv</a> · <a href="https://github.com/facebookresearch/midtraining-distillation">GitHub</a> · <a href="https://x.com/iScienceLuvr/status/2095025584724119837">X post</a> · <a href="https://www.alphaxiv.org/abs/2609.01532">alphaxiv.org</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/switch-distillation.html">📖 Tutorial · 9 min</a> </p>
 </div><div class="card" data-key="2093814402600624431">
 <div class="card-head"><span class="title">Distillation Transfers Reasoning Habits: Teacher Lineage Outweighs Teacher Strength or Data</span><span class="badge feed">feed</span></div>
@@ -2346,7 +2401,21 @@ On-policy distillation has become a default post-training tool in many open-sour
 A new on-policy distillation paradigm that uses evolving contexts to capture task preferences in open-ended domains, without verifiable rewards https://t.co/LofGf3rTnZ</p>
 <p class="card-meta">@HuggingPapers · added 2026-08-03 · <a href="https://x.com/HuggingPapers/status/2083713047353266678">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="2099553158519509085">
+</div></section><section id="memory-context"><h2>Memory &amp; Context Engineering</h2><p class="cat-desc">Agent memory systems, context management, retrieval, long-context strategies, test-time training on context.</p><div class="card" data-key="2099747808509370698">
+<div class="card-head"><span class="title">TF-IDF and BM25 Are Exact KL Divergences</span><span class="badge feed">feed</span></div>
+<p class="snippet">TF-IDF and BM25 Are Exact KL Divergences
+
+Shows that TF-IDF and BM25 can each be derived as an exact Kullback-Leibler divergence between two probability models, giving both a proba…</p>
+<p class="card-meta">@_reachsumit · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.14016">arXiv</a> · <a href="https://x.com/_reachsumit/status/2099747808509370698">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2100085193763954886">
+<div class="card-head"><span class="title">ORDER: Task-Conditioned Routing over Retrieval Sources and Indexing Strategies for RAG</span><span class="badge feed">feed</span></div>
+<p class="snippet">ORDER: Task-Conditioned Routing for Retrieval-Augmented Generation
+
+Introduces a query-conditioned RAG framework that routes each incoming query to the best retrieval sources and i…</p>
+<p class="card-meta">@_reachsumit · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.17012">arXiv</a> · <a href="https://github.com/atomegoyan/ORDER_EMNLP2026">GitHub</a> · <a href="https://x.com/_reachsumit/status/2100085193763954886">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099553158519509085">
 <div class="card-head"><span class="title">Verify-Then-Write: Environment-Grounded Verification of Agent Memories at Write Time (Microsoft)</span><span class="badge feed">feed</span></div>
 <p class="snippet">New Microsoft paper recommends for long-running agents, check that a lesson is correct and reusable before putting it into persistent memory.
 
@@ -3127,7 +3196,25 @@ The paper is PlugMem, from Microsoft Research and UIUC. The failure is plain…<
 <p class="snippet">Rather than treating evidence retrieval as a single step, HierDoc learns evidence acquisition hierarchically: first selecting relevant pages, then the relevant semantic regions wit…</p>
 <p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.29638">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084309823487660096">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="multi-agent"><h2>Multi-Agent Systems</h2><p class="cat-desc">Coordination, role drift, meta-agents, multi-agent search and exploration.</p><div class="card" data-key="2099519547510558755">
+</div></section><section id="multi-agent"><h2>Multi-Agent Systems</h2><p class="cat-desc">Coordination, role drift, meta-agents, multi-agent search and exploration.</p><div class="card" data-key="2099924717704732699">
+<div class="card-head"><span class="title">Stellar Colosseum: A Many-Agent Harness for Long-Horizon Research in Mathematics and TCS</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger paper from Google on agent harnesses for long-horizon tasks.
+
+(bookmark it)
+
+Google Research built a many-agent harness for long mathematical proofs, and it produced new res…</p>
+<p class="card-meta">@omarsar0 · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.15983">arXiv</a> · <a href="https://x.com/omarsar0/status/2099924717704732699">X post</a> · <a href="https://academy.dair.ai/papers/stellar-colosseum-a-many-agent-harness-for-long-horizon-research-in-mathematics-2609.15983">academy.dair.ai</a></p>
+<p class="card-actions"><a class="tut" href="tutorials/stellar-colosseum.html">📖 Tutorial · 12 min</a> </p>
+</div><div class="card" data-key="2100235516918849661">
+<div class="card-head"><span class="title">Choosing Model Pools for Multi-Agent Systems: Same-Family Ensembles Beat Mixed Pools</span><span class="badge feed">feed</span></div>
+<p class="snippet">Banger paper from NVIDIA.
+
+It&#x27;s on the topic of choosing which models go into a multi-agent system.
+
+The team compared eight selection strategies, based on size, accuracy, answer d…</p>
+<p class="card-meta">@omarsar0 · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.17306">arXiv</a> · <a href="https://x.com/omarsar0/status/2100235516918849661">X post</a> · <a href="https://academy.dair.ai/papers/mo-models-mo-problems-how-to-best-select-model-pools-when-designing-multi-agent-2609.17306">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099519547510558755">
 <div class="card-head"><span class="title">The Mechanics of a Swarm: External Reconstruction of Agent-Cohort Coordination in the Unintended Wiki Incident</span><span class="badge feed">feed</span></div>
 <p class="snippet">If you are tracking agent swarms research, this one is worth reading.
 
@@ -3381,7 +3468,19 @@ A computer science paper builds a graph-based workflow serving engine that unifi
 The result: dynamic …</p>
 <p class="card-meta">@beamnxw · added 2026-08-03 · <a href="https://x.com/beamnxw/status/2083890242818302419">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="reasoning"><h2>Reasoning &amp; Test-Time Compute</h2><p class="cat-desc">Test-time scaling, tree search, CoT monitoring, recursive LMs, novelty-driven intelligence.</p><div class="card" data-key="2097354911017316736">
+</div></section><section id="reasoning"><h2>Reasoning &amp; Test-Time Compute</h2><p class="cat-desc">Test-time scaling, tree search, CoT monitoring, recursive LMs, novelty-driven intelligence.</p><div class="card" data-key="2099961522453893309">
+<div class="card-head"><span class="title">Humans Scale Super-Linearly on 14-Day Coding Tasks: Evidence of In-Task Continual Learning</span><span class="badge feed">feed</span></div>
+<p class="snippet">More data from our experiment on agents vs humans on 14 day tasks. We compare human expert coders to coding agents on the same tasks (from AtCoder Heuristic Contest). The exciting …</p>
+<p class="card-meta">@AlexGDimakis · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.15309">arXiv</a> · <a href="https://x.com/AlexGDimakis/status/2099961522453893309">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099967159581728839">
+<div class="card-head"><span class="title">Lightning Weave: Capability Composition for the Accuracy-Efficiency Frontier of Reasoning Models</span><span class="badge feed">feed</span></div>
+<p class="snippet">[AI] Lightning Weave: Improving the Accuracy-Efficiency Frontier of Reasoning Models through Capability Composition
+Y Wu, S Han, H Cai [MIT &amp; NVIDIA] (2026)
+https://t.co/6tTKJRJHnc…</p>
+<p class="card-meta">@fly51fly · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.14708">arXiv</a> · <a href="https://x.com/fly51fly/status/2099967159581728839">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2097354911017316736">
 <div class="card-head"><span class="title">Fractal Reasoning Dynamics: Nonlinear-Dynamics Probes of Recurrent-Depth Models on Sudoku, Math, and ARC-AGI</span><span class="badge feed">feed</span></div>
 <p class="snippet">Our group discovered that reasoning models produce fractals when asked to solve hard problems. We can use nonlinear dynamics to probe the thinking processes of recurrent depth mode…</p>
 <p class="card-meta">@wgilpin0 · added 2026-09-09 · <a href="https://arxiv.org/abs/2609.04963">arXiv</a> · <a href="https://x.com/wgilpin0/status/2097354911017316736">X post</a></p>
@@ -3527,7 +3626,7 @@ X J Wang, H Cui, M P. Brenner, S Venugopalan [California Institute of Technology
 Long-horizon agents need to know when to persist, stop, or pivot without drifting from the goal.
 
 This paper …</p>
-<p class="card-meta">@askalphaxiv · added 2026-08-09 · <a href="https://arxiv.org/abs/2608.05144">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2086155537637679358">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.05144">alphaxiv.org</a></p>
+<p class="card-meta">@askalphaxiv, @jiqizhixin · added 2026-08-09 · <a href="https://arxiv.org/abs/2608.05144">arXiv</a> · <a href="https://github.com/lbx154/Argus">GitHub</a> · <a href="https://x.com/askalphaxiv/status/2086155537637679358">X post</a> · <a href="https://www.alphaxiv.org/abs/2608.05144">alphaxiv.org</a></p>
 <p class="card-actions"><a class="tut" href="tutorials/argus-agentic-runtime.html">📖 Tutorial · 10 min</a> </p>
 </div><div class="card" data-key="test-time-scaling-taxonomy">
 <div class="card-head"><span class="title">Formalizing Test-Time Scaling: Sequential, Leaf-Level, and Prefix-Tree Scaling</span><span class="badge feed">feed</span></div>
@@ -3624,7 +3723,21 @@ basically, you combine exploration with latent reasoning models (e.g., on sudoku
 Progressive pessimistic verification starts with whole-proof verification, then progressively subdivides proofs into smaller seg…</p>
 <p class="card-meta">@gm8xx8 · added 2026-08-03 · <a href="https://arxiv.org/abs/2511.21522">arXiv</a> · <a href="https://x.com/gm8xx8/status/2084307496613695645">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2098886268033945610">
+</div></section><section id="architecture"><h2>Architecture &amp; Efficiency</h2><p class="cat-desc">Looped/latent architectures, KV/context compression, quantization, hypernetworks, inference efficiency.</p><div class="card" data-key="2100139877916676135">
+<div class="card-head"><span class="title">Discrete Beckmann Transport: One-Step Language Modeling Without a Teacher</span><span class="badge feed">feed</span></div>
+<p class="snippet">“Discrete Beckmann Transport Models for One-Step Language Modeling and Reasoning”
+
+Few-step diffusion and flow LMs usually require distilling a pretrained teacher, which adds train…</p>
+<p class="card-meta">@askalphaxiv · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.15903">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2100139877916676135">X post</a> · <a href="https://alphaxiv.org/abs/2609.15903">alphaxiv.org</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2100177890474348924">
+<div class="card-head"><span class="title">ZGCM-1: A 7.39B Fully Open Think-and-Seek Model with 5:1 Sliding-Window Attention and 256K Context</span><span class="badge feed">feed</span></div>
+<p class="snippet">「小さいモデルは、巨大モデルの知識量に勝てない」は、もう前提として置かなくていいのかもしれない（https://t.co/SEJzINt3RH）。ZGCM-1は、7.39Bパラメータの完全公開モデル。内部でじっくり考えるだけでなく、Webや端末を自分で調べる「think + seek」で知識の不足を補う。
+
+面白いのは、サイズ競争の前に計算の流れを変えたこと…</p>
+<p class="card-meta">@itarutomy · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.13356">arXiv</a> · <a href="https://x.com/itarutomy/status/2100177890474348924">X post</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2098886268033945610">
 <div class="card-head"><span class="title">Recurrent Looped Transformer (RLT): Token-Recurrent Decoder with Causal-Encoder KV Memory</span><span class="badge like">like</span></div>
 <p class="snippet">We are at the dawn of Superintelligence.
 
@@ -4499,7 +4612,38 @@ So the world is what stays stable, like the scene, character, voice, and ambienc
 Most manipulation systems can only follow a si…</p>
 <p class="card-meta">@stepjamUK · added 2026-08-03 · <a href="https://arxiv.org/abs/2607.21725">arXiv</a> · <a href="https://x.com/stepjamUK/status/2084281886348652725">X post</a> · <a href="https://lianegalanti.github.io/Pigey/">lianegalanti.github.io</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2099518541930332182">
+</div></section><section id="benchmarks"><h2>Benchmarks &amp; Evaluation</h2><p class="cat-desc">New benchmarks and evaluation methodology for agents and models.</p><div class="card" data-key="2099901663062679853">
+<div class="card-head"><span class="title">CheatBench: Measuring How Often Frontier Agents Game Their Rewards</span><span class="badge feed">feed</span></div>
+<p class="snippet">How often do AI agents cheat?
+
+We’re releasing CheatBench, a reward gaming evaluation spanning math, coding, knowledge work, visual tasks, and more.
+
+After Hugging Face, AI compani…</p>
+<p class="card-meta">@hendrycks · added 2026-09-16 · <a href="https://x.com/hendrycks/status/2099901663062679853">X post</a> · <a href="https://cheatbench.ai/">cheatbench.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099925472629150164">
+<div class="card-head"><span class="title">Is Bash All You Need? Comparing Five Tool Interfaces for Enterprise Agents</span><span class="badge feed">feed</span></div>
+<p class="snippet">Is Bash All You Need?
+
+Interesting paper from Microsoft.
+
+If you are deciding which tools to give an enterprise agent, you might want to check this out.
+
+(bookmark it)
+
+They compar…</p>
+<p class="card-meta">@dair_ai · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.11999">arXiv</a> · <a href="https://x.com/dair_ai/status/2099925472629150164">X post</a> · <a href="https://academy.dair.ai/papers/is-bash-all-you-need-an-empirical-study-of-tool-interfaces-for-enterprise-digita-2609.11999">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2100077223252512956">
+<div class="card-head"><span class="title">Unnecessary Tool Availability Suppresses Answers the Model Already Knows</span><span class="badge feed">feed</span></div>
+<p class="snippet">Giving an assistant extra tools seems harmless.
+
+Surprisingly, this paper shows it can make the assistant stop answering questions it knows.
+
+Across six models, the answer rate on …</p>
+<p class="card-meta">@dair_ai · added 2026-09-16 · <a href="https://arxiv.org/abs/2609.14157">arXiv</a> · <a href="https://x.com/dair_ai/status/2100077223252512956">X post</a> · <a href="https://academy.dair.ai/papers/when-tools-get-in-the-way-the-effect-of-unnecessary-tool-availability-on-llm-ans-2609.14157">academy.dair.ai</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2099518541930332182">
 <div class="card-head"><span class="title">GAUGE: When Not to Trust LLM-as-a-Judge in User-Simulated Evaluation of Task Agents (Amazon)</span><span class="badge feed">feed</span></div>
 <p class="snippet">Great paper from Amazon.
 
@@ -5554,7 +5698,14 @@ A million-scale synthetic dataset of private records—medical files, financial 
 A Grounded Code-Agent Platform for Constructing Editable LLM Data Pipelines https://t.co/9JP0L73LNn</p>
 <p class="card-meta">@_akhaliq · added 2026-08-03 · <a href="https://x.com/_akhaliq/status/2079980795071000858">X post</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2097486640923209923">
+</div></section><section id="tools"><h2>Tools &amp; Infrastructure</h2><p class="cat-desc">Open-source tools, frameworks, observability, developer infrastructure.</p><div class="card" data-key="2100240101381140947">
+<div class="card-head"><span class="title">Paper2Agent: Converting Research Papers into Interactive Agents (Nature)</span><span class="badge feed">feed</span></div>
+<p class="snippet">When your research paper can talk to you and interact with other research papers....
+Reimagining science publishing and knowledge dissemination with Paper2Agent 
+https://t.co/zASfw…</p>
+<p class="card-meta">@EricTopol · added 2026-09-16 · <a href="https://x.com/EricTopol/status/2100240101381140947">X post</a> · <a href="https://www.nature.com/articles/s41586-026-11044-y">nature.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2097486640923209923">
 <div class="card-head"><span class="title">ML Intern: Hugging Face&#x27;s Open-Source ML Research Agent (Reads Papers, Writes Training Code, Ships Artifacts)</span><span class="badge feed">feed</span></div>
 <p class="snippet">This open-source ML agent reads papers, writes training code, launches HF Jobs, and can ship artifacts from a chat. Hugging Face&#x27;s ML Intern runs locally or on HF Spaces; headless …</p>
 <p class="card-meta">@di_zhang_fdu, @abidlabs · added 2026-09-09 · <a href="https://github.com/huggingface/ml-intern">GitHub</a> · <a href="https://x.com/di_zhang_fdu/status/2097486640923209923">X post</a></p>
@@ -5958,7 +6109,19 @@ It&#x27;s not on @arxiv, but it is on Papers with Code.
 You can find the evals at the bottom. The model is #2 on WebAre…</p>
 <p class="card-meta">@NielsRogge, @rosinality, @rohanpaul_ai · added 2026-08-03 · <a href="https://arxiv.org/abs/2608.02352">arXiv</a> · <a href="https://x.com/NielsRogge/status/2084223344333721653">X post</a> · <a href="https://paperswithcode.co/paper/106032">paperswithcode.co</a></p>
 <p class="card-actions"> </p>
-</div></section><section id="roundups"><h2>Roundups &amp; Misc</h2><p class="cat-desc">Weekly digests, model releases, commentary, uncategorized.</p><div class="card" data-key="2098943916880089520">
+</div></section><section id="roundups"><h2>Roundups &amp; Misc</h2><p class="cat-desc">Weekly digests, model releases, commentary, uncategorized.</p><div class="card" data-key="2100230224222781819">
+<div class="card-head"><span class="title">Training Agents Series: SFT on Traces, Distillation, RL, and RL Environments</span><span class="badge feed">feed</span></div>
+<p class="snippet">The Training Agents series is completed!
+
+It includes 6 different videos:
+
+&gt; Agentic Evaluations Workshop
+&gt; RL for Agents Workshop
+&gt; Training Agents 1: SFT on agent traces
+&gt; Traini…</p>
+<p class="card-meta">@SergioPaniego · added 2026-09-16 · <a href="https://x.com/SergioPaniego/status/2100230224222781819">X post</a> · <a href="https://youtube.com/playlist?list=PLo2EIpI_JMQvQZm-kVlz4wY1vWF0LBcf5">youtube.com</a></p>
+<p class="card-actions"> </p>
+</div><div class="card" data-key="2098943916880089520">
 <div class="card-head"><span class="title">Stanford CS 312: Deep Learning Alchemy (Hashimoto &amp; Kotha) - Open Course Materials</span><span class="badge like">like</span></div>
 <p class="snippet">Great chance to plug @tatsu_hashimoto and @kothasuhas&#x27;s CS 312: Deep Learning Alchemy 
 
@@ -6195,6 +6358,6 @@ Qwe…</p>
 <p class="card-meta">@Alibaba_Qwen · added 2026-08-03 · <a href="https://x.com/Alibaba_Qwen/status/2084100707423289643">X post</a> · <a href="https://github.com/qwen-code-dev-bot/oh-my-cli">github.com</a></p>
 <p class="card-actions"> </p>
 </div></section></div>
-<footer>Generated 2026-09-16 01:26 UTC · <a href="index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-16 16:06 UTC · <a href="index.html">Reading Tracker</a></footer>
 </body>
 </html>

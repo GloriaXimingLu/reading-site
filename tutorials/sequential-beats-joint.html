@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sequential Beats Joint: OPD-then-RL Outperforms Every Fused OPD+RLVR Objective</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Sequential Beats Joint: OPD-then-RL Outperforms Every Fused OPD+RLVR Objective</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2609.04108">arXiv:2609.04108</a> · <a href="https://arxiv.org/abs/2609.04108">arXiv</a> · <a href="https://github.com/StringNLPLAB/opd-rlvr">GitHub</a> · <a href="https://x.com/xiye_nlp/status/2099898800508944871">X post</a> · <a href="../index.html#distillation">Distillation</a></p><h2>TL;DR</h2>
+<ul>
+<li>Boyan Li, Bingsen Chen, Chenghao Yang, Ping Nie, Chen Zhao and Xi Ye (Alberta/Amii, NYU + NYU Shanghai, Chicago, Waterloo) put every published way of combining on-policy distillation with RLVR into one token-level policy-gradient template, and show they all differ only in how they mix two advantage terms inside a single update. Then they show the mixing is the problem: just running <strong>OPD for 60 steps, then plain GRPO</strong> beats all of them.</li>
+<li>On three ReasoningGym logic tasks, OPD-then-RL reaches <strong>80.6 average pass@1</strong>, ahead of the best joint method by <strong>11.7–26.7 points</strong> and ahead of pure OPD (53.9) and pure GRPO (49.4). It also <em>passes the teacher</em>: Qwen3-8B scores 59.9, while every joint method plateaus underneath it.</li>
+<li>The mechanism is clean and measurable. OPD raises pass@<span class="arithmatex">\(k\)</span> at large <span class="arithmatex">\(k\)</span> (it expands what the student can reach at all); RL then concentrates probability mass inside that expanded support. Fusing them makes the RL term fight OPD's parameter updates — sign-conflict rate on OPD's largest-magnitude parameters is 15.0% for KDRL versus <strong>3.4% for OPD-then-RL</strong>.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>On-policy distillation is now a standard stage in open post-training recipes, and the obvious next move — "we have a dense teacher signal <em>and</em> a verifiable reward, so use both at once" — has produced a small literature of fused objectives: KDRL, KDRL-mask, SRPO, HDPO, RLSD, TRRD. Each reports gains over OPD or RL alone, so the field has been quietly accumulating the assumption that fusion is the right shape for the problem.</p>
+<p>This paper checks the baseline that nobody ran properly, and the baseline wins. That is worth a lot of compute: the two-stage recipe has no mixing coefficient <span class="arithmatex">\(\beta\)</span> to tune, needs no teacher forward passes after the switch, and (the paper notes) weighted-additive methods are <em>highly</em> sensitive to <span class="arithmatex">\(\beta\)</span>, requiring task-specific ablations to be competitive at all. If you are budgeting a post-training run today, the practical read is that OPD is a <strong>cold-start stage</strong>, not a co-objective — and a better cold start than SFT, by 4.9 pass@1 before RL even begins.</p>
+<h2>The core idea</h2>
+<p>Both objectives reduce to policy-gradient ascent with a method-specific per-token advantage. GRPO assigns every token in a rollout the group-normalized outcome reward</p>
+<div class="arithmatex">\[ \hat{A}^{(i)} = \frac{R^{(i)} - \operatorname{mean}(\{R^{(j)}\}_{j=1}^{G})}{\operatorname{std}(\{R^{(j)}\}_{j=1}^{G})} \]</div>
+<p>where <span class="arithmatex">\(R^{(i)}\)</span> is the verifiable reward of the <span class="arithmatex">\(i\)</span>-th of <span class="arithmatex">\(G\)</span> rollouts sampled for a prompt. OPD instead minimizes reverse KL to the teacher on the student's own rollouts, which decomposes into a per-token advantage</p>
+<div class="arithmatex">\[ d_t^{(i)} \triangleq \log \pi_T(y_t^{(i)} \mid h_t^{(i)}) - \log \pi_\theta(y_t^{(i)} \mid h_t^{(i)}) \]</div>
+<p>with <span class="arithmatex">\(\pi_T\)</span> the teacher, <span class="arithmatex">\(\pi_\theta\)</span> the student, and <span class="arithmatex">\(h_t^{(i)} = (x, y_{&lt;t}^{(i)})\)</span> the history before token <span class="arithmatex">\(t\)</span>. Everything then fits one template:</p>
+<div class="arithmatex">\[ \nabla_\theta J^{\mathrm{alg}}(\theta) = \mathbb{E}\Big[ \sum_{i,t} A_t^{\mathrm{alg},(i)} \, \nabla_\theta \log \pi_\theta(y_t^{(i)} \mid h_t^{(i)}) \Big] \]</div>
+<p>where <span class="arithmatex">\(A_t^{\mathrm{alg}}\)</span> is the only thing that varies across methods. The published combinations split into two families: <strong>weighted-additive</strong>, <span class="arithmatex">\(A_t^{\mathrm{add},(i)} = w_R \hat{A}^{(i)} + w_T d_t^{(i)}\)</span>, where the teacher term can <em>flip the sign</em> of the reward advantage; and <strong>teacher-modulated</strong>, <span class="arithmatex">\(A_t^{\mathrm{mod},(i)} = m(d_t^{(i)}) \cdot \hat{A}^{(i)}\)</span> with <span class="arithmatex">\(m &gt; 0\)</span>, where the teacher only rescales magnitude and the verifier keeps the sign. The paper's alternative is to stop mixing and switch:</p>
+<div class="arithmatex">\[ A_t^{\mathrm{alg},(i)} = \begin{cases} d_t^{(i)}, &amp; \text{training step} \le S \\ \hat{A}^{(i)}, &amp; \text{otherwise} \end{cases} \]</div>
+<p>with <span class="arithmatex">\(S\)</span> the switching point (default <span class="arithmatex">\(S = 60\)</span> of 150 total steps).</p>
+<p><img alt="Pass@1 vs pass@32 averaged across logic reasoning tasks; OPD-then-RL is the red star in the upper right" src="assets/sequential-beats-joint/fig1_pareto.png" /></p>
+<p><em>Figure 1 from the paper: each point is one post-training algorithm. The joint methods cluster tightly around pure OPD and pure GRPO; the sequential recipe sits alone on both axes.</em></p>
+<h2>How it works</h2>
+<pre><code class="language-text">OPD-then-RL (student π_θ, teacher π_T, verifier R, switch step S)
+ 1. for step = 1 .. S:                      # Stage 1 — expand coverage
+ 2.     x ~ D; sample rollouts y ~ π_θ(·|x)
+ 3.     query teacher log-probs on the STUDENT's tokens
+ 4.     d_t = log π_T(y_t|h_t) - log π_θ(y_t|h_t)
+ 5.     policy-gradient step with advantage A_t = d_t
+ 6.     track OPD validation pass@1
+ 7.
+ 8. # switch when OPD validation score saturates — that score
+ 9. # is what propagates into the RL stage
+10.
+11. for step = S+1 .. T:                     # Stage 2 — sharpen inside it
+12.     x ~ D; sample group of G rollouts y ~ π_θ_old(·|x)
+13.     R_i = verify(x, y_i)
+14.     Â_i = (R_i - mean(R)) / std(R)       # group-normalized
+15.     PPO-clipped step with advantage A_t = Â_i
+16.     teacher is never queried again
+</code></pre>
+<p>Two details make this a recipe rather than a trick. First, <strong>when to switch</strong>: the authors compare switching at steps 20, 60 and 100. On K&amp;K and Zebra, where OPD's validation score is still climbing at step 100, later switches win outright. On Countdown, where OPD saturates by step 20, all three switch points converge to the same post-RL accuracy. The rule that falls out is not "switch at step 60" but "switch when the OPD validation score stops improving" — that score largely determines the final number.</p>
+<p>Second, <strong>hard switching beats soft</strong>. KDRL-Annealing linearly decays <span class="arithmatex">\(\beta\)</span> from 0.2 to 0.002, which is the continuous version of the same schedule, and it still loses to the hard switch (68.9 vs 80.6 logic pass@1). Any residual teacher term keeps pulling the student back.</p>
+<h2>Results</h2>
+<p>Teacher is Qwen3-8B in non-thinking mode; student is Qwen3-1.7B-Base (Qwen3-0.6B-Base in the appendix shows the same trends). Logic tasks are Knights &amp; Knaves, Zebra Puzzles and Countdown from ReasoningGym; math is DeepMath-103K for training, evaluated on MATH500 / AMC23 / AIME24 / AIME25. All methods get the same total step budget, and pass@1 is avg@32.</p>
+<table>
+<thead>
+<tr>
+<th>Method (logic avg)</th>
+<th>pass@1</th>
+<th>pass@32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Student (Qwen3-1.7B-Base)</td>
+<td>1.9</td>
+<td>33.0</td>
+</tr>
+<tr>
+<td>Teacher (Qwen3-8B)</td>
+<td>59.9</td>
+<td>96.2</td>
+</tr>
+<tr>
+<td>GRPO</td>
+<td>49.4</td>
+<td>68.1</td>
+</tr>
+<tr>
+<td>OPD</td>
+<td>53.9</td>
+<td>94.9</td>
+</tr>
+<tr>
+<td>KDRL (best weighted-additive)</td>
+<td>62.8</td>
+<td>92.4</td>
+</tr>
+<tr>
+<td>TRRD (best teacher-modulated)</td>
+<td>58.6</td>
+<td>95.6</td>
+</tr>
+<tr>
+<td>KDRL-Annealing</td>
+<td>68.9</td>
+<td>95.4</td>
+</tr>
+<tr>
+<td><strong>OPD-then-RL</strong></td>
+<td><strong>80.6</strong></td>
+<td><strong>98.3</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Per-task, the K&amp;K gap is the widest: 92.6 pass@1 against 86.3 for annealing, 50.5 for OPD and 28.1 for GRPO. On math the field compresses — 31.8 average pass@1 for OPD-then-RL versus 31.6 for SRPO and 31.0 for pure OPD — and the authors are honest about it: paired problem-level bootstrap tests find the lead significant against six of nine competitors and a statistical tie with the three strongest. The domain difference is itself informative. Where the teacher is heavily post-trained (math), its behavior is already a good proxy for the task objective and the verifiable reward has little left to add; where the teacher has limited prior exposure (logic), the two signals genuinely carry different information.</p>
+<p><img alt="pass@k curves for Countdown and K&amp;K, plus pass@k vs difficulty" src="assets/sequential-beats-joint/fig2_passk.png" /></p>
+<p><em>Figure 2 from the paper: OPD lifts the whole pass@k curve (largest gain at large k); OPD-then-RL keeps that ceiling and adds pass@1. On out-of-distribution K&amp;K (right), pass@128 stays high as difficulty grows even while pass@1 falls.</em></p>
+<p>Three analyses converge on the same story. <strong>Pass@<span class="arithmatex">\(k\)</span></strong>: OPD widens the pass@128 − pass@1 gap by enlarging the solvable set; RL narrows it by moving mass toward pass@1. <strong>Learning dynamics</strong>: OPD and all joint methods plateau below the teacher's 56.6 K&amp;K pass@1, while the scheduling methods cross it — OPD-then-RL averages 20+ points above the teacher on logic. Decomposing <span class="arithmatex">\(D_{\mathrm{KL}}(p_S \| p_T) = H(p_S, p_T) - H(p_S)\)</span> shows the RL stage does <em>not</em> leave the teacher's support: cross-entropy keeps falling while entropy falls faster, and the student's top-<span class="arithmatex">\(K\)</span> overlap with the teacher shrinks while its probability mass on the retained tokens grows. <strong>Parameter updates</strong>: the sign-conflict rate against OPD's updates, on OPD's top-100% updated parameters, is 21.0% for pure RL, 15.0% for KDRL, 6.6% for TRRD and 3.4% for OPD-then-RL — and OPD-then-RL's conflicts sit almost entirely in the low-magnitude tail. The causal check is the nicest experiment in the paper: surgically replacing a fraction of KDRL's sign-conflicting parameters with OPD's values monotonically improves pass@<span class="arithmatex">\(k\)</span> while degrading pass@1, and a random-parameter control does not reproduce the trade-off.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>It reframes a running argument in this tracker.</strong> <a href="../tutorials/opsa-on-policy-distillation.html">OPSA</a> argued most of OPD's gain is self-suppression of low-probability tokens rather than teacher knowledge; this paper argues OPD's distinctive contribution is <em>coverage expansion</em> (pass@<span class="arithmatex">\(k\)</span> at large <span class="arithmatex">\(k\)</span>). Both are consistent with a deflationary reading of "distillation," and both point at the same practical conclusion: stop treating the teacher term as a permanent objective.</li>
+<li><strong>Same shape as TailSFT, different stage.</strong> <a href="../tutorials/tailsft-filtered-sft-for-rl.html">TailSFT</a> found that optimizing a cold start for <em>coverage</em> (pass@K) rather than pass@1 produced checkpoints that won every matched GRPO comparison afterwards. This paper finds OPD is a better coverage-oriented cold start than SFT (30.3 vs 25.4 pass@1 before RL; +7.2 pass@32 after). Two independent routes to "the cold start's job is coverage, RL's job is sharpening."</li>
+<li><strong>A concrete instance of gradient interference.</strong> <a href="../tutorials/sft-conflicts-rl-coexists.html">SFT Conflicts, RL Coexists</a> measured dense, overlapping SFT updates interfering across tasks while sparse RL updates stay near-orthogonal. The sign-conflict analysis here is the within-objective version of that measurement, and it identifies <em>which</em> parameters matter — the subspace carrying OPD's pass@<span class="arithmatex">\(k\)</span> gains.</li>
+<li><strong>Complements the teacher-reliability thread.</strong> <a href="../tutorials/tgopd-teacher-gated-opd.html">TGOPD</a> gates OPD per prompt by auditing the teacher, and <a href="../tutorials/opd-no-free-lunch.html">MOPD / no-free-lunch</a> catalogues where teachers transfer badly. Those fix <em>which prompts</em> to distill on; this fixes <em>when to stop distilling at all</em>. They compose.</li>
+<li><strong>Read alongside today's other RL addition.</strong> <a href="../tutorials/never-give-up-rl.html">Never Give Up</a> shows RL disproportionately improves problems the model already solves. If RL mostly sharpens within existing support, then whatever expands that support first — OPD here, adaptive sampling there — is where the real headroom is.</li>
+</ul>
+<h2>Critical take</h2>
+<p>The scale is small and the paper knows it: a 1.7B student and an 8B teacher, 150 training steps, three logic tasks plus DeepMath. The mechanism story (coverage then sharpening) is plausible and well-instrumented, but nothing here tells you whether a 60-step switch point survives at 10× the model size or 100× the steps — and the switching criterion, "when OPD validation saturates," is exactly the quantity that becomes expensive and noisy to measure at frontier scale.</p>
+<p>The math results are close to a wash, and the honest framing in the paper is that most methods tie there. That weakens the headline: the 26.7-point margins come from logic tasks where the teacher is <em>weak</em>, which is arguably the regime where the sequential recipe should win most and where practitioners are least likely to be operating. A frontier post-training team distilling from a heavily post-trained teacher is in the math regime, where this paper's own numbers say the choice barely matters.</p>
+<p>The strongest contribution is the one least likely to be cited: the unified token-level table showing that six published "combination methods" are one equation with different coefficient choices. That is a genuine piece of field hygiene, and it makes the null result legible — these methods were never exploring a rich design space, they were tuning a mixing weight that should have been a schedule.</p>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>OPD and RLVR are stages, not co-objectives.</strong> Every published fusion is the same token-level update with a different mixing rule, and running the two signals sequentially beats all of them — by 11.7–26.7 pass@1 on logic, with no mixing coefficient to tune.</li>
+<li><strong>The division of labor is coverage then sharpening.</strong> OPD lifts pass@<span class="arithmatex">\(k\)</span> at large <span class="arithmatex">\(k\)</span>; RL redistributes mass toward pass@1 <em>without</em> leaving the teacher's support. Fusion makes them fight, measurably, in the parameter subspace carrying OPD's coverage gains.</li>
+<li><strong>Switch on the OPD validation curve, and prefer OPD to SFT as the cold start.</strong> The OPD score at the switch point is what propagates into RL; switching before saturation caps final accuracy. OPD cold start beats SFT cold start by 4.9 pass@1 before RL and widens to +7.2 pass@32 after.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-16 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
