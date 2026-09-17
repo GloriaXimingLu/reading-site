@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSIAgent: Weight-Frozen Recursive Self-Improvement via Autonomous Exploration and Verified Memory (Aether AI / UCSD)</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>RSIAgent: Weight-Frozen Recursive Self-Improvement via Autonomous Exploration and Verified Memory (Aether AI / UCSD)</h1><p class="meta">10 min read · <a href="https://arxiv.org/abs/2609.15364">arXiv:2609.15364</a> · <a href="https://arxiv.org/abs/2609.15364">arXiv</a> · <a href="https://github.com/AetherLabsAI/RSIAgent">GitHub</a> · <a href="https://x.com/huang_biwei/status/2099664633095401659">X post</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>RSIAgent</strong> (Zhu, Fan, Wang, Wu, Zhou, Huang — Aether AI / UC San Diego / UIC, arXiv 2609.15364) is a <em>training-free</em> recursive self-improvement harness for computer-use agents: a <strong>curriculum agent</strong> proposes practice tasks, an <strong>actor agent</strong> executes them as code, a <strong>verifier agent</strong> grades outcomes from environment evidence, and only verified experience is consolidated into a persistent memory. The memory is then <strong>frozen</strong> and reused at test time. No gold labels, no weight updates.</li>
+<li>Exploration is <strong>broad-then-deep</strong>: Broad Recursive Self-exploration (BRS) runs parallel practice projects to map the environment; Deep Recursive Self-exploration (DRS) runs a sequential ladder of harder tasks to surface hidden constraints and boundary conditions. The authors explicitly frame this as "pretraining-then-post-training" for memory.</li>
+<li>With GLM-5.3 as actor and Kimi-K3 as verifier + curriculum, the harness goes from <strong>71.97 → 78.98</strong> partial score on OSWorld 2.0 (82 offline tasks) and <strong>83.75 → 84.82</strong> on Agents' Last Exam Near-term, above the reported GPT-6 Astra numbers (72.60 / 82.26). A four-task ablation gives full RSI <strong>74.54</strong> vs BRS-only <strong>65.52</strong> vs DRS-only <strong>56.50</strong> — deep-only exploration can fall <em>below</em> the no-RSI baseline.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>This reading list has been tracking a slow split in "self-improvement": methods that change the <em>weights</em> (RL, on-policy distillation) versus methods that change the <em>harness</em> — memory, skills, prompts, tools — around a frozen model. RSIAgent is the cleanest recent example of the second camp making a headline-grade claim: two open-weight models inside a practice-then-freeze harness post higher partial scores than the reported numbers for frontier closed models on two serious computer-use benchmarks.</p>
+<p>Whether or not you buy the headline (see the critical take), three things are worth internalizing: exploration is framed as <strong>causal discovery</strong> (memory stores action → condition → outcome relations, not just successful trajectories); the <em>verifier never sees the actor's reasoning or memory</em>, to break correlated errors; and the paper ships an honest failure audit naming how memory-based self-improvement goes wrong.</p>
+<h2>The core idea</h2>
+<p>A digital agent at step <span class="arithmatex">\(t\)</span> picks an executable action conditioned on the task <span class="arithmatex">\(q\)</span>, the within-task history <span class="arithmatex">\(h_t\)</span>, and a durable memory <span class="arithmatex">\(M\)</span>:</p>
+<div class="arithmatex">\[a_t \sim \pi_\theta(\cdot \mid q, h_t, M), \qquad (s_t, o_t) \sim \mathcal{E}(\cdot \mid s_{t-1}, a_t)\]</div>
+<p>Here <span class="arithmatex">\(\pi_\theta\)</span> is the frozen policy model, <span class="arithmatex">\(h_t=(o_0,a_1,\dots,o_{t-1})\)</span> is the interaction history (reset per task), <span class="arithmatex">\(s_t\)</span> the hidden environment state, <span class="arithmatex">\(o_t\)</span> the observation, and <span class="arithmatex">\(M\)</span> the memory that persists <em>across</em> tasks. Actions are programs (code-as-policy), which gives one interface for GUI apps, CAD tools, DAWs, browsers and so on.</p>
+<p>The problem the paper poses is: with <span class="arithmatex">\(\theta\)</span> fixed, spend an exploration budget in a new environment <span class="arithmatex">\(\mathcal{E}\)</span> to build an <span class="arithmatex">\(M\)</span> that maximizes downstream success. Written as an objective (my reconstruction — the paper states it in prose):</p>
+<div class="arithmatex">\[M^\star = \arg\max_{M}\; \mathbb{E}_{q \sim \mathcal{Q}_{\mathcal{E}}}\big[\,\mathrm{Succ}(\pi_\theta, q, M)\,\big], \quad \theta \text{ fixed}\]</div>
+<p>where <span class="arithmatex">\(\mathcal{Q}_{\mathcal{E}}\)</span> is the environment's task distribution, which the curriculum agent has to <em>approximate</em> by generating practice tasks. The recursive update that builds <span class="arithmatex">\(M\)</span> is (reconstructed):</p>
+<div class="arithmatex">\[v_k = V(\tau_k, f_k) \in \{\mathrm{PASS}, \mathrm{FAIL}\}, \qquad M_{k+1} = C\big(M_k, \tau_k, v_k, f_k\big)\]</div>
+<p>with <span class="arithmatex">\(\tau_k\)</span> the trajectory of practice task <span class="arithmatex">\(k\)</span>, <span class="arithmatex">\(f_k\)</span> the environment feedback (execution results, interface state, artifacts), <span class="arithmatex">\(V\)</span> the verifier and <span class="arithmatex">\(C\)</span> the actor-side consolidation step that adds procedures and lessons, and revises or deletes outdated entries. The "recursion" is that <span class="arithmatex">\(M_{k+1}\)</span> conditions both the next actor and the next curriculum decision.</p>
+<p><img alt="RSIAgent overview: curriculum → actor → verifier loop over an evolving memory, and benchmark bars" src="assets/rsiagent/fig1.png" /></p>
+<p><em>Figure 1 from the paper: (a) the recursive curriculum–action–verification loop that evolves memory <span class="arithmatex">\(m_t \to m_{t+1}\)</span> in a new environment with no gold labels; (b) OSWorld 2.0 (0808 offline) and Agents' Last Exam (Near-term) partial scores, with RSIAgent on open models above the reported closed-model numbers.</em></p>
+<h2>How it works</h2>
+<p><strong>Three roles.</strong> The <em>actor</em> is the policy model with an evolvable memory holding environment knowledge, reusable scripts, and lessons; after each verifier judgment it consolidates the grounded experience. The <em>verifier</em> independently decides success/failure from environment evidence and returns feedback; it is isolated from the actor's reasoning and memory. The <em>curriculum agent</em> decides what to practice next — prerequisite skills, informative variants, failure-driven practice, stress tests — based on the current target, accumulated memory, and prior outcomes, and stops when new tasks are unlikely to add knowledge.</p>
+<p><strong>Stage 1, BRS.</strong> Each iteration the curriculum agent proposes <em>multiple</em> tasks across different directions; actors and verifiers run them in parallel; the curriculum agent reads the verified results, identifies gaps, and proposes the next wave. Configuration: a nominal budget of eight exploration projects, up to four concurrent, budget checked between waves.</p>
+<p><strong>Stage 2, DRS.</strong> A sequential loop: propose one challenging task likely to expose hidden constraints or weaknesses in the current memory; actor attempts it with memory; verifier grades; consolidate; propose a harder follow-up. A successful practice does not end the stage — the curriculum agent decides whether more practice is worthwhile.</p>
+<p><strong>Freeze and reuse.</strong> At test time the curriculum agent and memory updates are disabled. The actor uses the frozen procedures, constraints, and lessons; the verifier still runs an action–verification loop until it confirms all task requirements (the no-RSI baseline uses the same harness with empty memory, so the verifier loop is not the source of the RSI gain).</p>
+<p>An important configuration detail, stated once in Section 4.1: <strong>both exploration stages use the target query as a reference for the curriculum agent.</strong> Exploration is not blind adaptation to an environment; it is practice in the neighborhood of the actual test task.</p>
+<pre><code class="language-text">RSIAgent(env E, target task q, actor π, verifier V, curriculum U):
+  M ← ∅
+  # Stage 1: Broad Recursive Self-exploration (parallel, ~8 projects, ≤4 concurrent)
+  repeat until U says coverage saturated or budget spent:
+      tasks ← U.propose_many(q, M, past_outcomes)          # diverse directions
+      for each task in parallel:
+          τ ← π.run(task, M)                                 # code-as-policy actions
+          (v, f) ← V.judge(τ, env_feedback)                  # PASS/FAIL + grounded feedback
+          M ← π.consolidate(M, τ, v, f)                      # add/revise/delete entries
+  # Stage 2: Deep Recursive Self-exploration (sequential ladder)
+  repeat until U says no further practice is useful:
+      task ← U.propose_hard(q, M, past_outcomes)            # hidden constraints, boundaries
+      τ ← π.run(task, M); (v, f) ← V.judge(τ, env_feedback)
+      M ← π.consolidate(M, τ, v, f)
+  freeze(M)
+  # Test time: memory reuse, no curriculum, no memory writes
+  loop:
+      τ ← π.run(q, M);  (v, f) ← V.judge(τ, env_feedback)
+      if v == PASS: return artifact
+</code></pre>
+<p><img alt="RSIAgent illustrated on a FreeCAD task: BRS task groups in parallel, DRS rounds refining memory, then frozen-memory reuse" src="assets/rsiagent/fig2.png" /></p>
+<p><em>Figure 2 from the paper: the FreeCAD walk-through. BRS explores task groups (brackets, holes, fillets, slots, chamfers) in parallel into a broad memory bank; DRS runs rounds like "anchor a pin → align a hole → add a support rib", each verified and folded into memory; the frozen memory then drives the target task.</em></p>
+<h2>Results</h2>
+<p><strong>Main table (Table 1).</strong> OSWorld 2.0 (0808 offline, 82 tasks): the harness without RSI scores 71.97 partial / 37.80 binary; with RSI <strong>78.98 / 42.68</strong>. Agents' Last Exam Near-term (67 tasks): 83.75 / 49.25 → <strong>84.82 / 50.75</strong>. Reported comparators (copied from official reports): GPT-6 Astra 72.60 / — on OSWorld and 82.26 / 52.24 on ALE; Claude Opus 5 70.19 / 34.72 and 79.54 / 46.27; Kimi-K3 alone 58.30 on OSWorld and 71.60 on ALE. Note that GPT-6 Astra's <em>binary</em> ALE accuracy (52.24) is still above RSIAgent's (50.75); the win is on partial credit.</p>
+<p><strong>Per-task trajectories (Figure 3).</strong> On three OSWorld tasks — video editing (T044), presentation repair (T049), railway booking (T065) — scores climb over eight RSI steps to 100%, 80%, and 100%. The curves are step-like: memory accumulates quietly, then resolving one bottleneck flips a task.</p>
+<p><strong>Ablation (Figure 4, four tasks).</strong> Full RSI 74.54 mean vs BRS-only 65.52 vs DRS-only 56.50 vs baseline. Broad-only improves every task; deep-only from empty memory falls <em>below</em> baseline on the audio-editing and web-presentation tasks. Order matters: cover first, then dig.</p>
+<p><strong>Game development (Table 2, 40 GameCraft-Bench tasks).</strong> Against Play2Code (iterative playtest-and-revise), RSIAgent improves overall quality for every base generator, e.g. 52.77 → 61.28 for Codex + GPT-5.5 games and 30.55 → 48.72 for GLM-5.3-Flash games, while Play2Code can <em>degrade</em> already-strong games (52.77 → 51.05).</p>
+<p><strong>Failure audit (Section 4.6, Figure 5).</strong> Three mechanisms: <em>insufficiently targeted exploration</em> (target-skill mismatch in 3 of 4 audited cases), <em>incomplete verification</em> (fidelity gaps 3/6, grounding gaps 2/6, coverage gaps 1/6 — the verifier returned PASS despite unsupported field values), and <em>unreliable memory consolidation</em> (rule-scope loss 2/3, uncertainty not enforced 1/3 — e.g. a rule that treated missing-data markers as valid answers got reused).</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>harness-continual-learning / macaron-v1-continual-learning</strong> — continual adaptation outside the weights. RSIAgent is the strongest benchmark instantiation so far, but has no retention gate, so contagious bad memories (which its own audit documents) are unguarded.</li>
+<li><strong>fragility-self-improving-agents</strong> — memory-based self-improvement amplifies run variance and spreads bad memories; RSIAgent's "Full RSI bars average two historical evaluations" is exactly where that paper's variance numbers belong.</li>
+<li><strong>msce-memory-to-skills / evo-harness-skills / skill-library-google</strong> — the raw-experience → consolidated-procedure ladder, here with a verifier gate in front and "causal" action–condition–outcome entries.</li>
+<li><strong>hyperagents / darwin-godel-machine</strong> — need benchmark scores or labels to drive self-modification; RSIAgent's pitch is a label-free loop grounded in a model verifier plus environment feedback.</li>
+<li><strong>llm-as-a-verifier / rlsvr-self-verifiable-rewards</strong> — the verifier is load-bearing here, and the failure modes show calibrated, self-checkable verification is not optional.</li>
+</ul>
+<h2>Critical take</h2>
+<ol>
+<li><strong>This is target-aware practice, not blind environment adaptation.</strong> The curriculum agent is given the target query in both stages, and per Appendix C.3 exploration was directed at tasks "with remaining room for improvement" that were "not already covered by an RSI lineage." So the honest description is: an agent that gets to practice around each test task with a model verifier as proxy grader, versus closed models' single-shot numbers copied from their reports under different harnesses. That's a legitimate and interesting regime, but "open models outperform GPT-6" oversells it.</li>
+<li><strong>The aggregate mixes RSI and non-RSI tasks.</strong> "For the tasks without a completed RSI result, we retain the baseline scores." The documented expansion cohort lists 17 newly explored tasks; how many of the 82 OSWorld tasks ultimately received RSI is not stated in the main text, so the per-task effect size is unknown and the +7 aggregate is a lower bound on what full coverage would do — or an upper bound if the covered tasks were cherry-picked as the most improvable. The ablation likewise assembles "recorded scores" from historical runs rather than a controlled re-run.</li>
+<li><strong>"Without updating model parameters" hides two frontier open models and an unreported compute bill.</strong> GLM-5.3 acts, Kimi-K3 verifies and curates, and each target gets ~8 parallel projects plus a sequential deep ladder. The limitations section concedes "substantial computation cost" without quantifying it. The right comparison is cost-matched: give the closed model the same verifier loop and practice budget.</li>
+<li><strong>The verifier is the weak link and the paper proves it.</strong> Half of audited verification failures were fidelity gaps where PASS was issued on wrong artifacts; those PASSes become rules. Nothing in the method enforces the "store conditions and uncertainty" advice the authors give, which is where a retention gate belongs.</li>
+<li><strong>What survives skepticism:</strong> broad-before-deep is a real finding (deep-only can hurt), the role separation is sound, and the failure taxonomy is the most useful part for anyone building experience-scaling harnesses.</li>
+</ol>
+<h2>If you remember three things</h2>
+<ol>
+<li>RSIAgent = curriculum → actor → verifier loop that builds a <strong>verified, frozen memory</strong> for a new environment with no labels and no weight updates; gains come in discrete per-task breakthroughs (71.97 → 78.98 OSWorld partial, 83.75 → 84.82 ALE).</li>
+<li><strong>Broad then deep.</strong> Parallel coverage first, then a sequential ladder of hard cases; deep-only exploration from empty memory can score below no exploration at all.</li>
+<li>The headline comparison is <strong>target-aware practice vs. single-shot reports</strong>, with partial task coverage and an unreported compute budget — and the paper's own audit shows verifier PASS errors turning into reusable bad rules.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-17 16:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

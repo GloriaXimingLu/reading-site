@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composing Continual-Learning Mechanisms (Replay, Self-Distillation, Regularization, Merged LoRA) for Long-Horizon Retention</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Composing Continual-Learning Mechanisms (Replay, Self-Distillation, Regularization, Merged LoRA) for Long-Horizon Retention</h1><p class="meta">9 min read · <a href="https://arxiv.org/abs/2609.06986">arXiv:2609.06986</a> · <a href="https://arxiv.org/abs/2609.06986">arXiv</a> · <a href="https://x.com/askalphaxiv/status/2097501696285172193">X post</a> · <a href="https://huggingface.co/papers/2609.06986">huggingface.co</a> · <a href="../index.html#memory-context">Memory &amp; Context Engineering</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>Long-horizon memorization</strong> (Zhang, Zhang, Khashabi, Shu — Johns Hopkins, arXiv 2609.06986): a model learns 100 query–answer tasks by sequential SFT, keeps no raw examples, gets no task ID at inference, and must still answer old queries. Naive sequential fine-tuning retains <strong>1.2%</strong> after 100 tasks; the best <em>single</em> continual-learning mechanism retains <strong>8.1%</strong>.</li>
+<li>The paper organizes mechanisms into <strong>three anchors</strong> (data = generative replay, function = self-distillation, weight = importance regularization) and a <strong>low-rank allocation rule</strong> (shared vs. merged LoRA), then searches the combinatorial space with <em>task-level successive halving</em> and a <span class="arithmatex">\(2^4\)</span> factorial. The all-anchors + merged-LoRA composition is the only method in the top 3 on every dataset and reaches <strong>34.9%</strong> average final retention — 28× naive.</li>
+<li><strong>Replay and merged LoRA are the core</strong>, with the largest main effects (+9.5 to +19.3 and +5.9 to +20.5 points) and a super-additive interaction on all three datasets. Composition extends memory half-life from 1–2 tasks to 19–44 tasks, but forgetting still continues — and general capability (GSM8K, MATH, MMLU-Redux) collapses for every method.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>The memory debate in this tracker mostly lives in the harness layer: notes, skill libraries, retrieval, structured state. This paper asks the parametric question directly — can repeated weight updates <em>be</em> the memory? — and answers it with unusual methodological care: a proper benchmark for the setting, a search procedure that scales to 90 method configurations, and a factorial design that separates main effects from interactions rather than just reporting a winner.</p>
+<p>The result is sobering for anyone hoping "just keep fine-tuning" is a memory system. But the <em>structure</em> of the finding matters for post-training more broadly: forgetting has several distinct sources, no single mechanism covers them, and the pair that matters most — replaying the previous model's own generations and folding each update into the dense weights before starting a fresh adapter — is cheap and generic. It is also a clean bridge to the distillation literature: the data anchor is literally self-distillation on the previous checkpoint's samples.</p>
+<h2>The core idea</h2>
+<p>Each task <span class="arithmatex">\(t\)</span> supplies query–answer pairs <span class="arithmatex">\(\mathcal{D}_t\)</span>. The current-task loss is plain SFT (no query masking, because in test-time-training settings you often can't separate query from answer):</p>
+<div class="arithmatex">\[\mathcal{L}^{t}_{\mathrm{SFT}}(\Theta) = -\,\mathbb{E}_{(x,y)\sim\mathcal{D}_t}\big[\log p_\Theta(x,y)\big]\]</div>
+<p>where <span class="arithmatex">\(p_\Theta\)</span> is the autoregressive model and <span class="arithmatex">\(\Theta\)</span> its parameters. Forgetting is controlled by adding three <em>anchor</em> terms, each preserving a different kind of prior information:</p>
+<div class="arithmatex">\[\Theta_t = \arg\min_{\Theta}\; \mathcal{L}^{t}_{\mathrm{SFT}}(\Theta) + \mathcal{R}^{t}_{D}(\Theta) + \mathcal{R}^{t}_{F}(\Theta) + \mathcal{R}^{t}_{W}(\Theta)\]</div>
+<ul>
+<li><strong>Data anchor</strong> <span class="arithmatex">\(\mathcal{R}^{t}_{D} = \mathbb{E}_{z\sim Q_{t-1}}[\ell_D(\Theta, z)]\)</span>: train on sequences <span class="arithmatex">\(z\)</span> sampled from a distribution <span class="arithmatex">\(Q_{t-1}\)</span> representing earlier tasks. Here <span class="arithmatex">\(Q_{t-1}\)</span> is a <em>frozen copy of the previous model</em> prompted with a single task-agnostic replay token (300 sequences generated per task), with the frozen model's soft next-token targets as the loss.</li>
+<li><strong>Function anchor</strong> <span class="arithmatex">\(\mathcal{R}^{t}_{F} = \mathbb{E}_{x\sim\mu_t}[\,d(q_{t-1}(\cdot\mid x),\, p_\Theta(\cdot\mid x))\,]\)</span>: on <em>current-task</em> inputs <span class="arithmatex">\(x\)</span>, keep the new model's predictive distribution close to the previous model's <span class="arithmatex">\(q_{t-1}\)</span> (Learning-without-Forgetting-style self-distillation; forward KL with temperature 5).</li>
+<li><strong>Weight anchor</strong> <span class="arithmatex">\(\mathcal{R}^{t}_{W} = \tfrac{1}{2}(\vartheta-\vartheta^\star_{t-1})^{\top} H_{t-1}(\vartheta-\vartheta^\star_{t-1})\)</span>: a quadratic penalty pulling tracked parameters <span class="arithmatex">\(\vartheta\)</span> toward their previous values <span class="arithmatex">\(\vartheta^\star_{t-1}\)</span>, weighted by accumulated importance <span class="arithmatex">\(H_{t-1}\succeq 0\)</span> (Synaptic Intelligence or online EWC).</li>
+</ul>
+<p>The second design axis is <em>where</em> updates live. With LoRA <span class="arithmatex">\(W = W_0 + \rho B A\)</span>:</p>
+<div class="arithmatex">\[W_t = \begin{cases} W_0 + \rho B_t A_t &amp; \text{shared LoRA: one adapter trained across all tasks} \\ W_{t-1} + \rho B_t A_t &amp; \text{merged LoRA: fold each task's adapter into the dense weights, re-init a fresh one} \end{cases}\]</div>
+<p>Merged LoRA adapts ReLoRA's merge-and-reinitialize pattern to continual learning; both rules keep constant state size as tasks accumulate (unlike O-LoRA or OSRM, whose state grows).</p>
+<p><img alt="Retention vs. memory age on three datasets: naive fine-tuning, best single mechanism, all mechanisms combined, dataset-specific best composition" src="assets/compose-continual-learning/fig1.png" /></p>
+<p><em>Figure 1 from the paper (extracted from the PDF): retention <span class="arithmatex">\(R(a)\)</span> as a function of memory age <span class="arithmatex">\(a\)</span> (tasks since learning) on Symbol-QA, LLM-QA, Real-QA. Half-lives: naive 1/1/2 tasks; best single mechanism 4/6/11; all mechanisms combined 19/32/32; dataset-specific best composition 19/32/44. Composition changes the timescale of forgetting but every curve still declines.</em></p>
+<h2>How it works</h2>
+<p><strong>Evaluation protocol.</strong> Domain-incremental: one task at a time, no task identity at inference, evaluate memorization on the training queries themselves. After learning task <span class="arithmatex">\(i\)</span>, test every task <span class="arithmatex">\(j \le i\)</span>, giving a temporal accuracy matrix</p>
+<div class="arithmatex">\[M_{i,j} = \frac{1}{N_j}\sum_{n=1}^{N_j} \mathbb{1}\big[\hat y_i(x_{j,n}) = y_{j,n}\big], \qquad \mathrm{Final} = \frac{1}{T}\sum_{j=1}^{T} M_{T,j}\]</div>
+<p>with <span class="arithmatex">\(\hat y_i\)</span> the model's answer after task <span class="arithmatex">\(i\)</span>, plus <em>Diag</em> (accuracy right after learning) and <em>Forget</em> (average drop from peak to final).</p>
+<p><strong>Three 100-task datasets.</strong> Symbol-QA (10,000 random key–value associations), LLM-QA (10,000 LLM-generated fictional facts across 100 topics), Real-QA (5,000 natural QA pairs from ten public datasets, filtered to items the base model gets wrong in five samples). 100 examples per task (50 for Real-QA). Backbone: Qwen3-4B-Base; LoRA rank 32, <span class="arithmatex">\(\alpha=64\)</span>, all attention and MLP projections; 10 epochs per task at learning rate <span class="arithmatex">\(5\times10^{-4}\)</span>.</p>
+<p><strong>Task-level successive halving (TSH).</strong> Rankings after a few tasks may not predict rankings at 100. TSH starts with all 90 configurations — <span class="arithmatex">\(\{\varnothing, \text{online EWC}, \text{SI}\} \times \{\varnothing, \text{SD}_1, \text{SD}_2\} \times \{\varnothing, \text{Replay}_{1..4}\} \times \{\text{shared}, \text{merged}\}\)</span> — keeps the top 45 after 10 tasks, 23 after 20, 10 after 50, and runs those to 100, ranking by mean final retention over three seeds. Search uses a development task order that differs from the evaluation order.</p>
+<p><strong>Factorial confirmation.</strong> With TSH-selected hyperparameters, all 16 combinations of {SI, SD, Replay, Merge} are run for 100 tasks × 3 seeds on the default order (21 methods per dataset including the O-LoRA / OSRM variants), and main and interaction effects are estimated.</p>
+<pre><code class="language-text">for t in 1..T:                                 # 100 tasks, no raw examples kept
+    prev ← frozen copy of current model (Θ_{t-1})
+    if data anchor:
+        Z ← prev.generate(replay_token, n=300, temp=1.5)   # pseudo-sequences for old tasks
+        soft_targets ← prev.logits(Z)
+    if merged LoRA:
+        fold previous adapter into dense W_{t-1}; init fresh (A_t, B_t); reset optimizer
+    for epoch in 1..10:
+        for (batch_cur, batch_replay) in zip(D_t, Z):
+            L  = SFT(batch_cur)                                    # eq. (1)
+            L += w_D · KL(soft_targets ‖ p_Θ) on batch_replay      # data anchor
+            L += λ_F · KL(prev(·|x) ‖ p_Θ(·|x)) on batch_cur        # function anchor
+            L += λ_W · ½ (ϑ − ϑ*_{t-1})ᵀ H_{t-1} (ϑ − ϑ*_{t-1})      # weight anchor
+            step(L); update importance H (SI path integral)
+    evaluate M_{t,j} for all j ≤ t
+</code></pre>
+<h2>Results</h2>
+<p><strong>Compositions beat every standalone mechanism (Figure 3, Table 1).</strong> Best standalone final retention after 100 tasks: 4.2% (Symbol-QA), 7.5% (LLM-QA), 12.5% (Real-QA). Best compositions: 23.2%, 41.8%, 54.8%. The all-anchors + merged-LoRA method averages 34.9% and is the only composition in the top 3 on all three datasets, though the per-dataset winner differs (Symbol-QA prefers SD + replay + merge; LLM-QA the full stack; Real-QA SI + replay + merge).</p>
+<p><img alt="Final retention for all 16 combinations of SI, SD, Replay, Merge on the three datasets" src="assets/compose-continual-learning/fig2.png" /></p>
+<p><em>Figure 3 from the paper: final retention (%) after 100 tasks for the <span class="arithmatex">\(2^4\)</span> factorial, three-seed means. Filled markers = active mechanism; an inactive Merge marker means shared LoRA. Best compositions substantially outperform standalone mechanisms.</em></p>
+<p><strong>Replay and merged LoRA are super-additive.</strong> Main effects: replay +9.5 to +19.3 points, merged LoRA +5.9 to +20.5, both largest on every dataset, with a positive significant interaction everywhere. In the configurations without SI or SD, the standalone gains sum to 3.9 / 7.7 / 13.9 points over naive, but the pair together gives +15.6 / +31.0 / +46.9.</p>
+<p><strong>SI and SD are conditional.</strong> SD has a positive main effect everywhere but interacts negatively with replay on the natural-language datasets (less needed once replay is present). SI helps on LLM-QA and Real-QA, not on Symbol-QA, and interacts negatively with merged LoRA on Symbol-QA — a structural mismatch, since merged LoRA replaces the adapter coordinates that SI's importance estimates refer to.</p>
+<p><strong>Growing-state alternatives don't buy retention.</strong> Swapping merged LoRA for O-LoRA changes retention only slightly; sequential OSRM lowers it on all three datasets. But O-LoRA preserves substantially more <em>general capability</em>.</p>
+<p><strong>Everything forgets general capability.</strong> On GSM8K, MATH, MGSM, and MMLU-Redux all methods show catastrophic forgetting after 100 tasks; better memorization did not mean preserved reasoning.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>memory-decoder</strong> — the other parametric-memory design: a swappable side-model rather than continual updates to the base. This paper is the evidence for why you'd want the memory <em>separable</em>: in-place SFT retains 35% at best and wrecks general capability.</li>
+<li><strong>"Language Models Need Sleep: Offline Consolidation into Fast-Weight Memory"</strong> (tracked, no tutorial) — the same "consolidation" vocabulary; here consolidation is generative replay from the previous checkpoint, i.e. the model rehearses its own dreams before learning the next task.</li>
+<li><strong>switch-distillation / tgopd-teacher-gated-opd</strong> — the data and function anchors are self-distillation; this paper is a continual-learning-flavored argument that distilling from your <em>previous self</em> is the cheapest anti-forgetting signal available.</li>
+<li><strong>macaron-v1-continual-learning</strong> — mixture-of-LoRA as a product answer to the same problem; the O-LoRA result here (retention ≈ merged, capability much better) is the relevant data point for adapter-isolation designs.</li>
+<li><strong>harness-continual-learning / mobilemem / agent-memory-second-half</strong> — the non-parametric camp. A retrieval system would score ~100% on this benchmark trivially; the interesting question this paper sets up but doesn't answer is when parametric retention is worth its cost.</li>
+<li><strong>ttpo</strong> — test-time training on unlabeled context is a 1-task version of this setting; the no-query-masking choice here is explicitly motivated by test-time training.</li>
+</ul>
+<h2>Critical take</h2>
+<ol>
+<li><strong>Memorization on the training queries only.</strong> Evaluation reuses the exact training queries; paraphrase generalization is untested (the authors say so). 34.9% recall of verbatim associations is a low bar for "memory," and it means the headline can't be read as "the model learned the facts."</li>
+<li><strong>The general-capability collapse is the real result.</strong> Every method catastrophically forgets on GSM8K/MATH/MMLU-Redux after 100 tasks. A memory system that destroys reasoning is not deployable; O-LoRA's better capability preservation at similar retention suggests isolation, not composition, is what protects the base model.</li>
+<li><strong>No non-parametric baseline.</strong> Retrieval or in-context provision of the 100 tasks' data is the obvious alternative and would saturate this benchmark. The paper's framing ("information remains outside the model and must be supplied again") is a preference, not an argument; a cost/latency comparison would make the case.</li>
+<li><strong>Replay is not free.</strong> 300 generated sequences per task plus soft targets from a frozen copy roughly doubles per-task compute and memory. Merged LoRA is nearly free, which makes it the more transferable takeaway.</li>
+<li><strong>Method rigor is excellent</strong> — TSH, factorial design, seeds, search/eval order separation — and the negative SI × merge interaction diagnosis (importance estimates pointing at re-initialized coordinates) is the kind of mechanistic detail that saves others months.</li>
+</ol>
+<h2>If you remember three things</h2>
+<ol>
+<li>Sequential SFT is not a memory: <strong>1.2%</strong> retention after 100 tasks; the best single continual-learning trick gets <strong>8.1%</strong>; composing complementary anchors with merged LoRA gets <strong>34.9%</strong>.</li>
+<li><strong>Generative replay from the previous checkpoint + merge-and-reinit LoRA</strong> is the super-additive core; weight regularization and self-distillation add conditional, dataset-dependent gains.</li>
+<li>Composition stretches forgetting's half-life from ~1 task to 19–44 tasks but does not stop it — and <strong>general capability collapses regardless</strong>, so parametric memory via continual SFT is still not a product.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-17 16:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIBuildAI PostTrain: Meta-Search Agent for Autonomous LLM Post-Training Tops PostTrainBench</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>AIBuildAI PostTrain: Meta-Search Agent for Autonomous LLM Post-Training Tops PostTrainBench</h1><p class="meta">10 min read · <a href="https://github.com/aibuildai-inc/aibuildai-llm-posttrain-agent">GitHub</a> · <a href="https://x.com/cmuptx/status/2100208262578680010">X post</a> · <a href="https://github.com/aibuildai-inc/aibuildai-llm-posttrain-agent/blob/main/docs/aibuildai-llm-post-train-agent.pdf">github.com</a> · <a href="../index.html#self-improving">Self-Improving Agents &amp; Harnesses</a></p><h2>TL;DR</h2>
+<ul>
+<li><strong>AIBuildAI LLM-Post-Train Agent</strong> (AIBuildAI Team, technical report in the GitHub repo; no arXiv ID) is an autonomous post-training system evaluated on <strong>PostTrainBench</strong>: given a base model, a target capability, and ten hours on one H100, produce a post-trained checkpoint scored on a held-out evaluation. Every agent role runs on Claude Opus 5.</li>
+<li>Its core is <strong>meta search</strong>: instead of running a fixed tree search over whole experiments, a <em>meta agent</em> investigates the task, consults a curated <strong>knowledge base</strong> (a 13-step post-training workflow skill, 104 method cards, 215 dataset cards, 108 library cards, served over MCP), and <em>writes the search program</em> the run will execute, composed from three primitives — Agent, Program, Search. Under "runtime replanning," each stage hands off to a fresh meta agent that reads measured outcomes and writes the next stage.</li>
+<li>Weighted-average score <strong>46.6</strong> vs. Locus <strong>45.6</strong> (Opus 5), Claude Code on Fable 5 <strong>41.8</strong>, Claude Code on Opus 5 <strong>35.0</strong>; official instruct models sit at <strong>51.1</strong>. It leads agents on AIME 2025, BFCL, and HumanEval and is within two points on the other four tasks. Traced runs show almost all of the gain comes from the first SFT stage on teacher-written data.</li>
+</ul>
+<h2>Why this matters</h2>
+<p>PostTrainBench is the closest thing we have to a measured "AI post-trains AI" loop, and this tracker already holds the benchmark, the Locus submission that led it, and the 1,338-run analysis of <em>strategy lock-in</em> in autonomous post-training agents. This report is the first system that attacks lock-in structurally: it argues that a single long-context coding agent commits to one account of the task early and refines a stalled line rather than abandoning it, that parallel copies don't fix that because nothing makes their directions differ, and that fixed tree search can't express what post-training actually needs (corpus screening, prefix-cached staged pipelines, mid-run reward-model refits). The fix — let an agent <em>design the search topology per task</em> — is a harness-level idea, which is the recurring theme of this reading list.</p>
+<p>The tweet calls it a "recursive self-improving (RSI) agent." The report itself is more careful, and so is this tutorial: the recursive part is thin (finished experiments can contribute observations back into the knowledge base; no evidence is given that this helps). What is real is a well-engineered meta-harness with hand-curated domain knowledge that edges out the leaderboard.</p>
+<h2>The core idea</h2>
+<p>Whole-experiment tree search (inherited from earlier AIBuildAI systems) treats each node <span class="arithmatex">\(v\)</span> as a full pipeline scored by the task's own evaluator, <span class="arithmatex">\(m_v\)</span>; a designer proposes <span class="arithmatex">\(n_d\)</span> distinct starting plans, a selector orders the ready queue, finished experiments return proposals that rejoin it, and a finalizer returns the best. The value of a run is</p>
+<div class="arithmatex">\[V = \max_{v \in \mathcal{T}} m_v\]</div>
+<p>with <span class="arithmatex">\(\mathcal{T}\)</span> the tree explored. Meta search replaces the fixed family of trees with a <em>task-conditioned</em> family of execution graphs:</p>
+<div class="arithmatex">\[\pi : \mathcal{I} \rightarrow \mathcal{F}, \qquad \mathcal{F} \supsetneq \{\text{trees}\}, \qquad V = \max_{v} m_v \text{ over all scored nodes}\]</div>
+<p>where <span class="arithmatex">\(\mathcal{I}\)</span> is the task information available to the meta agent (base model, task brief, data, its own probing of the evaluator) and <span class="arithmatex">\(\mathcal{F}\)</span> includes DAGs, tournaments, fan-ins, and iterative loops. The topology that produced the nodes is now itself an output of an LLM.</p>
+<p>Knowledge retrieval is embedding nearest-neighbor over full-text skill cards (reconstructed from the prose — the report gives no formula):</p>
+<div class="arithmatex">\[\mathcal{K}_v = \operatorname{top}\text{-}k_{\,k \in \mathcal{K}} \; \cos\big(\phi(q_v), \phi(k)\big)\]</div>
+<p>with <span class="arithmatex">\(q_v\)</span> the experimenter's problem description at node <span class="arithmatex">\(v\)</span>, <span class="arithmatex">\(\phi\)</span> the document embedding, and <span class="arithmatex">\(\mathcal{K}\)</span> the corpus. As an example of what a method card carries, the DPO card states the objective verbatim:</p>
+<div class="arithmatex">\[\mathcal{L}_{\mathrm{DPO}}(\pi_\theta;\pi_{\mathrm{ref}}) = -\,\mathbb{E}_{(x,y_w,y_l)\sim\mathcal{D}}\Big[\log\sigma\Big(\beta\log\tfrac{\pi_\theta(y_w\mid x)}{\pi_{\mathrm{ref}}(y_w\mid x)} - \beta\log\tfrac{\pi_\theta(y_l\mid x)}{\pi_{\mathrm{ref}}(y_l\mid x)}\Big)\Big]\]</div>
+<p>plus a worked numerical example (<span class="arithmatex">\(\beta=0.1\)</span>, loss ≈ 0.653), the required data shape, extra models, and which trainer ships it.</p>
+<p><img alt="AIBuildAI system overview: tree search, knowledge system over MCP, and meta search writing a search program from Agent/Program/Search primitives" src="assets/aibuildai-posttrain-agent/fig1.png" /></p>
+<p><em>Figure 1 from the report (extracted from the PDF): (a) whole-experiment tree search with setup, designer, selector, evaluation, and finalizer; (b) the knowledge system — an experimenter queries the Kb (workflow 13 steps / 34 cards, 104 methods, 215 datasets, 108 libraries) and may contribute observations back; (c) meta search — a meta agent reads the design skill (34 workflow patterns) and the Kb, then writes a search program composed of Agent, Program, and Search primitives.</em></p>
+<h2>How it works</h2>
+<p><strong>Knowledge system.</strong> Four sub-corpora of structured records naming what works, under what conditions, with what outcomes — and what fails and why. The <em>workflow</em> skill is thirteen ordered research actions; step 1 is "understand what the scoring rewards — and price it": read the shipped evaluation code, write down metric, extraction rule, token cap and retry ladder, then run the evaluator once on the untouched base model for a measured floor and per-evaluation cost. <em>Method</em> cards (104; 30 with shipped implementations) carry the math, a worked example, knobs per library, and training signals to watch. <em>Dataset</em> cards (215) carry license, columns, a revision-pinned load line, and a screening record; 34 are flagged as evaluation benchmarks to hold out. <em>Library</em> cards (108) cover when to pick, how to start, and how to save a loadable result.</p>
+<p><strong>Meta search.</strong> A meta agent probes the task, reads the design skill's 34 patterns (general: sequential chain, router–specialists, DAG with joins, map–reduce, best-of-<span class="arithmatex">\(n\)</span>, tournament, committee voting, evaluator–optimizer; post-training-specific: SFT → GRPO, teacher distillation with iterative refinement, checkpoint tournament with weight averaging, runtime replanning), and writes a Python search program. Primitives: <strong>Agent</strong> (LLM session with tools, policies, typed output), <strong>Program</strong> (deterministic computation in a managed worker with resource limits), <strong>Search</strong> (composite orchestrator with spawn / run / wait). The patterns are "a vocabulary, not a whitelist."</p>
+<p><strong>Why not trees.</strong> Three post-training units don't fit a tree node: (1) a <em>corpus</em>, which only scores after a training run, so screening <span class="arithmatex">\(k\)</span> data recipes costs <span class="arithmatex">\(k\)</span> runs unless generation is its own stage with cheap checks (verifier pass rate, duplication); (2) a <em>stage</em> in an SFT → preference → rejection-FT curriculum, where a tree retrains shared prefixes from scratch but a program caches them; (3) a <em>segment</em> of an online-RL run where the policy starts exploiting a learned reward and the fix is refit-and-resume, not discard-and-restart.</p>
+<pre><code class="language-text">META_SEARCH(task: base_model, brief, data, budget=10h on 1×H100):
+    meta ← Agent(Opus 5)
+    facts ← meta.investigate(task)           # run shipped evaluator on base model: floor + eval cost
+    K ← Kb.retrieve(facts)                   # workflow/method/dataset/library cards
+    prog ← meta.write_search_program(facts, K, design_skill.patterns)
+    while budget remains:
+        result ← execute(prog)               # Agents / Programs / nested Searches; spawn, run, wait
+        for each finished node v: m_v ← task.evaluator(artifacts_v)   # scores hidden from the session
+        Kb.contribute(observations from result)
+        if prog.pattern == runtime_replanning:
+            meta' ← Agent(Opus 5)            # fresh meta agent reads measured outcomes
+            prog ← meta'.write_next_stage(result, budget_remaining, K)
+        else: break
+    return argmax_v m_v checkpoint
+</code></pre>
+<p><strong>A generated program (Appendix B, AIME 2025 on Qwen3-1.7B-Base).</strong> The meta agent found the base model scores 1/30, emits an answer line only 20% of the time, and that two format demonstrations raise that to 73% while moving accuracy by exactly zero — so format is not the bottleneck; the question is which reasoning-trace length a 1.7B model can be taught. It wrote a five-stage search: three corpora at different chain-of-thought lengths built on CPU while a "baseline insurance" agent prices one evaluation; three sequential pilot SFT runs with an incumbent replaced on improvement; a text-only strategy agent choosing corpus, starting checkpoint, and whether a second stage (length annealing, RFT, or DPO) is warranted; then the full run.</p>
+<h2>Results</h2>
+<p><strong>Leaderboard (Table 1, four base models × seven tasks, weighted average).</strong> AIBuildAI <strong>46.6</strong>; Locus 45.6 ± 0.8; Claude Code (Fable 5) 41.8 ± 1.7; Claude Code (Opus 5) 35.0 ± 1.4; official instruct models 51.1. Per task (mean over base models): AIME 2025 <strong>15.8</strong> vs 13.3 (Fable 5) and 9.4 (Locus); BFCL <strong>95.8</strong> vs 94.3 (Locus), 1.5 (Claude Code on Opus 5) and 85.0 for the official instruct models; HumanEval <strong>69.0</strong> vs 66.6 (Locus), highest on every base model. Trailing: ArenaHard Writing 65.5 vs 66.3; HealthBench 42.6 vs 44.3; GPQA 31.4 vs 33.1; GSM8K 82.3 vs 83.5 (Fable 5).</p>
+<p><strong>Two traced runs (Section 4.3).</strong> HealthBench on Qwen3-4B-Base: 13.4 untouched → a corpus of 47,744 teacher-written responses → 1,300 SFT steps confirmed at 46.2 on the full set → 6,751 longer multi-turn teacher conversations, 650 more steps, six candidates screened on a 32-item subset against a pre-fixed gain threshold → <strong>48.6</strong>. ArenaHard Writing on SmolLM3-3B-Base: 0.4 → 20,516-row teacher corpus, pilot then 2,600 full steps with a three-checkpoint weight average → 74.2 → one rejection-sampling round (5,805 rows: 2,246 teacher-ranked student responses, 76 teacher-written, 3,483 replayed) → <strong>74.6</strong>, above Locus's 48.0 and the official instruct model's 49.2. In both, "almost the whole gain came from the first full training stage on teacher-written data."</p>
+<p><strong>Where the gap concentrates.</strong> ArenaHard trails Locus by 13.4 points on Qwen3-1.7B-Base and 16.3 on gemma-3-4b-pt; HealthBench by 10.2 on gemma-3-4b-pt; GSM8K 70.7 vs 76.9 on gemma. The system's few big losses are on the same small base model.</p>
+<h2>How it connects</h2>
+<ul>
+<li><strong>locus-automated-post-training</strong> — the entry this displaces by one point; Locus is a fixed harness on Opus 5, so this is as close to "same model, different harness" as the leaderboard offers.</li>
+<li><strong>rsi-limit-1338-runs</strong> — the strategy-lock-in diagnosis for autonomous post-training agents. Meta search is a direct architectural answer (diverse starting plans, replanning on measured outcomes), but lock-in is not measured here.</li>
+<li><strong>PostTrainBench</strong> (tracked) — the ten-hour, single-H100 budget means "post-training" here is SFT-scale distillation, not RL.</li>
+<li><strong>disco-repo-to-skill / skill-library-google</strong> — the Kb is 400+ hand-built cards with worked examples, the expensive human-written version of what those works try to auto-compile.</li>
+<li><strong>tgopd-teacher-gated-opd / reason-wide-not-deep</strong> — the traced runs are teacher distillation plus one round of teacher-ranked rejection sampling, which is why the first stage dominates.</li>
+<li><strong>meta-harness / autodesign-meta-harness</strong> — outer-loop search over harness code; meta search applies the same move to the <em>search procedure</em> rather than the scaffold.</li>
+</ul>
+<h2>Critical take</h2>
+<ol>
+<li><strong>The lead is inside the noise.</strong> 46.6 vs. Locus's 45.6 ± 0.8 — and the AIBuildAI row reports no standard deviation. The authors call it "a snapshot of a system still under construction," which is the right register; the tweet's "outperformed Claude Code (Fable 5) by 11%" is relative to a <em>different harness</em> on a different model, and over half of the 33% figure over Claude Code (Opus 5) comes from that harness scoring 1.5 on BFCL (7.5% task weight).</li>
+<li><strong>It's a distillation pipeline builder.</strong> Both traces show the score jump on the first SFT stage over teacher-written data from an unnamed open-weight teacher served on the same GPU; later stages add ~0.4–2.4 points. Whether meta search or the teacher choice earns the lead is not separated — an ablation running the fixed tree search with the same Kb and teacher is the missing experiment.</li>
+<li><strong>"RSI" is aspirational.</strong> The only feedback loop into the system is "finished experiments may contribute observations back" to the Kb, with no measurement of whether later runs benefit. The knowledge is human-curated (every card claim carries a URL and fetch date; "nothing comes from the system's own runs").</li>
+<li><strong>Variance is the admitted cost.</strong> The next-steps section concedes that an almost unrestricted topology space "raises the uncertainty of any single design and the variance between runs" and that two runs on similar tasks "should not arrive at unrelated topologies." That is the lock-in problem's mirror image, and the proposed fix — storing search structure in the Kb — turns meta search back into pattern selection.</li>
+<li><strong>The benchmark rewards contract-learning.</strong> BFCL is gated by output format; the system beats the official instruct models there (95.8 vs 85.0) while trailing them everywhere else. The workflow skill's step 1 — read the evaluator's code first — is good engineering and also exactly how you overfit a benchmark's grader.</li>
+</ol>
+<h2>If you remember three things</h2>
+<ol>
+<li><strong>Meta search</strong>: an Opus 5 meta agent probes the task and <em>writes the search program</em> (Agent / Program / Search primitives, 34 patterns, runtime replanning), instead of running a fixed tree search that can't express corpus screening, prefix-cached stages, or reward-model refits.</li>
+<li>It edges the PostTrainBench leaderboard at <strong>46.6 vs 45.6</strong> (Locus) with leads on AIME, BFCL, and HumanEval, but the margin is within reported noise and the gains come overwhelmingly from first-stage SFT on teacher-written data.</li>
+<li>The capability lives in a <strong>hand-curated 400+ card knowledge base</strong> served over MCP; the "self-improving" loop is a write-back channel with no measured effect, so read this as a strong meta-harness, not RSI.</li>
+</ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
+<footer>Generated 2026-09-17 16:02 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
