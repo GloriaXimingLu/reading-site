@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A: Agent memory methods</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Q&amp;A: Agent memory methods</h1><p><a href="../walkthroughs/memory-management.html">Methods survey</a> · <a href="../walkthroughs/inner-loop-memory.html">Focused inner-loop walkthrough</a></p>
+<h2>Session 2026-09-18</h2>
+<p><strong>Q: How do ShadowFrog, Claude-Mem, and Codex compaction differ for an inner task-solving agent?</strong></p>
+<p><strong>A:</strong> ShadowFrog has the solver write source-addressed Markdown discoveries and use file-aware reminders/read/search to recall them. Claude-Mem has a separate observer turn tool events into structured notes; the solver searches a small index and fetches selected details. Codex compaction replaces active conversation state, through either readable summarization or a provider-native opaque representation. External notes and compaction are complementary: a note store does not by itself stop the active context growing.</p>
+<p><strong>Q: Does ShadowFrog implement “save notes, reset context, and resume”?</strong></p>
+<p><strong>A:</strong> Not as a complete controller in the inspected release. Its hooks cover session start and edit-tool pre-use. The solver writes discoveries under skill instructions. Adding a guaranteed pre-reset write/flush operation and a context-replacement policy is our adaptation. Its 97.6% versus 36.2% result concerns planted-fact retrieval under a supplied-path/tool-budget condition, not task success or automatic note-writing quality. See the <a href="../walkthroughs/inner-loop-memory.html#shadowfrog">source-grounded steps</a>.</p>
+<p><strong>Q: Does Claude-Mem save everything without compression?</strong></p>
+<p><strong>A:</strong> No. The observer selects and compresses findings. There is also best-effort raw tool-I/O storage and fetch, but filters, missing IDs, failures, and caps can limit it. The inspected code caps each tool input/result field at 64 KiB; an earlier documentation-level description as a per-row cap was imprecise. Notes and search indexing are asynchronous, so a controlled reset experiment needs an explicit readiness barrier. See the <a href="../walkthroughs/inner-loop-memory.html#claude-mem">implementation caveats</a>.</p>
+<p><strong>Q: Is Codex compaction just a summary plus recent tool results?</strong></p>
+<p><strong>A:</strong> Not universally. The checked readable path retains selected real-user messages and a generated handoff, with initial-context handling; it does not generally retain a raw tool-result tail. Provider-native compaction produces opaque state and may retain other items. A portable baseline with a checkpoint plus complete recent tool exchanges is our proposed adaptation, not an exact reproduction. See the <a href="../walkthroughs/inner-loop-memory.html#codex">two paths</a>.</p>
+<p><strong>Q: Which initial versions are useful without locking the full design yet?</strong></p>
+<p><strong>A:</strong> Checkpoint-only; checkpoint plus solver-written notes; checkpoint plus observer-written notes. Keep the reader interface and checkpoint policy fixed when comparing the latter two. Add stable-ID evidence recovery separately to test whether discarded detail is the bottleneck. These are proposed versions, not implemented systems or measured winners. Within-task continuity and cross-task experience reuse require separate reset/evaluation protocols. See the <a href="../walkthroughs/inner-loop-memory.html#versions">shortlist</a>.</p></article>
+<footer>Generated 2026-09-18 18:33 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

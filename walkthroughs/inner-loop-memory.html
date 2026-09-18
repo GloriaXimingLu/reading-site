@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inner-Loop Memory: ShadowFrog, Claude-Mem, and Codex Compaction</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Inner-Loop Memory: ShadowFrog, Claude-Mem, and Codex Compaction</h1><p class="meta">16 min · 5 approaches · 2026-09-18</p><p class="meta">A focused companion to the <a href="memory-management.html">broader methods survey</a>. Source/code check: 18 September 2026. This explains existing mechanisms first, then proposes a small initial experiment. No implementation or experiment has been run. Repository-specific integration notes stay private.</p>
+
+<h2>The decision in one minute</h2>
+<p><strong>Start with three portable versions: a rolling checkpoint; that checkpoint plus solver-written notes; and that checkpoint plus observer-written notes.</strong> Add exact-evidence recovery as a separate fourth version. These isolate the useful ideas from Codex, ShadowFrog, Claude-Mem, and Memex without requiring three complete product integrations.</p>
+<p>One important correction: <strong>notes + grep does not shrink the active conversation.</strong> Notes solve persistence and selective access; a compaction policy decides what leaves the next model input. An agent that keeps appending all messages can still overflow while its note directory works perfectly.</p>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Who writes?</th>
+<th>What persists?</th>
+<th>How the solver gets it back</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ShadowFrog</td>
+<td>The solving agent, following skills</td>
+<td>Source-addressed Markdown discoveries</td>
+<td>File-aware reminders, read/grep, viewer search</td>
+</tr>
+<tr>
+<td>Claude-Mem</td>
+<td>A separate observer of tool activity</td>
+<td>Structured observations, summaries, and some raw tool I/O</td>
+<td>Recent-memory injection, then index → context → details → evidence</td>
+</tr>
+<tr>
+<td>Codex compaction</td>
+<td>A compaction model call or provider service</td>
+<td>A replacement active context</td>
+<td>Included in subsequent model inputs; no note search is required</td>
+</tr>
+<tr>
+<td>Memex-style recovery</td>
+<td>Agent writes an indexed summary; evidence is archived</td>
+<td>Short working state plus referenced blocks</td>
+<td>Explicit fetch by stable ID</td>
+</tr>
+<tr>
+<td>PRO-LONG-style control</td>
+<td>Harness logs experience; agent can add notes</td>
+<td>Action/history archive</td>
+<td>Search and programmatic analysis</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Inner loop means the task-solving agent</strong>, not an outer system revising its harness. We will first explain continuity inside one task. The same note-writing mechanisms can later carry experience across tasks, but that requires a different reset/feedback protocol. Keep the <a href="memory-management.html">two settings</a> distinct.</p>
+<p><strong>Reading route:</strong> <a href="#shadowfrog">ShadowFrog</a> → <a href="#claude-mem">Claude-Mem</a> → <a href="#codex">Codex</a> → <a href="#recoverable">a useful hybrid</a> → <a href="#versions">initial versions</a> → <a href="#decisions">design decisions</a>.</p>
+<h2 id="running-example">One example to follow through every method</h2>
+
+<p><strong>Illustrative example—not a reported experiment.</strong> An agent is fixing a cache bug. It has learned that a cache key omits the tenant ID; a proposed fix passes a single-tenant test but has not passed the two-tenant regression. Later, after many unrelated tool calls, its context must shrink.</p>
+<p>What must survive? The concrete finding, its evidence, the unsuccessful/partial attempt, the unresolved regression, and where to continue. “Investigated caching and improved tests” is a fluent summary but an inadequate working memory. For a research task, substitute a paper/dataset for a source file, an experimental result for a test, and an unresolved confound for the regression.</p>
+<h2 id="shadowfrog">1. ShadowFrog: the solver writes notes at predictable addresses</h2>
+
+<p><strong>Mental model:</strong> keep code knowledge beside the code's directory structure. This is a note organization and retrieval design, not a compaction algorithm. The released implementation checked here is <a href="https://github.com/microsoft/ShadowFrog/tree/6ae4fc8c6bdd33e95803677aab25abdb60a30823">commit 6ae4fc8</a>.</p>
+<h3>Step by step</h3>
+<ol>
+<li><strong>Initialize addresses.</strong> The initializer scans source files and symbols, creating corresponding files under <code>.shadow/</code>. <code>src/cache.py</code> gets <code>.shadow/src/cache.py.md</code>, with symbol headings. Scaffolding creates places to store knowledge; it does not discover the knowledge itself. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog-init/SKILL.md#L46-L53">Initializer</a></li>
+<li><strong>Learn something while solving.</strong> The solver reads, edits, tests, or receives information from the user. Its instructions ask it to record useful behavioral discoveries, with provenance and status. This is selective, model-written distillation—not “save every token.” <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog/SKILL.md#L167-L240">Writing rules</a></li>
+<li><strong>Put the discovery where a future reader will look.</strong> One-file knowledge belongs in that file's shadow. Two-file findings use <code>Also involves:</code> references; findings spanning three or more files get <code>_cross/</code> entries with back-pointers. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog-update/SKILL.md#L75-L98">Placement rules</a></li>
+<li><strong>Remind the agent before it acts.</strong> Session start advertises the store. Before an edit, a hook uses the target filename to surface relevant bug/security notes and a pointer to the full shadow. At this pin the rich snippet is capped at three discoveries and 600 characters; repeat delivery is limited per file/process. The solver can read or grep further. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/hook-templates/scripts/shadow-frog-pre-tool.sh#L97-L190">Edit hook</a></li>
+<li><strong>Maintain, rather than trust forever.</strong> Update checks changed code and refreshes affected discoveries; consolidation can merge duplicates or investigate conflicts. The hook only warns about staleness; the agent must update the notes. An old note remains a claim to check against current code, not an instruction to obey. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog-update/SKILL.md">Update</a></li>
+</ol>
+<p><strong>Example note, our simplified schema:</strong></p>
+<pre><code class="language-text">File: .shadow/src/cache.py.md
+Symbol: make_key
+Finding: key contains resource_id but not tenant_id.
+Evidence: inspected make_key; two-tenant regression still fails.
+Attempt: added tenant_id at one caller; single-tenant test passes.
+Unresolved: check other callers before claiming the bug is fixed.
+</code></pre>
+<p>After reset, a solver about to edit <code>cache.py</code> can locate this without reconstructing the whole debugging session. If it only knows “cross-tenant leakage,” lexical search and cross-file links matter more than direct path lookup.</p>
+<h3>What we must add for an inner-loop version</h3>
+<p>The released hooks register <strong>session start and edit-tool pre-use</strong>, not a universal post-tool writer or pre-compaction checkpoint. It does not implement “context nearly full → flush notes → replace history → resume.” That controller would be our addition. The ordinary note store is also not a guaranteed raw tool-output archive. Optional <em>dream</em> mode performs additional exploration; exclude it initially so extra experiments do not confound memory quality. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/hook-templates/claude-settings.json">Hook configuration</a>, <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/README.md">project overview</a></p>
+<p><strong>Evidence boundary:</strong> 97.6% versus 36.2% is planted-fact retrieval recall in the highlighted Django condition: about 2,500 facts, the relevant path supplied, eight tool calls. The giant-file condition contains the same planted facts; the difference is layout under a search budget. It does not measure the writer's accuracy or downstream task success. Predictable addressing is especially helpful when the query already contains the address. <a href="https://microsoft.github.io/debug-gym/blog/2026/06/shadow-frog/#1--needle-in-a-shadow-haystack">Study</a></p>
+<p><strong>Borrow first:</strong> solver-written, scoped notes plus path/topic lookup. For research, mirror source IDs, datasets, or entities rather than forcing everything into code-file paths.</p>
+<h2 id="claude-mem">2. Claude-Mem: an observer builds searchable memory for the solver</h2>
+
+<p><strong>Mental model:</strong> the solver acts; a second model watches the observable work and writes its memory. The checked <a href="https://github.com/thedotmack/claude-mem/tree/d8bc9755e74915e5c3b999181e10a67c889bce2a">local-worker implementation, d8bc975</a>, has more moving parts than notes + grep. Hosted modes are outside this review.</p>
+<h3>Step by step</h3>
+<ol>
+<li><strong>Capture a completed tool event.</strong> A <code>PostToolUse</code> hook sends the tool name, input/result, session/project information, and tool-use ID to a worker. This does not require the solver to decide to write a note. Filters exclude some calls/content. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/cli/handlers/observation.ts#L14-L39">Capture handler</a></li>
+<li><strong>Save evidence and queue interpretation.</strong> The worker best-effort stores raw I/O for calls with stable IDs, then queues an observer message. At this revision the cap is <strong>64 KiB per input/result field</strong>, not 64 KiB for the entire row. Missing IDs, exclusions, truncation, or write failures can prevent complete evidence retention. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/http/shared.ts#L123-L198">Dual write</a>, <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/sqlite/tool-uses.ts#L20-L32">storage cap</a></li>
+<li><strong>Observer writes a discovery.</strong> A separate model, instructed not to investigate independently, converts activity into observations: title, type, facts, narrative, concepts, and files read/modified. It may skip routine activity. A stop hook also requests a progress summary, including completed and next steps. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/modes/code.json#L108-L144">Observer prompt</a></li>
+<li><strong>Commit notes and update search.</strong> Parsed observations enter SQLite; vector-index synchronization happens asynchronously. At resume, a bounded recent-memory view is injected. The session-start hook includes <code>compact</code>, so this can support a continuing task—not only a later task. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/agents/ResponseProcessor.ts#L487-L541">Persistence</a>, <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/agents/ResponseProcessor.ts#L765-L789">asynchronous indexing</a>, <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/hooks/hooks.json#L17-L35">resume triggers</a></li>
+<li><strong>Solver selects how deeply to read.</strong> Search returns a compact index; timeline supplies neighboring events; selected observations supply details; <code>get_tool_uses</code> can recover original I/O. Timeline helps distinguish “tried a fix” from “later proved it wrong.” Both writing and retrieval are guided by prompts, not evidence here of a separately RL-trained policy. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/skills/mem-search/SKILL.md#L18-L109">Retrieval instructions</a></li>
+</ol>
+<p>In our example, the observer could write “tenant omitted from cache key; one caller patched; two-tenant regression unresolved.” After compaction, the solver searches for <code>tenant cache</code>, reads nearby events, fetches that observation, and requests the exact failing assertion only if needed. This is an illustration, not a claim that the implementation always extracts the correct lesson.</p>
+<h3>Two details that matter when adapting it</h3>
+<p><strong>A queued write is not a completed memory.</strong> The inspected path acknowledges ingestion before the observer finishes; search indexing can lag behind storage. For a controlled first version, use synchronous checkpoint writing or wait until every event through checkpoint N has been processed or explicitly skipped, and all selected notes are committed and searchable, before resetting context. Otherwise apparent forgetting may be a scheduling race. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/http/routes/SessionRoutes.ts#L631-L703">Queue acknowledgements</a></p>
+<p><strong>A keyword-only clone is an adaptation.</strong> Although the docs discuss FTS5, the checked query-bearing search path uses Chroma; simply disabling it is not equivalent to obtaining a working lexical baseline. Implement <code>rg</code>/FTS explicitly if that is the intended experiment. Also, the source-call link can point to the first observation of a batch—not a precise one-note/one-event attribution. Preserve explicit evidence IDs in our own schema. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/search/SearchOrchestrator.ts#L49-L80">Search routing</a>, <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/agents/ResponseProcessor.ts#L487-L541">source linkage</a></p>
+<p><strong>Borrow first:</strong> a separate observer, explicit readiness before reset, and small search results followed by selective fetch. A files/FTS implementation can test this idea without adopting the whole daemon/plugin stack. Count the observer's cost. The documentation's token-saving examples are not a matched-quality long-task success evaluation. <a href="https://docs.claude-mem.ai/usage/search-tools">Search documentation</a></p>
+<h2 id="codex">3. Codex compaction: replace the working context</h2>
+
+<p><strong>Mental model:</strong> produce a smaller continuation state and make it the model's next input. This is not inherently a notebook or retrieval system. There are distinct text-summary and provider-native paths; treating both as “a Markdown summary” would hide an important implementation difference.</p>
+<h3>A. Readable-summary path: the portable idea</h3>
+<p>In the public Codex source at <strong>7498521</strong>, local compaction asks the configured model for a handoff summary, then replaces active history with selected recent real-user messages and the summary; initial context can be refreshed. It is <strong>not</strong> generically “keep a recent raw tool-output tail.” “Local” means client-orchestrated, not necessarily an on-device model. The summary needs to preserve enough state to continue, and successive summaries may lose detail. <a href="https://github.com/openai/codex/blob/7498521d288b9b3b96ffba4eedf089d8d6e06a84/codex-rs/core/src/compact.rs#L667-L748">Compaction implementation</a>, <a href="https://github.com/openai/codex/blob/7498521d288b9b3b96ffba4eedf089d8d6e06a84/codex-rs/prompts/templates/compact/prompt.md">handoff prompt</a></p>
+<p>The portable mechanism is straightforward:</p>
+<ol>
+<li>Observe that active context is approaching a declared limit; leave space for the compaction request and output. Codex exposes a compaction token limit; it can trigger before a turn or during continuing work. <a href="https://learn.chatgpt.com/docs/config-file/config-reference">Configuration reference</a></li>
+<li>Ask for a task-specific handoff: goal, constraints, verified progress, unresolved questions, failed attempts, current artifacts, and next actions.</li>
+<li>Build a smaller next context according to an explicit preservation policy.</li>
+<li>Continue the same task and environment; repeat when needed.</li>
+</ol>
+<p>For our example, the checkpoint must say that the two-tenant regression remains unresolved. If that distinction disappears, the resumed agent can incorrectly conclude that the task is finished. Nothing about a readable summary automatically makes omitted old tool output searchable.</p>
+<p><strong>Our baseline is an adaptation:</strong> keep system/task instructions, a bounded checkpoint, and a bounded set of complete recent tool exchanges. This tail policy is our control, not a claim about Codex's exact algorithm. A separate evidence store can later be added.</p>
+<h3>B. Provider-native compaction: useful reference, different portability</h3>
+<p>OpenAI's standalone <code>/responses/compact</code> accepts a context that still fits the model window and returns a replacement window. It includes an opaque encrypted compaction item and may retain other items; pass the entire returned window onward unchanged. This is not a human-readable note or a representation one can assume works with a different provider/model.</p>
+<p>There is also automatic server-side compaction through <code>context_management</code> and <code>compact_threshold</code>. That route emits compaction during the response flow; its input-chaining rules differ from the standalone endpoint. For a controlled experiment, record which route was used. <a href="https://developers.openai.com/api/docs/guides/compaction">Official compaction guide</a></p>
+<p><strong>Borrow first:</strong> an explicit checkpoint-and-replace operation. Treat actual provider-native compaction as an additional reference arm if the serving stack supports it—not as a drop-in implementation for an arbitrary open-weight model. Opaque state is not proof of a particular KV-compression algorithm, exact recall, or cross-model portability.</p>
+<details>
+<summary>Version details: what “Codex does” should not hide</summary>
+<p>At the inspected revision, local compaction caps retained user messages at approximately 20K tokens. A separate remote-v2 implementation retains eligible user/hook and certain developer/inter-agent messages under a 64K budget, then adds the opaque compaction item; it does not retain ordinary tool traces verbatim. There is also a feature-gated fresh-window reset without summarization. These are distinct paths, not one universal retention guarantee. <a href="https://github.com/openai/codex/blob/7498521d288b9b3b96ffba4eedf089d8d6e06a84/codex-rs/core/src/compact_remote_v2.rs">Remote-v2 source</a> · <a href="https://github.com/openai/codex/blob/7498521d288b9b3b96ffba4eedf089d8d6e06a84/codex-rs/core/src/compact_token_budget.rs">Reset path</a>.</p>
+<p>Background persistent memories generated from prior eligible chats are another mechanism entirely. They are not the same as compacting an active task. <a href="https://learn.chatgpt.com/docs/customization/memories#how-local-codex-memories-work">Official local-memory documentation</a>.</p>
+</details>
+
+<h2 id="recoverable">4. The most useful addition: a checkpoint that can recover evidence</h2>
+
+<p><strong>Memex suggests a clean extension:</strong> keep a concise indexed summary in the active context while retaining referenced experience blocks outside it. Its <code>CompressExperience</code> operation archives blocks and replaces working history; <code>ReadExperience(index)</code> restores selected evidence. MemexRL trains these decisions, but a prompted version can test the interface before RL. <a href="https://arxiv.org/html/2603.04257#S3">Paper, algorithm and mechanism</a></p>
+<p>In our example, a summary can contain: “two-tenant failure unresolved; exact assertion at event E17.” Later, fetching E17 recovers the concrete result rather than asking the solver to guess what “unresolved” meant. Our implementation proposal is to have the <strong>harness copy observed evidence under immutable IDs</strong>; the model writes references, not reconstructed copies of supposedly raw evidence.</p>
+<p>This is a promising first extension because it isolates a specific failure: <strong>the note was useful but insufficiently detailed</strong>. Keep the checkpoint text identical and toggle evidence access for paired restart tests. It will not fix a writer that omits both the fact and every route to finding it; test broader archive search separately. Published Memex gains under its modified ALFWorld protocol are not a forecast of gains on our tasks.</p>
+<p><strong>PRO-LONG supplies the complementary control:</strong> retain an action/history archive and let the solver search or compute over it, without requiring high-quality distilled notes. Its lesson is that a reader may need to compare states or aggregate events, not just retrieve a matching sentence. Start with lexical search; add Python/programmatic analysis as a separate reader enhancement. Its reported experiments start fresh per game, not with cross-game learned memory. <a href="https://arxiv.org/html/2607.20064v2">Paper</a></p>
+<h2 id="versions">5. A few initial versions to decide on today</h2>
+
+<p>These are <strong>proposed mechanism-controlled adaptations</strong>, not exact reproductions or measured winners. Use the same solver model, task inputs, allowed environment state, context cap, recent-tail policy, and total budget. Keep provider-native Codex as a separately labeled reference because it changes the available representation/service.</p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>What changes</th>
+<th>Question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>V0 — checkpoint only</td>
+<td>At the boundary, write a short handoff and replace old history; no searchable prior notes</td>
+<td>How far does ordinary text compaction get us?</td>
+</tr>
+<tr>
+<td>V1 — solver notes</td>
+<td>V0 plus task-scoped notes written by the solver and searched with <code>rg</code>/bounded reads</td>
+<td>Does selective external memory beat one running summary?</td>
+</tr>
+<tr>
+<td>V2 — observer notes</td>
+<td>V0 plus the same note schema/read interface, but a separate observer writes from captured events</td>
+<td>Does separating writing from solving improve useful memory per unit cost?</td>
+</tr>
+<tr>
+<td>V3 — recoverable memory</td>
+<td>Same notes/checkpoint and preassigned evidence IDs as V2; additionally allow bounded fetch-by-ID</td>
+<td>How much does evidence recovery repair summary omissions?</td>
+</tr>
+</tbody>
+</table>
+<p>Also retain the <strong>existing harness unchanged</strong> as a reference. It is not V0 if it never compacts. A raw-archive + search arm is valuable next, particularly if V1/V2 struggle to write the right notes. Full-history inference is an upper-context reference only where it actually fits.</p>
+<p>For the first paired comparison, give V1 and V2 the <strong>same explicit checkpoint schedule</strong> and note budget; permit ordinary reads during continuation. Control the writer's input too: a solver with the full conversation and an observer with tool events differ in information access, not only role. A writer-isolation test supplies the same serialized task, prior memory, and permitted event bundle; otherwise report an <strong>actor-context versus observer-context</strong> comparison. Later compare opportunistic writing against continuous asynchronous observation. Equal budgets do not mean equal realized cost: report both.</p>
+<p>For V2/V3 paired continuations, archive and assign event IDs for both, but deny V2 access; keep notes/checkpoint identical. The host's inaccessible diagnostic archive is not solver memory. Use the same checkpoint writer/input policy in every arm, and generate that checkpoint from the pre-note-writing snapshot so incidental note-writing conversation does not become an extra memory channel. Complete closed-loop runs can then let trajectories and notes diverge.</p>
+<h3>One generic loop, with the method-specific pieces visible</h3>
+<pre><code class="language-text">create fresh task-local memory and start the solver
+while objective unfinished and total budget remains:
+    run a solver action and collect its allowed observation
+    record allowed evidence under IDs; restrict access by arm
+    finish the complete tool-call/result exchange
+    if a declared checkpoint is due:
+        save the common pre-note-writing snapshot
+        V1: solver updates scoped notes
+        V2/V3: observer updates scoped notes
+        wait for notes and search index to become ready
+        write a bounded checkpoint from that saved snapshot
+        replace active context using the common retention policy
+        resume with task, checkpoint, and memory-tool instructions
+    solver searches/reads memory when it chooses
+score only the final task outcome with the protected evaluator
+discard this task's memory before a new independent task
+</code></pre>
+<p>The default here tests <strong>within-task continuity</strong>. For across-task reuse, preserve only the permitted store between separately scored tasks and replace the unfinished-task checkpoint with a new task's objective. That is the <a href="memory-baseline-experiments.html#setting-1">separate cross-task protocol</a>, not an unannounced extension of this loop.</p>
+<h2 id="decisions">6. What to lock down after reading—not silently assume</h2>
+
+<ol>
+<li><strong>Boundary:</strong> a fixed token threshold, declared checkpoints, or both? Use enough headroom to write the checkpoint before overflow. Never discard half of a tool-call/result pair.</li>
+<li><strong>Memory permissions:</strong> notes only, exact-event dereference, or full archive search? A diagnostic transcript on the host is not automatically solver-accessible memory.</li>
+<li><strong>Writer:</strong> same model in an explicit note-writing phase, or separately invoked observer? The observer sees only permitted observations—not hidden grading answers or future events. Give it a separate inference stream and account for its tokens.</li>
+<li><strong>Read interface:</strong> match index size, returned-token caps, query budget, and fetching behavior between V1/V2. A writer comparison should not secretly be grep versus semantic retrieval.</li>
+<li><strong>Commit rule:</strong> every event through watermark N must be processed or explicitly skipped; selected notes must be durably committed and searchable. This does not require storing every event as a note. If writing fails, keep the old context or record a failed checkpoint; do not silently reset with missing memory.</li>
+<li><strong>Evaluation:</strong> final success/quality, total solver + writer + retrieval cost, wall time, repeated investigations, lost constraints, and harmful/stale-note use. A smaller prompt is not itself a success metric.</li>
+</ol>
+<p>Use both <strong>paired checkpoint continuations</strong> and <strong>complete closed-loop trajectories</strong>. The former isolate restart quality from identical state; the latter expose accumulated errors and the cost of maintaining memory. Include dependencies that become relevant only after several compactions, not just facts immediately queried after being written.</p>
+<p><strong>My suggested order:</strong> get V0 and V1 working first; add V2 with synchronous checkpoint writes; then test V3's evidence recovery. These are candidate choices for discussion, not a locked repository design. Train writing/search only after the frozen-model versions reveal which failure actually limits performance.</p>
+<h2>If you remember three things</h2>
+<ul>
+<li><strong>Persisting information and shrinking the prompt are separate operations.</strong> Notes without a context policy can still overflow.</li>
+<li><strong>Writer, reader, and evidence access are separate experimental variables.</strong> Copying whole products obscures which one helped.</li>
+<li><strong>A note should say what remains uncertain and how to verify it.</strong> Fluency and compactness do not guarantee that the next continuation can finish the task.</li>
+</ul>
+<p><a href="memory-management.html">Broader methods survey</a> · <a href="memory-baseline-experiments.html">Two-setting experiment protocols</a> · <a href="memory-benchmarks.html">Benchmark walkthrough</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></article>
+<footer>Generated 2026-09-18 18:33 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

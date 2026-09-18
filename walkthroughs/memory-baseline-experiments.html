@@ -13,8 +13,13 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Baselines: Two Settings, Two Evaluation Loops</h1><p class="meta">17 min · 6 papers · 2026-09-16</p><p class="meta">Companion to the <a href="memory-management.html">memory methods</a> and <a href="memory-benchmarks.html">benchmark review</a>. Two-setting framing updated 16 September 2026. Everything below labeled a recipe, configuration, or test is a proposed experiment—not an experiment already run.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Baselines: Two Settings, Two Evaluation Loops</h1><p class="meta">18 min · 6 papers · 2026-09-18</p><p class="meta">Companion to the <a href="memory-management.html">memory methods</a> and <a href="memory-benchmarks.html">benchmark review</a>. Two-setting framing updated 16 September 2026. Everything below labeled a recipe, configuration, or test is a proposed experiment—not an experiment already run.</p>
 
+<h2 id="inner-loop-versions">18 September: the inner-loop shortlist</h2>
+
+<p>Read <a href="inner-loop-memory.html">how ShadowFrog, Claude-Mem, and Codex compaction work</a> before choosing repository changes. <strong>The proposed first versions are V0 checkpoint-only, V1 checkpoint + solver-written notes, V2 checkpoint + observer-written notes, and V3 V2 + exact-evidence access.</strong> V0–V2 are the initial batch; V3 is the targeted recovery extension. Keep the existing harness as a separate unchanged reference.</p>
+<p>These are mechanism-controlled adaptations, not product reproductions. Match context policy, checkpoint opportunities, note/read budgets, and the solver between V1/V2. For a within-task pilot, use a fresh store per task/trial and keep the same task environment across compaction. An across-task experiment changes the persistence boundary and remains a separate protocol below. <a href="inner-loop-memory.html#versions">Version definitions and generic loop</a>.</p>
+<p><strong>Do not omit the context controller:</strong> notes + grep does not remove old conversation tokens. Finish tool-call/result pairs, flush notes/index to an explicit event watermark, then replace the active context. Record original evidence access as an arm-specific permission. Count writer cost, and preserve the actual conditioning prefix for each generated segment if training later.</p>
 <h2>Recommendation: inner-agent notes + grep first</h2>
 <p>The first implementation should be <strong>persistent notes + grep for the inner task-solving agent</strong>, using a frozen model and ordinary files. Apply the same mechanism in <strong>two separate protocols</strong>: <a href="#setting-1">across short tasks within one benchmark</a>, and <a href="#setting-2">within one super-long task</a>. Compression is a major axis in both, not a third task setting. Outer-optimizer memory is an adjacent question.</p>
 <p>Do not start by reproducing every paper. Start with the controls below, then choose one trained text-memory system and one learned-representation system. Keep other papers as targeted follow-ons when a failure diagnosis calls for them.</p>
@@ -255,6 +260,6 @@ Correct evidence available but answer still wrong? → reasoning failure
 <h2>If only one research question survives</h2>
 <p><strong>Under a fixed end-to-end budget, when is it better to preserve raw evidence and learn retrieval, versus learn a compact representation—and does a hybrid keep the benefits of both?</strong></p>
 <p>The answer is likely to depend on query predictability, evidence density, source stability, reuse count, and the reader’s search skill. The experiments above vary those factors explicitly instead of hiding them inside an aggregate memory score.</p></article>
-<footer>Generated 2026-09-18 16:44 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-18 18:23 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
