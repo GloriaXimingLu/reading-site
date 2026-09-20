@@ -135,6 +135,6 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>More completions per prompt is the wrong knob.</strong> At fixed batch size, <span class="arithmatex">\(K=4\)</span> beats <span class="arithmatex">\(K=32\)</span> even on hard problems, because large <span class="arithmatex">\(K\)</span> keeps nearly-solved prompts in the batch. The binding constraint is oversampling easy prompts, not undersampling hard ones.</li>
 <li><strong>NGU is a queue policy, not a loss function.</strong> Give up on all-correct groups, train on mixed groups, and re-queue all-wrong groups with probability <span class="arithmatex">\(p\)</span> — then let asynchronous RL refill the freed capacity. Keep stale negatives out of the loss but in the baseline, and anchor the positives when rescaling.</li>
 </ol><div class="qa-box muted">💬 No Q&A notes yet — discuss this paper with Claude and the conversation gets documented here.</div></article>
-<footer>Generated 2026-09-19 16:06 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-20 17:33 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
