@@ -13,16 +13,16 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Baselines: Two Settings, Two Evaluation Loops</h1><p class="meta">18 min · 6 papers · 2026-09-18</p><p class="meta">Companion to the <a href="memory-management.html">memory methods</a> and <a href="memory-benchmarks.html">benchmark review</a>. Two-setting framing updated 16 September 2026. Everything below labeled a recipe, configuration, or test is a proposed experiment—not an experiment already run.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memory Baselines: Two Settings, Two Evaluation Loops</h1><p class="meta">18 min · 6 papers · 2026-09-20</p><p class="meta">Companion to the <a href="memory-management.html">memory methods</a> and <a href="memory-benchmarks.html">benchmark review</a>. Two-setting framing updated 16 September 2026. Everything below labeled a recipe, configuration, or test is a proposed experiment—not an experiment already run.</p>
 
-<h2 id="inner-loop-versions">18 September: the inner-loop shortlist</h2>
+<h2 id="inner-loop-versions">Optional adaptations, not a locked implementation plan</h2>
 
-<p>Read <a href="inner-loop-memory.html">how ShadowFrog, Claude-Mem, and Codex compaction work</a> before choosing repository changes. <strong>The proposed first versions are V0 checkpoint-only, V1 checkpoint + solver-written notes, V2 checkpoint + observer-written notes, and V3 V2 + exact-evidence access.</strong> V0–V2 are the initial batch; V3 is the targeted recovery extension. Keep the existing harness as a separate unchanged reference.</p>
+<p>Read the <a href="memory-reading-edition.html">concise reading edition</a> and <a href="inner-loop-memory.html">faithful mechanism descriptions</a> before choosing repository changes. V0 checkpoint-only, V1 + solver-written notes, V2 + observer-written notes and V3 + evidence access are candidate controlled adaptations, not reproductions or an agreed initial batch. Keep the existing harness as a separate unchanged reference.</p>
 <p>These are mechanism-controlled adaptations, not product reproductions. Match context policy, checkpoint opportunities, note/read budgets, and the solver between V1/V2. For a within-task pilot, use a fresh store per task/trial and keep the same task environment across compaction. An across-task experiment changes the persistence boundary and remains a separate protocol below. <a href="inner-loop-memory.html#versions">Version definitions and generic loop</a>.</p>
 <p><strong>Do not omit the context controller:</strong> notes + grep does not remove old conversation tokens. Finish tool-call/result pairs, flush notes/index to an explicit event watermark, then replace the active context. Record original evidence access as an arm-specific permission. Count writer cost, and preserve the actual conditioning prefix for each generated segment if training later.</p>
-<h2>Recommendation: inner-agent notes + grep first</h2>
-<p>The first implementation should be <strong>persistent notes + grep for the inner task-solving agent</strong>, using a frozen model and ordinary files. Apply the same mechanism in <strong>two separate protocols</strong>: <a href="#setting-1">across short tasks within one benchmark</a>, and <a href="#setting-2">within one super-long task</a>. Compression is a major axis in both, not a third task setting. Outer-optimizer memory is an adjacent question.</p>
-<p>Do not start by reproducing every paper. Start with the controls below, then choose one trained text-memory system and one learned-representation system. Keep other papers as targeted follow-ons when a failure diagnosis calls for them.</p>
+<h2>One possible control: inner-agent notes + grep</h2>
+<p>One inexpensive control is <strong>persistent notes + grep for the inner task-solving agent</strong>, using a frozen model and ordinary files. Apply the same mechanism in <strong>two separate protocols</strong>: <a href="#setting-1">across short tasks within one benchmark</a>, and <a href="#setting-2">within one super-long task</a>. Compression is a major axis in both, not a third task setting. Outer-optimizer memory is an adjacent question.</p>
+<p>First choose the research question and specify faithful candidates. The controls below can isolate mechanisms, but their convenience does not make them the original methods. Trained text-memory and learned-representation tracks remain in scope; no implementation order is fixed.</p>
 <h2 id="first-run">The first run: the smallest informative test</h2>
 
 <p>Use one existing task agent and its normal environment. Add only a mounted <code>memory/</code> directory plus write, list, grep, and bounded-read operations. Tell the fresh agent where this directory is; do not preload every note into the prompt.</p>
@@ -144,6 +144,14 @@ discard trial memory before the next independent task
 <p><strong>Two complementary tests:</strong> (a) branch the same checkpoint into different writers/readers, with identical environment state and remaining budgets, to isolate recovery; (b) run complete trajectories with each memory policy to measure its downstream effect. A successful isolated restart does not establish robustness over repeated compactions.</p>
 <h2>Shared controls — vary these inside either protocol</h2>
 <p>Source drift, stale notes, unknown future information, and reader/model upgrades are orthogonal stress tests, not additional task settings. Declare all persistence channels: repository/work files, browser state, caches, transcripts, and service sessions. In paired checkpoint tests, hold unavoidable world state constant; do not credit it as a gain from notes.</p>
+<h3>Feedback is an experimental axis</h3>
+<p>Use the <a href="memory-management.html#feedback">method-by-method feedback table</a>. Declare what reaches the solver, text writer, memory-utility updater and offline trainer separately.</p>
+<ol>
+<li><strong>Observed evidence / self-judgment:</strong> ordinary tool feedback is allowed; no additional hidden correctness signal. Report any LLM success/failure judge.</li>
+<li><strong>Outcome feedback:</strong> permit a declared success/failure flag or score. This is not the same as revealing the solution.</li>
+<li><strong>Gold-answer feedback:</strong> reveal a reference answer/patch only where the protocol allows it, after recording the original attempt's score.</li>
+</ol>
+<p>Match access, contents and timing across comparison arms. Ground truth used only by an offline training reward is not runtime writer input. Record whether a failed attempt's diagnosis was observed, inferred, graded or obtained from a reference solution. Do not retroactively count a feedback-assisted retry as the original prediction.</p>
 <h3>A small, useful memory contract</h3>
 <p>This schema is my proposal, not a schema copied from one paper:</p>
 <pre><code class="language-text">memory/
@@ -260,6 +268,6 @@ Correct evidence available but answer still wrong? → reasoning failure
 <h2>If only one research question survives</h2>
 <p><strong>Under a fixed end-to-end budget, when is it better to preserve raw evidence and learn retrieval, versus learn a compact representation—and does a hybrid keep the benefits of both?</strong></p>
 <p>The answer is likely to depend on query predictability, evidence density, source stability, reuse count, and the reader’s search skill. The experiments above vary those factors explicitly instead of hiding them inside an aggregate memory score.</p></article>
-<footer>Generated 2026-09-20 17:33 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-20 21:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

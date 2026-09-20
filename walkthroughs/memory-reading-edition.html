@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Memory: A Precise Reading Edition</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: A Precise Reading Edition</h1><p class="meta">16 min · 14 methods and systems · 2026-09-20</p><p class="meta">Concise reading edition · Revised 20 September 2026. Start with the two-minute map, then check what each writer can see.</p>
+
+<p>This condenses our existing survey around mechanisms we might actually use. It separates published methods from our possible adaptations; it does not choose an implementation plan. No new benchmark results are claimed.</p>
+<h2>1. The two-minute map</h2>
+<p>First distinguish two problems:</p>
+<ul>
+<li><strong>Across tasks:</strong> task A finishes; its experience helps a different, separately scored task B. Preserve the store within a declared task stream; reset it between independent streams. Tasks need not be short or independent.</li>
+<li><strong>Within one long task:</strong> the investigation continues after context fills or a session restarts. Preserve the current goal, evidence, uncertainties and next actions. Reset task memory before an unrelated independent task.</li>
+</ul>
+<p>A session boundary is not necessarily a task boundary. Persistent files do not by themselves establish learning across tasks.</p>
+<p>Three mechanisms can coexist: <strong>store</strong> information outside the prompt; <strong>retrieve</strong> the useful part; <strong>compact</strong> the active conversation. Notes plus search handle the first two, but do not automatically implement the third.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What survives / how it comes back</th>
+<th>The question it helps us study</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Codex readable compaction</td>
+<td>A generated handoff plus selected user messages replaces old history</td>
+<td>Can a compact checkpoint preserve ongoing work?</td>
+</tr>
+<tr>
+<td>ShadowFrog</td>
+<td>Solver-written discoveries attached to files/symbols; scoped lookup and hooks</td>
+<td>Can the solver maintain useful project knowledge?</td>
+</tr>
+<tr>
+<td>Claude-Mem</td>
+<td>A separate observer writes structured notes; staged search retrieves them</td>
+<td>Does a dedicated observer preserve useful findings?</td>
+</tr>
+<tr>
+<td>Memex / MemexRL</td>
+<td>Indexed summary plus external blocks; explicit dereferencing</td>
+<td>Can compression retain a reliable route back to evidence?</td>
+</tr>
+<tr>
+<td>PRO-LONG</td>
+<td>Append-only interaction log; search and code inspect it</td>
+<td>How far can a capable reader get without a learned summary writer?</td>
+</tr>
+<tr>
+<td>ReasoningBank</td>
+<td>Distilled lessons from completed attempts; similarity retrieval</td>
+<td>Can past experience improve the next task?</td>
+</tr>
+<tr>
+<td>ACE</td>
+<td>An incrementally edited playbook of strategies and caveats</td>
+<td>How should accumulated lessons be maintained?</td>
+</tr>
+<tr>
+<td>MemRL</td>
+<td>Experiences plus learned usefulness scores</td>
+<td>Can feedback improve which memories are selected?</td>
+</tr>
+<tr>
+<td>Learned text / latent memory</td>
+<td>Train context-editing behavior or a compact internal representation</td>
+<td>What should learning improve: decisions, contents, or representation?</td>
+</tr>
+</tbody>
+</table>
+<p>These are overlapping design choices, not nine interchangeable products. A second axis matters just as much: <strong>what feedback the writer can see</strong>. No ground-truth answer does not mean no environment feedback.</p>
+<h2 id="feedback">2. Feedback: what does the writer actually see?</h2>
+
+<p><strong>Writer input and learning supervision are different.</strong> A model can write memory without seeing the correct answer, while a training algorithm later uses that answer to reward the memory-writing behavior.</p>
+<p>Separate four signals:</p>
+<ul>
+<li><strong>Ordinary observations:</strong> tool results, test failures, browser state, retrieved documents or user messages.</li>
+<li><strong>Self-judgment:</strong> an LLM infers success/failure from the attempt. This is a fallible prediction, not an authoritative label.</li>
+<li><strong>Outcome feedback:</strong> a verifier or environment returns success/failure or a score, without necessarily revealing the correct solution.</li>
+<li><strong>Ground truth:</strong> an explicitly supplied reference answer, correct patch or target state.</li>
+</ul>
+<p>Finding an answer in a source document is ordinary evidence access, not the same as receiving the evaluator's answer key. Also, an observer sees only the information routed to it—not automatically everything the solver or evaluator knows.</p>
+<h3>Feedback visibility in the main candidates</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>What reaches the writer or memory-update process?</th>
+<th>Ground truth / supervision distinction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog/SKILL.md">ShadowFrog</a></td>
+<td>The solver's observed work and user-provided information</td>
+<td>No separate answer-key channel is required.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/modes/code.json">Claude-Mem</a></td>
+<td>Captured tool events and supplied summary context</td>
+<td>No independent oracle access; hidden grader results are not automatically captured.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2509.25140v2#S3.SS2">ReasoningBank</a></td>
+<td>Trajectory plus a self-judged success/failure signal</td>
+<td>The judge explicitly operates without a ground-truth reference.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2510.04618#S4">ACE</a></td>
+<td>Attempt plus feedback permitted by the experiment</td>
+<td>Both GT-label and no-GT-label settings exist; labels go to the Reflector when enabled.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2601.03192#S4.SS3">MemRL</a></td>
+<td>Trajectory summarization; environmental reward updates memory utilities</td>
+<td>Reward-dependent. This does not establish gold-answer visibility in the summarizer's prompt.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2603.04257#S3">MemexRL</a></td>
+<td>Current task/observations for memory actions</td>
+<td>Outcome reward supervises training, not an answer key in the writing loop.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2507.02259v2#S2.SS2">MemAgent</a> / <a href="https://arxiv.org/html/2608.28476#S4">ContextPilot</a></td>
+<td>Question plus available document/memory or interaction history</td>
+<td>Gold-based final-answer rewards train the policy; gold is not supplied as the runtime memory-writing input.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2607.20064v2">PRO-LONG</a></td>
+<td>Mechanical logging of interactions</td>
+<td>Logging preserves observed feedback; it does not manufacture an external correctness label.</td>
+</tr>
+</tbody>
+</table>
+<p>For MemRL, the paper establishes reward-driven utility updates, but the exact summarizer inputs still require checking the selected benchmark adapter. Do not turn that uncertainty into a blanket “writer sees gold” or “writer never sees gold.”</p>
+<h3>Timing changes the experiment</h3>
+<p>Across-task feedback can follow this order:</p>
+<p><code>attempt A → record A's score → reveal permitted feedback → update memory → attempt B</code></p>
+<p>Revealing A's answer after scoring can be valid supervised online learning if the protocol permits it. It is not observation-only learning, and cannot retroactively improve A's recorded score. Reattempting A after feedback is a separate feedback-assisted evaluation.</p>
+<p>Within an unfinished task, a checkpoint can use observations already received, but not a final evaluator outcome that has not occurred. In offline RL, later reward can train earlier writing actions without having appeared in their input prompts.</p>
+<p>For comparisons, match <strong>who receives feedback, its contents and when it arrives</strong>. Keep hidden evaluation information separate unless the declared protocol allows it.</p>
+<h2>3. The likely practical candidates</h2>
+<h3>Codex compaction: replace the working history</h3>
+<p>In the inspected readable path, a model summarizes the conversation; the client builds a replacement history from selected recent real user messages plus that summary, with initial context handled separately. It does <strong>not</strong> simply preserve a recent raw tool-call tail. “Local compaction” means client-orchestrated, not necessarily on-device inference. This description is pinned to the <a href="https://github.com/openai/codex/blob/7498521d288b9b3b96ffba4eedf089d8d6e06a84/codex-rs/core/src/compact.rs">inspected Codex implementation</a>.</p>
+<p>The attraction is direct control of prompt growth. The risk is irreversible omission from the working view: a good-sounding handoff may discard an exception or leave an untested hypothesis looking established.</p>
+<p>Provider compaction is a different interface. OpenAI's standalone endpoint returns a canonical replacement window containing an opaque encrypted compaction item and potentially retained items; pass the entire output onward unchanged. Its input must still fit the model window. Automatic server-side compaction uses a threshold and different chaining rules. Neither should be described as an editable Markdown summary. <a href="https://developers.openai.com/api/docs/guides/compaction">Official guide</a></p>
+<p>For us: “instructions + checkpoint + recent complete tool interactions” could be a useful design, but it is our adaptation, not this pinned Codex algorithm.</p>
+<h3>ShadowFrog: the solver maintains a code-indexed notebook</h3>
+<p><strong>Write:</strong> initialize a <code>.shadow/</code> tree mirroring source files and symbols. During work, the solver records behavioral discoveries with scope, provenance and verification status. It can use observed tests and user feedback, but verification status is not a hidden benchmark success label. Cross-file knowledge has references/backlinks; updates and consolidation maintain the notebook.</p>
+<p><strong>Read:</strong> consult preferences and relevant cross-cutting findings, then the relevant file/symbol notes before modifying code. Hooks can surface bounded reminders. The organization is part of the retrieval method, not cosmetic formatting. <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog/SKILL.md">Pinned skill and schema</a></p>
+<p>For us: a concrete candidate for durable knowledge in repeated coding work. Extending file/symbol anchoring to papers or research claims would be a domain adaptation.</p>
+<p>It is not a universal post-tool observer, a full interaction archive, or a context compactor. The solver must notice what deserves preservation; later code changes can invalidate notes. Preserve its write/read instructions, verification rules and triggering behavior before calling a port faithful. Optional autonomous exploration is an extra source of work and cost, not free memory maintenance.</p>
+<h3>Claude-Mem: a separate observer maintains searchable notes</h3>
+<p><strong>Write:</strong> tool-event hooks feed an observer with the primary agent's tool inputs/results. The observer writes structured observations—facts, narrative, concepts and file references—and progress summaries. Its prompt explicitly gives it no independent investigation tools. A failed test is visible only if supplied in its captured events; an unseen evaluator result is not. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/modes/code.json">Pinned observer prompt</a></p>
+<p><strong>Read:</strong> inject bounded recent context and use staged lookup: search for candidates, inspect their timeline, fetch selected observations, optionally recover captured tool-use records. SQLite persistence and the search/indexing pipeline support this workflow. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/skills/mem-search/SKILL.md">Search workflow</a></p>
+<p>For us: a concrete observer-written-memory candidate. It separates recording from task execution, but adds inference cost and a readiness problem: an accepted event may not yet be a searchable memory.</p>
+<p>Do not assume a lossless archive. In the inspected implementation, raw tool-use storage is best-effort with capped fields. Also, replacing its retrieval with plain grep, or replacing its observer with our common note schema, changes the method. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/sqlite/tool-uses.ts">Tool-use storage</a></p>
+<h3>Memex / MemexRL: shrink the prompt, retain indexed blocks</h3>
+<p><strong>Loop:</strong> <code>CompressExperience</code> stores selected blocks and replaces working history with an indexed summary, preserving instructions and the task. <code>ReadExperience(index)</code> retrieves a stored block.</p>
+<p>Important correction: blocks can be <strong>model-authored text or verbatim spans selected through anchors</strong>. Exact retrieval returns what was stored; it does not make an authored paraphrase exact original evidence.</p>
+<p>MemexRL jointly trains memory and task actions using task reward plus efficiency/format penalties. Giving an untrained model these tools is an interface baseline, not reproduction of the trained result. <a href="https://arxiv.org/html/2603.04257#S3">Method and training</a></p>
+<p>For us: the most direct candidate when the problem is evidence loss after compaction. Its failure point is navigation: if the summary loses the only discoverable pointer, an intact archive may still be practically useless.</p>
+<p>The paper's episode starts with an empty store. Persistence across separate tasks is an additional setting, not established by that loop.</p>
+<h3>PRO-LONG: preserve the log and make the reader powerful</h3>
+<p>The writer is largely mechanical: append interactions to a structured log. The agent uses file access, regular-expression search and Python to locate, compare and compute over past states. This shifts work from deciding in advance what to summarize toward selecting information when needed. <a href="https://arxiv.org/html/2607.20064v2">Paper</a></p>
+<p>For us: an important comparator to sophisticated writers, especially when exact sequences or relationships matter. Grep can locate an event; code can compare all occurrences or reconstruct a trajectory.</p>
+<p>The paper's tool ablations show that programmatic access contributes beyond file reading alone. Its ARC-AGI-3 scores are benchmark scores, not simply percentages of games solved. The evaluated per-game memory does not establish transfer between games.</p>
+<p>A larger archive is not a larger active prompt. The agent still needs to choose bounded outputs, and reader capability, tool budget and log structure matter. Giving only grep would not reproduce the full programmatic reader.</p>
+<h2>4. Across-task experience: three different approaches</h2>
+<h3>ReasoningBank: distill a reusable lesson</h3>
+<p>After an attempt, an LLM judge assesses success or failure from the query and trajectory <strong>without a ground-truth reference</strong>; a writer uses that proxy signal to extract reusable reasoning lessons. Before the next problem, similarity retrieval supplies relevant past experience. The learning is in external memory, not model-weight updates. MaTTS adds test-time sampling and should be counted separately. <a href="https://arxiv.org/html/2509.25140v2">Paper</a></p>
+<p>Use it to understand the basic cross-task loop. The key danger is extracting a confident but false general rule from a misunderstood failure. Model judgment is not ground-truth feedback; our experiment must declare which feedback the writer can see.</p>
+<h3>ACE: maintain a playbook without rewriting everything</h3>
+<p>A Generator attempts the task, a Reflector extracts lessons, and a Curator proposes localized changes to ID-addressed bullets. Deterministic merging and refinement maintain the playbook; bullets carry helpful/harmful metadata. The central idea is incremental maintenance, not repeatedly compressing all knowledge into one new summary. Feedback is a configurable experimental condition: the paper marks GT-label access to the Reflector separately, and no-label runs may still have execution feedback. <a href="https://arxiv.org/html/2510.04618">Paper</a></p>
+<p>Use it when lessons accumulate and need revision. It does not automatically bound the active prompt: a richer injected playbook can cost more tokens. Replacing playbook injection with our own retrieval policy is a separate adaptation. For online evaluation, score the current prediction before incorporating its allowed feedback.</p>
+<h3>MemRL: learn which experiences are useful</h3>
+<p>Store intent, experience and a utility value. First retrieve semantically plausible candidates; then select using usefulness as well as similarity. Environmental outcome feedback updates memory utilities while the underlying LLM remains frozen. Separately, an LLM summarizes trajectories into new memories. A reward updating a utility value is not the same as a gold answer entering that writer's prompt. <a href="https://arxiv.org/html/2601.03192">Paper</a></p>
+<p>Use it when “similar” does not reliably mean “helpful.” Here RL changes retrieval values, unlike MemexRL's model-policy training. Rewarding a retrieved item after a successful task does not prove that item caused success. Availability of valid feedback, changing task distributions and misleading high-utility memories are central questions.</p>
+<h2>5. Training is a separate choice, not an afterthought</h2>
+<p>Text memory can use frozen API models, a trained writer/reader, or a jointly trained solver. We should not silently restrict the survey to prompted wrappers. <strong>A training reward is supervision for parameter updates, not necessarily information visible during a memory-writing call.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Candidate</th>
+<th>What is learned</th>
+<th>Why read it / main qualification</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://arxiv.org/html/2507.02259v2">MemAgent</a></td>
+<td>RL trains repeated overwriting of a bounded text memory while reading chunks</td>
+<td>The writer knows the question, not the reference answer. Training rewards compare its final answer with ground truth. Unknown future questions are a harder setting.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2510.24699">AgentFold</a></td>
+<td>SFT teaches context folding at different scales</td>
+<td>Individual steps and completed subproblems can be compressed differently. Folding is lossy; inference code alone does not establish a complete training reproduction.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2608.28476">ContextPilot</a></td>
+<td>RL trains context-management actions, branching at important decisions for credit assignment</td>
+<td>Ground truth scores terminal answers for RL credit assignment, rather than entering each context-editing prompt. Tools alone are not the trained policy.</td>
+</tr>
+<tr>
+<td><a href="https://arxiv.org/html/2607.01224">AutoMem</a></td>
+<td>One loop improves the memory scaffold; another trains a memory specialist on selected memory turns</td>
+<td>Separates memory behavior from task execution. Distinguish scaffold-search gains from weight-training gains and include both costs.</td>
+</tr>
+</tbody>
+</table>
+<p>For AgentFold and AutoMem, this edition does not establish exact gold-label visibility during demonstration construction or scaffold optimization; audit those inputs before claiming a label-free reproduction. SFT targets are also not automatically inputs supplied to the deployed writer.</p>
+<p>For training through compaction, preserve each segment's actual conditioning prefix; a reconstructed full transcript is not equivalent. <a href="https://arxiv.org/html/2603.04257#S3.SS3">MemexRL's segmented training</a></p>
+<h3>Latent memory: compress the representation itself</h3>
+<ul>
+<li><strong><a href="https://arxiv.org/html/2506.06266v3">Cartridges</a>:</strong> for a particular corpus, generate synthetic conversations and optimize a compact KV prefix against a full-context teacher, keeping the backbone frozen. Reuse that prefix for many queries. Think “prepare a reusable representation of a corpus,” not “write a running note.” Preparation and rebuild costs matter; reported KV-memory or throughput gains are not equivalent to total-GPU-memory or per-request-latency gains.</li>
+<li><strong><a href="https://arxiv.org/html/2606.07878">Still</a>:</strong> train a general compactor that maps full KV states to compact synthesized states in a forward pass. Unlike Cartridges, it amortizes learning across contexts rather than fitting each corpus separately. It still has cache-construction costs; iterative cache growth is not constant-sized infinite memory. The prior survey did not verify an official implementation/checkpoint.</li>
+</ul>
+<p>These require access to model internals. They are not drop-in note stores behind a standard text-only API. They remain relevant if repeated corpus use or serving-memory cost is our main problem.</p>
+<h2>6. One example makes the distinctions concrete</h2>
+<p>Illustrative, not a benchmark result: a research agent learns that “20% improvement” is relative, only holds for one subgroup, and uses a changed evaluator. It has not yet resolved the evaluator difference.</p>
+<ul>
+<li>A <strong>checkpoint</strong> must preserve the unresolved comparison and next action.</li>
+<li>A <strong>scoped note</strong> preserves the conditional claim and its source, rather than “method X is better.”</li>
+<li>An <strong>observer</strong> can record that finding only if the captured events contain it.</li>
+<li>An <strong>indexed archive</strong> can recover the exact passage, provided it was stored exactly and remains findable.</li>
+<li>A <strong>programmatic reader</strong> can compare evaluator outputs across the full history.</li>
+<li>A <strong>cross-task lesson</strong> might be “check denominator, subgroup and evaluator version.” It is not the old task's to-do list.</li>
+<li>A <strong>latent representation</strong> may retain enough to answer expected questions but needs testing on an unexpected question about the evaluator.</li>
+</ul>
+<p>The same pattern applies to coding: “single-tenant test passes” must not become “cache bug fixed” while a two-tenant regression remains unresolved.</p>
+<p>Suppose the note instead says “the fix failed.” Was that inferred by the model, observed in a runnable test, returned by a hidden grader, or learned by seeing the reference patch? Preserve that provenance. These signals justify different conclusions even when the note's wording is identical.</p>
+<h2>7. What we should carry into brainstorming</h2>
+<p>The first decision is the failure we want to fix: losing ongoing state, failing to reuse experience, failing to recover evidence, or paying too much for long context. “Add memory” is underspecified.</p>
+<p>My reading priority—not a locked implementation order—is:</p>
+<ol>
+<li><strong>Compaction, ShadowFrog and Claude-Mem:</strong> understand history replacement versus solver-written versus observer-written knowledge.</li>
+<li><strong>Memex and PRO-LONG:</strong> compare selective indexed storage with an append-all archive and powerful reader.</li>
+<li><strong>ReasoningBank, ACE and MemRL:</strong> compare lesson extraction, maintenance and usefulness-based selection across tasks.</li>
+<li><strong>The training and latent section:</strong> decide whether learning the policy or representation is central to our question.</li>
+</ol>
+<p>Before calling anything a faithful port, pin its writer input, <strong>feedback source/content/recipient/timing</strong>, prompts, write timing, schema, read policy, context replacement and persistence/reset rules. Record training supervision separately from deployment-time writer inputs. Removing a UI or daemon can preserve the method if behavior stays equivalent. Changing these contracts usually does not.</p>
+<p>The earlier V0–V3 ladder is a proposed set of controlled adaptations/ablations, <strong>not faithful reproductions</strong> of the named systems. It belongs after choosing the methods and stating their contracts, not at the beginning of the survey.</p>
+<p>Finally, compare task outcomes at a declared total budget: solver plus writer/observer calls, retrieval, compaction, training and preparation where relevant. Report observation-only/self-judged, outcome-feedback and gold-answer-feedback conditions separately, with matched access across methods. Keep evaluator-only labels out of agent-visible memory unless the protocol explicitly permits that feedback. Retrieval accuracy, successful restart and task success are different evidence.</p>
+<h2>Further reading and provenance</h2>
+<p>The <a href="memory-management.html">full methods survey</a> retains the broader literature, result tables and frontier notes. The <a href="inner-loop-memory.html">focused inner-loop walkthrough</a> provides more implementation detail. Both include the feedback-access and faithful-port distinctions explained here. See also the <a href="memory-baseline-experiments.html">experiment protocols</a> and <a href="../qa/memory-management.html">discussion notes</a>.</p>
+<p>The full survey additionally covers RLM's programmatic decomposition, PlugMem's episodes/facts/procedures, LLMLingua-2's extractive compression, and newer learned memory work. Outer-loop harness optimization remains an adjacent track.</p>
+<p>Key distinctions were checked against primary papers, pinned implementation sources and official compaction documentation. This is a source-grounded review, not an independent replication or a fresh release audit of every method. Unverified prompt-level visibility is explicitly marked.</p></article>
+<footer>Generated 2026-09-20 21:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
