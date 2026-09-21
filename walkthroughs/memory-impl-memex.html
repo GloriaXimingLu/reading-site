@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing Memex and MemexRL: indexed archives, context replacement, and training</title>
+<title>Memex: keep a short index, reopen the evidence</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,34 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Memex and MemexRL: indexed archives, context replacement, and training</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memex">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Memex: keep a short index, reopen the evidence</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> remove bulky evidence from the active conversation, keep it under a stable address, and leave a short reminder of where it is.</p>
+<p>Our invented agent is debugging a cache collision. A long test log is filling its context.</p>
+<h2>1. The agent decides it can put the log aside</h2>
+<p>The prompt includes context-usage information. The agent chooses to compress now; the threshold is not itself a mandatory summarization command.</p>
+<p>It still needs to remember that the test failed and where to recover the evidence.</p>
+<h2>2. The agent submits a compression call</h2>
+<p>The call contains two things:</p>
+<ul>
+<li>A short summary: “Two-tenant test failed. Evidence is under <code>failure_1</code>.”</li>
+<li>A block to store under <code>failure_1</code>, either authored text or an anchored span selected from the existing log.</li>
+</ul>
+<p>The short summary is an index, not the full evidence.</p>
+<h2>3. The program stores the block</h2>
+<p>For an anchored block, ordinary code locates the supplied start, middle, and end anchors and extracts the span.</p>
+<p>The external store now maps <code>failure_1</code> to the retained test evidence.</p>
+<h2>4. The program replaces active history</h2>
+<p>The next model input keeps the fixed instructions, task, and short summary. The bulky intervening history is gone from that input.</p>
+<p>The external block survives this replacement.</p>
+<h2>5. The agent later needs the exact failure</h2>
+<p>It sees the summary's pointer and calls <code>ReadExperience</code> for <code>failure_1</code>.</p>
+<p>The program returns that one block as a tool observation. The relevant detail is back in the active context.</p>
+<h2>6. The agent continues the investigation</h2>
+<p>It uses the recovered evidence, edits the key, and runs a new test against the changed code.</p>
+<p>It did not have to keep the original log visible during every intervening call.</p>
+<p><strong>What persists:</strong> the task's external blocks and current short context. This is not automatically a bank shared by unrelated tasks.</p>
+<p><strong>What MemexRL adds:</strong> training rewards successful task completion and penalizes inefficient or malformed behavior, teaching the model when and how to use these tools. The outcome trains earlier choices; it is not supplied in advance to the writer.</p>
+<p>The defining operation is: <strong>save evidence → leave an address → shorten context → read that address when needed.</strong> Exact schemas, validation, and training are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memex">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Implement two memory tools inside the ordinary agent loop. <code>CompressExperience</code> writes selected blocks to an external store and replaces active history with a short index-bearing summary. <code>ReadExperience</code> brings a chosen block back into active history.</p>
 <p>The agent chooses when to invoke them. Memex is the interface and loop; MemexRL additionally trains the policy operating that interface.</p>
@@ -145,7 +172,7 @@ P_{\mathrm{format}}=\frac{N_{\mathrm{malformed}}}{N_{\mathrm{attempted\ tool\ st
 <p>For an invented two-rollout example, one return is 1 and another 0: normalized advantages are approximately +1 and -1. Every segment in the successful rollout receives its positive advantage, including an early compression that only paid off much later. The verifier's answer/outcome is supervision; it was not inserted into the original memory tool arguments.</p>
 <h2>Tests and reproduction boundary</h2>
 <p>Test invalid anchors, duplicate IDs, existing-ID updates, missing retrieval, two consecutive compressions, and exact post-compression message contents. For RL, verify a sampled token's training prefix equals the prefix seen during rollout.</p>
-<p>Giving these tools to a frozen model implements a Memex-style runtime. It does not reproduce MemexRL's learned behavior without its training procedure and checkpoint.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>Giving these tools to a frozen model implements a Memex-style runtime. It does not reproduce MemexRL's learned behavior without its training procedure and checkpoint.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

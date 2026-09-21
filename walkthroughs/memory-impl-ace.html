@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing ACE: generator, reflector, counters, and playbook deltas</title>
+<title>ACE: improve a shared checklist</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,34 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ACE: generator, reflector, counters, and playbook deltas</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#ace">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>ACE: improve a shared checklist</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> keep one shared playbook, then improve it with small changes after seeing how it was used.</p>
+<p>Our invented task is to calculate annual revenue growth. The source contains annual figures of 100 and 120, plus a quarterly figure of 30. The playbook initially says: “Extract the two values, then calculate growth.”</p>
+<h2>1. The Generator attempts the answer</h2>
+<p>“Generator” means the LLM call doing the task. It receives the question, source context, and current playbook.</p>
+<p>It mistakenly compares the quarterly 30 with the previous annual 100 and answers −70%. Its output identifies the playbook bullet it used and the values it compared.</p>
+<h2>2. The task checker returns feedback</h2>
+<p>For this example, the checker says “incorrect.” The program saves that first-attempt result before making any improvements.</p>
+<p>The answer text can be hidden while this correctness feedback is still available.</p>
+<h2>3. The Reflector diagnoses the mistake</h2>
+<p>“Reflector” is a separate LLM call. It reads the attempted reasoning, used advice, and permitted feedback.</p>
+<p>It notices the mixed periods and recommends: “Use annual figures on both sides.” It also tags the used bullet as helpful, harmful, or neutral; the program updates its counters.</p>
+<h2>4. The Generator can retry</h2>
+<p>In the inspected adaptation loop, a wrong answer can trigger bounded reflection/retry rounds.</p>
+<p>Now the Generator uses the annual 120 and 100 and answers 20%. This is a feedback-assisted result, <strong>not a replacement for the original −70% attempt</strong>.</p>
+<h2>5. The Curator proposes one addition</h2>
+<p>“Curator” is the LLM call deciding what to keep in the playbook. At a scheduled update, it proposes:</p>
+<blockquote>
+<p>Before calculating growth, check that both values use matching periods and units.</p>
+</blockquote>
+<p>It returns an ADD operation, not a rewritten copy of the entire playbook.</p>
+<h2>6. The program adds the new bullet</h2>
+<p>Ordinary code assigns the new bullet an ID and appends it. Unrelated advice stays in place.</p>
+<p>The release also probes the same question again after curation. That result is recorded separately.</p>
+<h2>7. The next task receives the improved playbook</h2>
+<p>A later calculation starts with both the original advice and the new period/unit check.</p>
+<p><strong>What persists:</strong> the playbook, bullet IDs, and usage counters—not the full previous conversation. Model weights stay unchanged.</p>
+<p>The defining operation is: <strong>feedback produces a small change to a shared checklist.</strong> Full output fields, retry settings, and supported operations are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#ace">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build a persistent playbook that changes through feedback on solved examples. ACE separates <strong>doing the task</strong>, <strong>diagnosing the attempt</strong>, and <strong>deciding what to retain</strong>. Those are distinct model calls, while applying IDs and counters is ordinary code.</p>
 <p>We use the <a href="https://github.com/ace-agent/ace/tree/82709de050e1db6e6ef2f07bcb0393560b94992a">pinned ACE release</a>. Its actual adaptation loop includes retries and a post-curation generation. That is more specific than the conceptual Generator → Reflector → Curator diagram.</p>
@@ -159,7 +186,7 @@ next_global_id: 3
 </code></pre>
 <h2>What you should test before calling this ACE</h2>
 <p>Use a fake Generator/Reflector/Curator with predetermined outputs. Check that the correct branch uses one reflection; the wrong branch respects its retry cap; neutral tags do not change counters; ADD does not alter unrelated content; unsupported operation types do not magically mutate the book; and pre/post scores remain distinct.</p>
-<p>Model weights remain frozen in this textual adaptation procedure. <a href="https://arxiv.org/html/2510.04618">The paper</a> explains grow-and-refine context adaptation; this chapter spells out the chosen release's orchestration, rather than assuming all ACE implementations have identical control flow.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>Model weights remain frozen in this textual adaptation procedure. <a href="https://arxiv.org/html/2510.04618">The paper</a> explains grow-and-refine context adaptation; this chapter spells out the chosen release's orchestration, rather than assuming all ACE implementations have identical control flow.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

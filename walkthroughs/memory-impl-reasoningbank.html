@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing ReasoningBank: from an attempt to a reusable lesson</title>
+<title>ReasoningBank: learn from a failed attempt</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,33 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ReasoningBank: from an attempt to a reusable lesson</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#reasoningbank">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>ReasoningBank: learn from a failed attempt</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> finish a task, turn the attempt into reusable advice, and give that advice to a later task.</p>
+<p>Follow one invented example. The agent must find a chair narrower than 60 cm. Its memory bank starts empty.</p>
+<h2>1. The agent tries the task</h2>
+<p>With no old advice to retrieve, the agent searches normally. It chooses a chair from a search result without checking the width.</p>
+<p><strong>What we have now:</strong> the task and a record of the agent's attempt. No new memory yet.</p>
+<h2>2. A judge call checks the attempt</h2>
+<p>A separate LLM call reads the task and the recorded attempt. In the self-judged setting, it has no answer key.</p>
+<p>It concludes: “The agent never established that the chair meets the width requirement.”</p>
+<p>This is the judge's assessment, not a guaranteed benchmark verdict.</p>
+<h2>3. A writer call turns the failure into advice</h2>
+<p>The failure assessment selects the failure-extraction prompt. The writer reads the attempt and writes a transferable procedure, such as:</p>
+<blockquote>
+<p>Before choosing a product, open its specifications and check every required attribute.</p>
+</blockquote>
+<p>It saves a lesson, not “choose a different chair.”</p>
+<h2>4. The program saves the lesson so another task can find it</h2>
+<p>The program stores the lesson alongside the old task's query. It also stores a numerical representation of that query so similar future tasks can find it.</p>
+<p>The old task is over. Its answer and score do not change.</p>
+<h2>5. A new task retrieves the lesson</h2>
+<p>A later task asks for a desk under a height limit. The program compares this query with the saved queries and selects a similar past experience.</p>
+<p>The next solver prompt contains the new task <strong>plus the saved verification procedure</strong>.</p>
+<h2>6. The agent uses the advice on new evidence</h2>
+<p>The agent opens the desk's specifications and checks its height. After this attempt, judging and lesson-writing can run again.</p>
+<p><strong>What persists:</strong> a growing bank of experiences. Model weights do not change.</p>
+<p><strong>What the writer knows:</strong> whether the judge thinks the attempt succeeded, plus the recorded attempt. This example does not reveal a correct answer.</p>
+<p>The defining operation is: <strong>a completed attempt becomes advice for another task.</strong> Exact prompts, retrieval code, and other feedback settings are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#reasoningbank">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build an agent that starts task B with procedural lessons distilled from earlier tasks. The solver, judge, and extractor can use the same underlying model, but they are <strong>separate calls with different inputs</strong>. The method does not train model weights or require the solver to edit a global policy document.</p>
 <p>We will implement the single-attempt, self-judged loop. The WebArena code at <a href="https://github.com/google-research/reasoning-bank/tree/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena">this pinned revision</a> is our implementation reference. MaTTS is an additional rollout policy, described separately below.</p>
@@ -117,7 +143,7 @@ for task in ordered task stream:
 <h2>Feedback, variants, and an implementation test</h2>
 <p>The <a href="https://github.com/google-research/reasoning-bank/blob/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena/induce_memory.py">extraction entrypoint</a> supports both self-evaluation and ground-truth reward criteria. The latter uses the benchmark's outcome to select the extraction path. Label the criterion in the run configuration.</p>
 <p>MaTTS changes the evidence available before extraction: parallel mode obtains multiple attempts at one task; sequential mode asks the agent to inspect and refine its previous attempt. These extra calls are not part of the single-attempt loop. Consult the <a href="https://arxiv.org/html/2509.25140v2">paper's MaTTS procedure</a> before claiming a MaTTS reproduction.</p>
-<p>Before running a benchmark, test that an empty bank yields no injection; a known query selects the expected ID; a failure invokes the failure prompt; an appended record becomes retrievable; and a judge error is not silently treated as task failure. The last behavior is recommended harness error handling, not a claim about every release script.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>Before running a benchmark, test that an empty bank yields no injection; a known query selects the expected ID; a failure invokes the failure prompt; an appended record becomes retrievable; and a judge error is not silently treated as task failure. The last behavior is recommended harness error handling, not a claim about every release script.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

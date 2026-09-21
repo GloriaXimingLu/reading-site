@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing Cartridges: optimize a reusable KV prefix for one corpus</title>
+<title>Cartridges: fit a reusable numerical memory for a document</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,35 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Cartridges: optimize a reusable KV prefix for one corpus</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#cartridges">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Cartridges: fit a reusable numerical memory for a document</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> train a small set of internal attention-memory tensors to stand in for a particular document or corpus. Reuse that memory for many later questions.</p>
+<p>Our invented manual says: “Report damaged items within 7 days.”</p>
+<h2>1. Make practice questions from the manual</h2>
+<p>A model sees source material and generates requests about it. Another conversational role answers with that source available.</p>
+<p>One practice question is: “How soon must a damaged item be reported?” The source-informed answer is “within 7 days.”</p>
+<p>Repeat over the corpus to cover different facts and uses.</p>
+<h2>2. Save the teacher's predictions</h2>
+<p>Along with the generated answer, save the teacher's probabilities for candidate next tokens.</p>
+<p>These are the targets that the numerical memory will learn to reproduce. No real future user's question is required yet.</p>
+<h2>3. Give the student a different source of information</h2>
+<p>The student uses the same frozen language model but receives a short, trainable key/value prefix instead of the manual.</p>
+<p>A key/value prefix is internal attention state, not readable summary text. Initially, it may not preserve the 7-day rule.</p>
+<h2>4. Compare and adjust the prefix</h2>
+<p>Feed the practice conversation to the student. Compare its next-token predictions with the stored teacher predictions.</p>
+<p>Backpropagation changes <strong>only the trainable prefix values</strong>, making the student's predictions closer to the teacher's. The model's ordinary weights remain fixed.</p>
+<h2>5. Repeat until the cartridge has been fitted</h2>
+<p>Train over more practice conversations and save the resulting prefix.</p>
+<p>That saved numerical state is the cartridge for this corpus. It is not a new model that automatically compresses any document.</p>
+<h2>6. Answer a new user's question</h2>
+<p>Load the cartridge and append:</p>
+<blockquote>
+<p>My order arrived damaged. What is the reporting deadline?</p>
+</blockquote>
+<p>The frozen model generates an answer using the cartridge, without receiving the full manual again.</p>
+<p>Clear this query's temporary cache before the next independent query; keep the fitted cartridge.</p>
+<p><strong>What persists:</strong> the corpus-specific prefix. If the manual changes, its fitted representation needs updating.</p>
+<p><strong>Feedback boundary:</strong> offline preparation uses source-informed teacher answers/probabilities. A future query's gold answer is not a serving input.</p>
+<p>The defining operation is: <strong>train numerical memory for this corpus once, then reuse it across questions.</strong> This requires model-internal cache access. Tensor shapes and the exact loss are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#cartridges">Short overview</a></p>
 <p>A cartridge is a set of learned <strong>key/value tensors</strong> that stands in for a particular source corpus. You train those tensors offline while keeping the language model frozen. At query time, install the cartridge as the model's cached prefix and append the new question.</p>
 <p>This requires a model implementation that exposes attention caches and permits gradients through them. A normal text-only hosted API is insufficient. This chapter follows the <a href="https://github.com/HazyResearch/cartridges/tree/ef34ba97a06049c34820506e2c283746284ae5f0">released cache-tuning path at ef34ba9</a>, not its optional model-tuning alternatives.</p>
 <h2>1. Understand what you allocate</h2>
@@ -115,7 +143,7 @@ D_{\mathrm{KL}}(p_T\Vert p_C)
 <li>The student training prompt excludes the full teacher source.</li>
 </ul>
 <p>The offline teacher sees source material and generates answers/distributions. Those answers supervise <strong>numerical prefix optimization</strong>. At deployment, no future query's gold answer is supplied and no per-query optimizer is required.</p>
-<p>For implementation planning, the expensive new components are the synthetic-data pipeline and differentiable cache integration. The actual inference interface is simple: <strong>load prefix → append question → generate → discard query-specific cache</strong>.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>For implementation planning, the expensive new components are the synthetic-data pipeline and differentiable cache integration. The actual inference interface is simple: <strong>load prefix → append question → generate → discard query-specific cache</strong>.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

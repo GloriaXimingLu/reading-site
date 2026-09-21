@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing Claude-Mem: event capture, observer writes, and staged retrieval</title>
+<title>Claude-Mem: an observer remembers tool results</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,38 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Claude-Mem: event capture, observer writes, and staged retrieval</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#claude-mem">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Claude-Mem: an observer remembers tool results</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> capture the solver's tool activity, let a separate observer write useful notes, and let future solvers retrieve those notes.</p>
+<p>This is an engineering system. Use the same invented cache bug throughout.</p>
+<h2>1. The solver reads code and runs a test</h2>
+<p>The test reports that two tenants receive the same cache key.</p>
+<p>Hooks capture the relevant read and test events, including their inputs and results.</p>
+<h2>2. A separate observer writes a discovery</h2>
+<p>The observer receives those captured events. It produces a structured note such as:</p>
+<blockquote>
+<p>Cache keys collide across tenants; the two-tenant test failed.</p>
+</blockquote>
+<p>The worker parses and stores the note. Search indexing follows asynchronously: “event accepted” does not yet mean “note searchable.”</p>
+<h2>3. Later events produce a second note</h2>
+<p>The solver fixes the key and the test passes. Those new events can produce another observation:</p>
+<blockquote>
+<p>Tenant identity was added to the key; the regression now passes.</p>
+</blockquote>
+<p>The memory now contains both the original problem and the later fix.</p>
+<h2>4. A future solver searches a small index</h2>
+<p>A new task asks whether tenant isolation is covered. The solver searches for “tenant cache.”</p>
+<p>It first receives short results with IDs and titles, not every full note in the database.</p>
+<h2>5. The solver checks the timeline</h2>
+<p>Seeing a failure note alone could be misleading. The solver looks at nearby records and notices the later fix.</p>
+<p>This gives the result its chronological context.</p>
+<h2>6. The solver fetches selected details</h2>
+<p>It requests the full failure and fix observations by ID. If it needs the exact historical test output, it can also request the associated raw tool event.</p>
+<p>That raw evidence can be missing or capped; it is not guaranteed lossless storage.</p>
+<h2>7. The solver uses the remembered evidence</h2>
+<p>It knows which test covers tenant isolation and can verify the current code before acting.</p>
+<p><strong>What persists:</strong> the observation database and search index. The future prompt contains only selected material.</p>
+<p><strong>Feedback boundary:</strong> the observer knows what the captured events supply. It does not independently inspect the code or receive a hidden answer key.</p>
+<p>The defining operation is: <strong>tool events → observer notes → search → selected details.</strong> Event schemas, observer output, and read calls are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#claude-mem">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build a pipeline in which a separate observer model reads captured tool events and turns useful ones into persistent observations. A later solver first searches a small index, then fetches selected details.</p>
 <p>The defining separation is:</p>
@@ -94,7 +125,7 @@ observation indexed for search
 <p>The observer's write was based on visible event evidence. Session B's useful context was selected by its reader. Neither operation changes the model weights.</p>
 <h2>Tests and implementation boundaries</h2>
 <p>Use recorded fake events to test skipped routine activity, malformed XML, multiple observations, database persistence, project filtering, timeline ordering, and raw-ID lookup. Separately test delayed indexing: an accepted event must not be reported as searchable before it is.</p>
-<p>These are recommended conformance checks, not benchmark results. The persistent database survives sessions; the active solver prompt still needs its own context-management policy. Pairing Claude-Mem with a compactor is possible, but is a combined system.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>These are recommended conformance checks, not benchmark results. The persistent database survives sessions; the active solver prompt still needs its own context-management policy. Pairing Claude-Mem with a compactor is possible, but is a combined system.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

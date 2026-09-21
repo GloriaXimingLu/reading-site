@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing Still: learn a function that compresses KV caches</title>
+<title>Still: turn an existing attention cache into a smaller one</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,34 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Still: learn a function that compresses KV caches</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#still">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Still: turn an existing attention cache into a smaller one</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> train a compression function, then apply it to new contexts' internal attention caches.</p>
+<p>Unlike Cartridges, a new document does not require fitting a new numerical memory with gradient updates.</p>
+<h2>1. The frozen model reads the new context</h2>
+<p>Reading a document produces key/value tensors at each model layer. These tensors are the internal attention memory used when processing later tokens.</p>
+<p>Suppose our invented context occupies 4,096 cache positions.</p>
+<h2>2. A trained compactor reads those tensors</h2>
+<p>The compactor receives the context's keys and values, not a written summary and not a future answer key.</p>
+<p>Its learned slots attend to the original cache and combine information from it.</p>
+<h2>3. The compactor outputs a shorter cache</h2>
+<p>For example, it produces 256 positions of new keys and values.</p>
+<p>These are synthesized values. The method does not simply choose 256 original tokens to keep.</p>
+<h2>4. The program installs the smaller cache</h2>
+<p>It replaces the full cache with the compact one.</p>
+<p>It must preserve position information: although only 256 cache entries remain, the next token still follows the original 4,096-position context. Treating it as position 256 would change the model's positional calculations.</p>
+<h2>5. The model answers the question</h2>
+<p>Append the question and generate normally against the compact cache.</p>
+<p>For this new context, the compactor runs forward once. There is no Cartridges-style fitting loop.</p>
+<h2>How was the compactor trained?</h2>
+<ol>
+<li>A frozen teacher answers training questions with the full context cache.</li>
+<li>A student answers with the compactor's shorter cache.</li>
+<li>Compare their answer-token predictions and update only the compactor, teaching it which information to preserve.</li>
+</ol>
+<p>The student backbone stays frozen, but gradients pass through it into the compactor. Training answers supervise that update; they do not become runtime compactor inputs.</p>
+<p><strong>What persists:</strong> the trained compactor parameters, reusable across contexts. Each new context gets its own compact cache.</p>
+<p><strong>Availability boundary:</strong> this explanation follows the paper. A compatible official code/checkpoint release was not verified in the audit.</p>
+<p>The defining operation is: <strong>existing cache → trained compression function → smaller cache → ordinary continuation.</strong> Exact attention blocks, positional handling, and the separate streaming schedule are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#still">Short overview</a></p>
 <p>Cartridges optimizes a new prefix for a particular corpus. Still instead trains a <strong>compactor function</strong> once and applies that function to a new context's existing key/value cache. At deployment, the new context needs a prefill and compactor forward pass, not a new optimization run.</p>
 <p>This is a paper-level implementation guide: a compatible official code/checkpoint release was not verified in this audit. The architecture and training description adapt <a href="https://arxiv.org/html/2606.07878">Still, Sections 2 and Appendices A–F</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. The tensor example and integration tests are explanatory additions. Do not read the pseudocode as an upstream API.</p>
 <h2>1. Obtain the uncompressed cache</h2>
@@ -139,7 +166,7 @@ C_V=Z_{\mathrm{out}}W_{\mathrm{value}},
 <li>Independent queries do not inherit each other's dynamic cache.</li>
 <li>Iterative and independent-chunk schedules are evaluated separately.</li>
 </ul>
-<p>The complete path is <strong>context prefill → per-layer K/V resampling → position-correct cache replacement → ordinary question answering</strong>. The practical work is in implementing that cache contract, not in writing a summarization prompt.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>The complete path is <strong>context prefill → per-layer K/V resampling → position-correct cache replacement → ordinary question answering</strong>. The practical work is in implementing that cache contract, not in writing a summarization prompt.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

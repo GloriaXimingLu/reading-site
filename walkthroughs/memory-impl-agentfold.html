@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing AgentFold: replace a range of steps, then continue</title>
+<title>AgentFold: fold completed steps into a shorter record</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,44 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing AgentFold: replace a range of steps, then continue</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#agentfold">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>AgentFold: fold completed steps into a shorter record</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> let the acting model choose which completed steps to replace with a summary. Keep the newest interaction detailed.</p>
+<p>Our invented agent is checking whether a candidate meets several requirements.</p>
+<h2>1. Begin with three history blocks</h2>
+<p>The next prompt contains the question, tools, and:</p>
+<ul>
+<li>Steps 0–1: candidate A was rejected.</li>
+<li>Step 2: candidate B looks promising.</li>
+<li>Step 3: the full result confirming B's affiliation.</li>
+</ul>
+<p>These blocks form the current working history.</p>
+<h2>2. The model chooses a fold and a new action</h2>
+<p>In one response, it says:</p>
+<blockquote>
+<p>Replace steps 2–3 with “B's affiliation is confirmed; its date still needs checking.”</p>
+</blockquote>
+<p>It also chooses the next search to verify the date.</p>
+<p>Both decisions were made before that search returned anything.</p>
+<h2>3. The runner executes the new search</h2>
+<p>The search returns a dated announcement.</p>
+<p>In the inspected code, tool execution happens before the already-generated fold is applied. The fold still cannot include this new result: the model had not seen it.</p>
+<h2>4. The runner replaces only the selected blocks</h2>
+<p>Steps 2 and 3 disappear from active history. One block covering 2–3 takes their place.</p>
+<p>The earlier rejection of A remains unchanged.</p>
+<h2>5. The runner appends the newest interaction</h2>
+<p>The next prompt now contains:</p>
+<ul>
+<li>Steps 0–1: A rejected.</li>
+<li>Steps 2–3: B's affiliation confirmed; date still needs checking.</li>
+<li>Step 4: the new search action and its full result.</li>
+</ul>
+<p>The model now has the date evidence and can decide what to do next.</p>
+<h2>6. Repeat at the next call</h2>
+<p>The model can summarize just step 4 or fold it together with older blocks. The summary must retain facts still needed by the task.</p>
+<p>Discarded raw details have no built-in archive-read operation in this runner. The agent may need to revisit the external source.</p>
+<p><strong>How it is learned:</strong> supervised training teaches the model to imitate validated responses that contain both the fold decision and next action. It is not an RL loop in this paper.</p>
+<p><strong>Feedback boundary:</strong> each fold sees the current task/history, not the result of the action generated alongside it.</p>
+<p>The defining operation is: <strong>replace a chosen interval of history, then append the new interaction.</strong> Field names, interval code, and training pairs are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#agentfold">Short overview</a></p>
 <p>AgentFold makes the acting model also decide how to rewrite its working history. You will implement an ordered list of step blocks, parse a fold directive from the model, replace a suffix of those blocks, and put the resulting list into the next prompt. There is no embedding search or persistent experience bank in this loop.</p>
 <p>This chapter follows the <a href="https://github.com/Alibaba-NLP/DeepResearch/blob/f72f75d8c3eb842f2bbbab096a12206ff66e270f/WebAgent/AgentFold/infer.py">released inference file, pinned at f72f75d</a>. The examples are invented; the validated helper below deliberately adds checks missing from that file.</p>
 <h2>1. Store intervals, not a growing chat transcript</h2>
@@ -117,7 +154,7 @@ Before call 5:
 <li>A new question begins with no prior question's step blocks.</li>
 <li>A malformed response cannot silently execute an irreversible tool twice in an adapted runner.</li>
 </ul>
-<p>The core implementation is small: <strong>structured prompt → fold/action response → interval replacement → latest interaction append</strong>. The learned part is deciding which interval to fold and what its summary must preserve.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>The core implementation is small: <strong>structured prompt → fold/action response → interval replacement → latest interaction append</strong>. The learned part is deciding which interval to fold and what its summary must preserve.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

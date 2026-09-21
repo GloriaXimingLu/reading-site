@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing AutoMem: evolve the scaffold, then train a memory specialist</title>
+<title>AutoMem: improve the notebook workflow, then train its operator</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,37 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing AutoMem: evolve the scaffold, then train a memory specialist</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#automem">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>AutoMem: improve the notebook workflow, then train its operator</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> first improve the code/prompts that govern memory use, then train a model to operate that improved workflow.</p>
+<p>Start with the released two-model Crafter example. The agent tried to craft an item, but it lacked wood.</p>
+<h2>1. LOG: the memory model sees what just happened</h2>
+<p>The scaffold gives it the previous action, current observation, notebook file list, and logging guidance.</p>
+<p>It can search existing notes before deciding to add:</p>
+<blockquote>
+<p>Crafting failed because wood was missing. Collect wood before retrying.</p>
+</blockquote>
+<p>LOG is the phase allowed to write these notebook files.</p>
+<h2>2. PLAN: the memory model consults the notebook</h2>
+<p>A fresh planning conversation contains the current observation, goals, and file list.</p>
+<p>The memory model reads the missing-wood note. The file—not the entire LOG conversation—carries the information between phases.</p>
+<h2>3. The gameplay model chooses the real action</h2>
+<p>The accumulated PLAN consultation is handed to a separate, frozen gameplay model. It can choose a valid wood-collection action.</p>
+<p>A world-action tag produced by the memory specialist is stripped during handoff; that specialist does not directly commit the final world action.</p>
+<h2>4. The environment responds and the cycle repeats</h2>
+<p>The new inventory becomes the next observation. LOG can update useful notes, then PLAN consults them again.</p>
+<p>No weight-training step happens between these ordinary game actions.</p>
+<h2>5. Offline, improve the scaffold itself</h2>
+<p>Run many episodes and inspect where this workflow fails.</p>
+<p>Another model inspects the runs and can edit the logging prompts, file organization, or other scaffold code. Evaluate the candidate on the same protocol and retain improvements.</p>
+<p>This changes <strong>how memory is operated</strong>, not merely what one episode's note says.</p>
+<h2>6. Select good memory operations for training</h2>
+<p>Inspect the resulting traces and select useful LOG/PLAN memory behavior. The selection uses recorded responses.</p>
+<p>Deterministic processing removes final world-action commitments from memory-specialist training targets.</p>
+<h2>7. Train and evaluate the memory specialist</h2>
+<p>Supervised training teaches the specialist those memory operations. Evaluate it alongside the still-frozen gameplay model, and revise the data or training recipe if needed.</p>
+<p><strong>What persists:</strong> the improved scaffold and trained specialist across episodes. The selected scaffold resets each episode's notebook.</p>
+<p><strong>Feedback boundary:</strong> offline optimization can inspect completed runs and scores. Runtime LOG/PLAN only sees information supplied at that point in the episode.</p>
+<p>The defining operation is: <strong>improve the memory workflow, then train a specialist to use it.</strong> Borrowing LOG/PLAN alone leaves out AutoMem's two offline improvement loops. Their exact interfaces are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#automem">Short overview</a></p>
 <p>AutoMem is not one fixed “summarize the past” prompt. It searches for a memory scaffold, then trains a model to operate that scaffold. To make this implementable, we will first run one concrete released scaffold: <strong>Crafter v5, two-model mode</strong>. Then we will separate its two offline improvement loops from its ordinary gameplay loop.</p>
 <p>Source pin: <a href="https://github.com/autoLearnMem/AutoMem/tree/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b">AutoMem at 1987b8f</a>. Do not assume the other environments or scaffold versions have identical prompts and operations.</p>
 <h2>1. Allocate episode files and two model clients</h2>
@@ -175,7 +205,7 @@ Step t+1:
 </tbody>
 </table>
 <p>A meta-level learner seeing full completed episodes does not imply the runtime writer sees future observations. Preserve the original per-turn prompt in selected data.</p>
-<p>Minimum tests: LOG writes survive into PLAN; PLAN cannot silently write; the memory model's ACTION is not executed; notebook reset removes episode discoveries; trained weights survive reset; deterministic target processing removes final action commitments. These tests identify the architecture before any benchmark score does.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>Minimum tests: LOG writes survive into PLAN; PLAN cannot silently write; the memory model's ACTION is not executed; notebook reset removes episode discoveries; trained weights survive reset; deterministic target processing removes final action commitments. These tests identify the architecture before any benchmark score does.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

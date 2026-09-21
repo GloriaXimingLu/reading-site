@@ -13,7 +13,38 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">38 min · 14 methods and systems · 2026-09-21</p><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">1 min · 14 methods and systems · 2026-09-21</p><div class="walkthrough-lesson"><p>Each chapter starts with <strong>one small example, followed in order</strong>. Read that first. The code, equations, variants, and sources are under a closed “implementation details” section at the end.</p>
+<p>The examples are invented to explain the methods, not reported experimental results.</p>
+<p><strong>Start here:</strong> <a href="memory-impl-reasoningbank.html">ReasoningBank</a> shows how an attempt becomes a lesson. Then <a href="memory-impl-memex.html">Memex</a> shows how evidence leaves and re-enters the active context.</p>
+<h2>Use past experience on a new task</h2>
+<ul>
+<li><a href="memory-impl-reasoningbank.html">ReasoningBank</a> — a failed product search becomes advice for the next search.</li>
+<li><a href="memory-impl-ace.html">ACE</a> — a bad calculation leads to a new checklist rule.</li>
+<li><a href="memory-impl-memrl.html">MemRL</a> — task outcomes change which advice gets selected.</li>
+</ul>
+<h2>Preserve useful information while working</h2>
+<ul>
+<li><a href="memory-impl-shadowfrog.html">ShadowFrog</a> — the coding agent leaves a discovery beside its source file.</li>
+<li><a href="memory-impl-claude-mem.html">Claude-Mem</a> — an observer turns tool results into searchable notes.</li>
+<li><a href="memory-impl-codex.html">Compaction</a> — a shorter handoff replaces the long active conversation.</li>
+<li><a href="memory-impl-memex.html">Memex</a> — save evidence, keep its address, reopen it later.</li>
+<li><a href="memory-impl-pro-long.html">PRO-LONG</a> — a program reads the relevant parts of a long log.</li>
+</ul>
+<h2>Learn how to operate memory</h2>
+<ul>
+<li><a href="memory-impl-memagent.html">MemAgent</a> — carry one replacement note through successive document chunks.</li>
+<li><a href="memory-impl-agentfold.html">AgentFold</a> — fold selected completed steps into a summary.</li>
+<li><a href="memory-impl-contextpilot.html">ContextPilot</a> — save a fact before removing its bulky source message.</li>
+<li><a href="memory-impl-automem.html">AutoMem</a> — improve the notebook workflow, then train its operator.</li>
+</ul>
+<h2>Store information inside the model's attention cache</h2>
+<ul>
+<li><a href="memory-impl-cartridges.html">Cartridges</a> — fit numerical memory for one corpus and reuse it.</li>
+<li><a href="memory-impl-still.html">Still</a> — use a trained function to shrink a new context's cache.</li>
+</ul>
+<p>These are different mechanisms, not interchangeable names for summarization. Every chapter says what information the writer sees and what survives into the next call or task.</p>
+<p><a href="memory-management.html">Broader survey</a> · <a href="../qa/memory-management.html">Questions about feedback</a></p>
+<p>The earlier detailed comparison is retained below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
 
 <p>The question for this tutorial is: <strong>could you execute one cycle of the method yourself, and say exactly what changed?</strong> For each selected method, we follow its inputs, memory object, writes, reads, and next model call. Training is explained separately from deployment. The examples use invented tasks and values to make the published mechanisms concrete; they are not experimental results.</p>
 <p>The three engineering systems—Codex compaction, ShadowFrog, and Claude-Mem—are labeled as systems, not papers. This page covers the <strong>14 selections in the reading edition</strong>, not all 33 entries in the <a href="memory-management.html">broader survey</a>.</p>
@@ -606,7 +637,7 @@ serving query 2: frozen model + same Z + &quot;When should A be avoided?&quot;
 <p>A faithful implementation preserves the method's writer inputs, timing, state schema, read policy, context replacement, feedback, and reset rules. The pinned-code differences above are concrete reasons to specify a version, not just a method name.</p>
 <p>Our earlier V0–V3 proposals remain <strong>controlled adaptations/ablations</strong>, not reproductions or an agreed implementation order. For instance, “solver-written notes + grep + periodic checkpoint” combines choices from multiple systems; it is not exactly ShadowFrog, Claude-Mem, or MemexRL.</p>
 <p>For brainstorming, now ask: <strong>which state transition solves our bottleneck?</strong> A better writer, a better reader, reliable evidence recovery, active-context replacement, and learned KV compression are different changes. Choose the mechanism before simplifying it.</p>
-<p><a href="memory-management.html">Broader survey and results</a> · <a href="inner-loop-memory.html">Focused code-level walkthrough</a> · <a href="memory-baseline-experiments.html">Separate experiment protocols</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p><a href="memory-management.html">Broader survey and results</a> · <a href="inner-loop-memory.html">Focused code-level walkthrough</a> · <a href="memory-baseline-experiments.html">Separate experiment protocols</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

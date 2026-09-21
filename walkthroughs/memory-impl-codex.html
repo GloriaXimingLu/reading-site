@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing compaction: readable handoffs and opaque continuation state</title>
+<title>Compaction: hand an unfinished task to a shorter context</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,34 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing compaction: readable handoffs and opaque continuation state</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#codex">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Compaction: hand an unfinished task to a shorter context</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> replace a long active conversation with a smaller continuation state, then resume the same unfinished task.</p>
+<p>Use an invented coding task. The agent has investigated a bug, made a patch, and passed one targeted test. It has not run the full suite.</p>
+<h2>1. The active conversation gets large</h2>
+<p>It contains requirements, code reads, failed attempts, edits, and tool results.</p>
+<p>These are the items the model would receive on its next call. A separate diagnostic log is not the same thing.</p>
+<h2>2. The client requests compaction</h2>
+<p>Before the window becomes too large, the client supplies the available conversation for compaction.</p>
+<p>For a readable handoff, a summarizing call produces something like:</p>
+<blockquote>
+<p>Patch made in cache.py. Targeted test passed. Full suite not run. Next: check callers and run remaining tests.</p>
+</blockquote>
+<p>This output is an illustrative handoff, not a literal Codex prompt.</p>
+<h2>3. The client replaces the active history</h2>
+<p>It keeps the required initial context and retained user instructions with the handoff, according to the chosen retention policy.</p>
+<p>It <strong>removes the long investigation from the next model input</strong>. Merely appending the summary would not compact anything.</p>
+<h2>4. The next solver call continues from that state</h2>
+<p>The agent reads that the targeted test passed but the full suite is still pending.</p>
+<p>It proceeds with the remaining checks rather than treating the task as complete.</p>
+<h2>5. Missing details require another source</h2>
+<p>If an exact old error was omitted, the solver cannot recall it merely because it once appeared in the conversation.</p>
+<p>It needs a log-reading tool, external memory, or another permitted way to obtain the evidence.</p>
+<h2>What changes in the provider-native path?</h2>
+<p>Instead of readable handoff text, the API returns compacted items containing opaque continuation state. The client must carry those items intact into the next request.</p>
+<p>The continuation pattern is the same; the internal compression algorithm is not public.</p>
+<p><strong>What persists:</strong> the shortened active state, plus any independently retained files/logs.</p>
+<p><strong>Feedback boundary:</strong> compaction sees supplied conversation evidence, including tests or user corrections already present. It adds no separate answer-key channel.</p>
+<p>The defining operation is: <strong>replace what the next call sees, then continue the same task.</strong> Exact API handling and the two retention paths are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#codex">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Compaction changes the <strong>input window for the next model call</strong>. Saving a note on disk does not do that by itself.</p>
 <p>There are two interfaces to understand: a readable handoff constructed by a client, and the provider's opaque compaction state. The <a href="inner-loop-memory.html#codex">existing source audit</a> covers the pinned readable Codex path; the provider integration below follows the current <a href="https://developers.openai.com/api/docs/guides/compaction">official compaction guide</a>.</p>
@@ -101,7 +128,7 @@ diagnostic log:
 <h2>Feedback and what to test</h2>
 <p>The writer sees supplied conversation state, which may contain test output or user corrections. Compaction does not grant a separate answer-key channel.</p>
 <p>Test that replacement actually shortens the active window; user constraints survive; pending tool calls are handled consistently; instructions are resent as required; opaque output objects are passed intact; and an API failure leaves the old active state recoverable. The rollback behavior is recommended client engineering.</p>
-<p>There is no Cartridges-style per-corpus gradient update or published Still-style KV architecture established by this interface. A provider compaction object should not be labeled either one simply because it is numerical or opaque.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>There is no Cartridges-style per-corpus gradient update or published Still-style KV architecture established by this interface. A provider compaction object should not be labeled either one simply because it is numerical or opaque.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

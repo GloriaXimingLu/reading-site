@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing MemRL: candidate filtering, value-aware retrieval, and reward updates</title>
+<title>MemRL: learn which advice helps</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,37 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing MemRL: candidate filtering, value-aware retrieval, and reward updates</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memrl">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>MemRL: learn which advice helps</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> store experiences with usefulness scores, then let task outcomes change which experiences get selected.</p>
+<p>Our invented agent must put an object in a destination. Its bank already contains two relevant pieces of advice:</p>
+<ul>
+<li>A: “Try the direct route.”</li>
+<li>B: “Inspect the destination before placing the object.”</li>
+</ul>
+<p>B has previously been more useful.</p>
+<h2>1. Find experiences about similar tasks</h2>
+<p>The program compares the new task with saved task representations. It removes unrelated experiences first.</p>
+<p>An excellent score on an unrelated memory does not make that memory relevant.</p>
+<h2>2. Choose which advice to put in the prompt</h2>
+<p>In the paper's selection rule, the program combines task similarity with learned usefulness. Suppose this setting emphasizes usefulness enough to choose B.</p>
+<p>The solver receives the text “Inspect the destination…” It does not need the ranking calculation in its prompt.</p>
+<h2>3. The agent acts using that advice</h2>
+<p>It inspects the destination, notices it must be opened, opens it, and places the object.</p>
+<p>The program records that <strong>B was the memory actually supplied</strong>.</p>
+<h2>4. The environment supplies a result</h2>
+<p>Suppose the task succeeds and the chosen reward is 1.</p>
+<p>This outcome goes to the usefulness updater. It is not a new paragraph written by a summarizing LLM.</p>
+<h2>5. Update B's usefulness</h2>
+<p>If B's old score was 0.4 and the update moves 20% toward the new reward, its score becomes 0.52.</p>
+<p>A's score stays unchanged because A was not supplied. A later failure when using B can lower B's score.</p>
+<h2>6. Optionally add this new experience</h2>
+<p>A separate configured writer can store the current trajectory, turn it into a short procedure, or store both. Some update variants accept only successful attempts.</p>
+<p>The new experience gets its own identity and initial score; it does not reuse B's updated score.</p>
+<h2>7. Repeat on the next task</h2>
+<p>The same text can now be selected differently because its usefulness score changed.</p>
+<p><strong>What persists:</strong> experiences and their scores. The solver's weights stay fixed.</p>
+<p><strong>What sees the feedback:</strong> the score-updating code receives the task reward. The text-writing step is separate; its chosen settings determine whether it also receives success/failure feedback.</p>
+<p>The defining operation is: <strong>learn which memory to retrieve, not just what text to save.</strong> The paper's ranking and the released selector differ; both are explained below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memrl">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build an experience retriever with a learned utility attached to each memory. The solver model stays frozen. A task outcome changes which memories are likely to be used next time.</p>
 <p>There are <strong>two explicit implementation targets</strong>: the paper's normalized similarity-plus-utility selection, and the pinned release's Q-sorted epsilon-greedy selector. We implement the paper's deterministic ranking below, then identify the code variant. Never combine them accidentally.</p>
@@ -121,7 +151,7 @@ for task:
 <p>Its Q updater can include a discounted next-value term; the single-step configuration uses <span class="arithmatex">\(\gamma=0\)</span>. This is a different implementation choice from silently reproducing the paper's weighted z-score ranking. <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/value_driven.py">Exact selector and updater</a></p>
 <h2>Feedback and the tests that establish the implementation</h2>
 <p>The utility updater sees reward. The memory builder's inputs are separate: inspected builder interfaces consume trajectories, while updater variants can receive success/failure and supply failure feedback to a reflector. They do not have a separate gold-answer argument. That does not prove arbitrary task data contains no reference leakage.</p>
-<p>Test empty retrieval, threshold rejection, opposing similarity/Q order, constant Q, one candidate, <span class="arithmatex">\(k_2=0\)</span>, utility updates for selected IDs only, and new-record initialization. Run a sequential toy stream and check that a repeatedly rewarded experience rises in ranking. This verifies mechanics, not the benchmark performance of the paper.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>Test empty retrieval, threshold rejection, opposing similarity/Q order, constant Q, one candidate, <span class="arithmatex">\(k_2=0\)</span>, utility updates for selected IDs only, and new-record initialization. Run a sequential toy stream and check that a repeatedly rewarded experience rises in ranking. This verifies mechanics, not the benchmark performance of the paper.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

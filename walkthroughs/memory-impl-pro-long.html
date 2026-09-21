@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing PRO-LONG: raw interaction logs and programmatic readers</title>
+<title>PRO-LONG: ask a program to read the long history</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,33 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing PRO-LONG: raw interaction logs and programmatic readers</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#pro-long">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>PRO-LONG: ask a program to read the long history</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> keep the raw interaction history in files and let a coding agent write small programs to inspect the parts it needs.</p>
+<p>Follow an invented grid-game investigation. This walkthrough uses the ARC-AGI-3 implementation.</p>
+<h2>1. The runner records what happened</h2>
+<p>The environment runner executes action 18 and writes the action and resulting board into a log.</p>
+<p>The write is ordinary logging. No LLM has to decide how to summarize the board.</p>
+<h2>2. The coding agent receives access to the workspace</h2>
+<p>Its instructions identify the log, legal actions, and the file where it should put its next action batch.</p>
+<p>The entire log does not have to fit in the prompt.</p>
+<h2>3. The agent asks a precise question of the log</h2>
+<p>It wants to know what action 18 changed. It writes or runs a helper that reads the settled board before and after that action and compares their cells.</p>
+<p>The distinction between an animation frame and the settled result matters.</p>
+<h2>4. The helper returns a small result</h2>
+<p>Instead of two full grids, the agent sees:</p>
+<blockquote>
+<p>The marked piece moved from column 1 to column 0. No other cells changed.</p>
+</blockquote>
+<p>The comparison is computed by code. “This action moves that piece left” is the agent's hypothesis about the result.</p>
+<h2>5. The agent proposes a short test</h2>
+<p>It writes a small action batch to the action file.</p>
+<p>The runner parses it, enforces the batch limit, executes it, and records the next observations. The coding agent does not replace the environment runner.</p>
+<h2>6. Later, the agent compares distant observations</h2>
+<p>At action 70, a similar pattern appears. It searches the old log and reuses its helper to compare the two situations.</p>
+<p>It can use evidence from action 18 without carrying all intervening boards in its active conversation.</p>
+<p><strong>What persists:</strong> logs, helper programs, and any agent-written notes within the run. The selected backend can also resume an agent session.</p>
+<p><strong>Feedback boundary:</strong> logs contain environmental observations and available progress signals, not an unseen correct action sequence.</p>
+<p>The defining operation is: <strong>a small program turns a large stored history into a small useful observation.</strong> Log formats, action parsing, and backend settings are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#pro-long">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build an environment runner that records interactions in a persistent filesystem and asks a coding agent to analyze those records with tools and code. The coding agent outputs an action batch; the runner executes it and records the results.</p>
 <p>Unlike a learned summary writer, the primary memory write is ordinary logging. The intelligence lies partly in <strong>how the agent interrogates that log</strong>.</p>
@@ -92,7 +118,7 @@ Agent backend:
 <p>The logger sees environmental observations and available score/progress information. It does not reveal an unseen correct action sequence. The coding agent's notes inherit only the evidence it inspected.</p>
 <p>The workspace persists within the run. Cross-game or cross-task reuse is a separate protocol choice, not established merely by a persistent directory.</p>
 <p>Test action-file clearing, parser validation, batch caps, log ordering, settled-frame extraction, and byte synchronization. Then test a task that requires comparing distant observations. Measure the code/tool calls and tokens used by that read policy as well as task success.</p>
-<p>The <a href="https://arxiv.org/html/2607.20064v2">paper</a> motivates programmatic memory; the implementation above makes clear which component logs, which reasons, and which executes.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>The <a href="https://arxiv.org/html/2607.20064v2">paper</a> motivates programmatic memory; the implementation above makes clear which component logs, which reasons, and which executes.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

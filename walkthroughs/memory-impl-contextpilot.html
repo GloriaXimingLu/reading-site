@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing ContextPilot: explicit memory tools and branch-based training</title>
+<title>ContextPilot: save the useful fact, remove the bulky message</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,35 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ContextPilot: explicit memory tools and branch-based training</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#contextpilot">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>ContextPilot: save the useful fact, remove the bulky message</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> give the agent separate tools for saving facts, changing its active context, and loading saved facts again. Train it to choose useful sequences of those actions.</p>
+<p>Our invented question is: “Why did Mira leave after the meeting?”</p>
+<h2>1. The agent finds and reads a passage</h2>
+<p>Search identifies chunk 17. The agent opens it.</p>
+<p>The passage says Mira left because the meeting exposed a broken agreement. The tool result becomes message 8 in the active conversation.</p>
+<p>Chunk 17 and message 8 are different objects: one is source text; the other is its current appearance in the prompt.</p>
+<h2>2. The agent saves the important fact</h2>
+<p>It calls the structured-memory tool with a chosen key, <code>departure</code>, and the fact:</p>
+<blockquote>
+<p>Mira left because of the broken agreement.</p>
+</blockquote>
+<p>The record also points back to chunk 17 and message 8. The program stores what the agent supplied; it does not consult an answer key to invent the fact.</p>
+<h2>3. The agent removes the bulky context</h2>
+<p>After the save succeeds, it chooses a context-editing tool to shorten or replace message 8.</p>
+<p>The next prompt gets smaller. <strong>The saved memory and original source chunk remain available.</strong></p>
+<p>Writing the memory and removing the message are two separate actions.</p>
+<h2>4. The agent continues investigating</h2>
+<p>It reads other evidence. It no longer needs the complete meeting passage in every call.</p>
+<p>A compact listing tells it that a saved memory named <code>departure</code> exists.</p>
+<h2>5. The agent loads that memory</h2>
+<p>It selects the listed key and calls <code>loadMemory</code>.</p>
+<p>The tool returns the saved fact and related records. If exact wording matters, the source pointer lets the agent read chunk 17 again.</p>
+<h2>6. The agent answers from the recovered evidence</h2>
+<p>It can now explain the departure using the relevant fact without restoring the entire old conversation.</p>
+<h2>What does the training add?</h2>
+<p>During training, the system revisits important edit decisions and samples alternatives from <strong>before</strong> the edit. For example: save the reason before deleting the passage, or delete it without saving the reason.</p>
+<p>It scores the final answers reached after each edit and uses those results to train the earlier choices. The correct answer is available to the grader, not to the runtime memory-writing call.</p>
+<p>The defining operation is: <strong>save a fact and its source → shrink the active prompt → load the fact later.</strong> Tool schemas and branch-credit calculations are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#contextpilot">Short overview</a></p>
 <p>ContextPilot has two pieces to implement: a tool-using agent that can edit its context, and an RL procedure that explores alternative edits. Giving a model the tools implements the harness, not the trained policy.</p>
 <p>The tool examples follow the <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/infer/tools/context-shaper_tools.json">inference schema at 782cbb6</a>. The training explanation adapts Pan et al.'s <a href="https://arxiv.org/html/2608.28476">paper, Sections 4.2–4.3</a>, available under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Worked numbers and example documents are invented.</p>
 <h2>1. Separate four kinds of state</h2>
@@ -166,7 +194,7 @@ S=\alpha\Delta C+\beta\Delta H.
 <li>Gold answers occur in grading records, not inference prompts.</li>
 <li>Compressor failures and token-limit violations remain visible.</li>
 </ul>
-<p>For a first implementation, make the tool semantics work with a frozen model. Treat that as the paper's tools-only baseline; add the snapshot collector and RL update only when reproducing the learned method.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>For a first implementation, make the tool semantics work with a frozen model. Treat that as the paper's tools-only baseline; add the snapshot collector and RL update only when reproducing the learned method.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

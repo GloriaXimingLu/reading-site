@@ -373,3 +373,19 @@ article hr { border: 0; border-top: 1px solid var(--border); margin: 30px 0; }
   .ann-sync-status.error { color: #ff8f8f; }
 }
 .ann-transfer button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+
+/* Example-first lessons keep implementation references available on demand. */
+.walkthrough-lesson { max-width: 680px; margin: 0 auto; }
+.walkthrough-lesson h2 { border: 0; padding-top: 0; margin-top: 28px; }
+.walkthrough-lesson blockquote {
+  margin: 12px 0; padding: 4px 16px; border-left: 3px solid var(--border);
+  color: var(--fg-soft);
+}
+.implementation-reference {
+  margin-top: 36px; padding: 14px 18px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card);
+}
+.implementation-reference > summary { cursor: pointer; font-weight: 600; }
+.implementation-reference > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.reference-content { padding-top: 12px; }

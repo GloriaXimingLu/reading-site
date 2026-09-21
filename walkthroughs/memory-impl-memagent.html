@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing MemAgent: recurrent text memory and Multi-Conv DAPO</title>
+<title>MemAgent: carry one short note through a long document</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,37 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing MemAgent: recurrent text memory and Multi-Conv DAPO</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memagent">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>MemAgent: carry one short note through a long document</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> read the document in chunks. After each chunk, replace a short memory note. At the end, answer from that note.</p>
+<p>Our invented question is: “Which acquisition happened before the director resigned?”</p>
+<h2>1. Start with the question and no memory</h2>
+<p>The document is divided into ordered chunks. The model will not receive all of them at once.</p>
+<p>The question is already known; it tells the writer what information to retain.</p>
+<h2>2. Read chunk 1 and write the first note</h2>
+<p>The first call receives the question, an empty-memory marker, and chunk 1.</p>
+<p>Chunk 1 says Orion was acquired in 2018. The model writes:</p>
+<blockquote>
+<p>Orion acquired in 2018.</p>
+</blockquote>
+<p>That output becomes the memory.</p>
+<h2>3. Read chunk 2 with the old note</h2>
+<p>The second call receives the same question, the note above, and chunk 2. <strong>Chunk 1 is no longer in its input.</strong></p>
+<p>Chunk 2 says the director resigned in 2020 and another acquisition happened in 2022.</p>
+<h2>4. Replace the note</h2>
+<p>The model produces a new note combining the useful old and new facts:</p>
+<blockquote>
+<p>Orion acquired in 2018; director resigned in 2020; another acquisition followed in 2022.</p>
+</blockquote>
+<p>The program replaces the first note with this one. It does not keep appending every note to the prompt.</p>
+<p>If the first note had lost “Orion, 2018,” the second call would not have chunk 1 available to recover it.</p>
+<h2>5. Make a separate answer call</h2>
+<p>After the last chunk, the model receives only the question and final memory.</p>
+<p>It answers “Orion.” The answer call is separate from writing the final note.</p>
+<h2>How does the writer learn what to keep?</h2>
+<p>During training, the system samples several complete note-and-answer sequences. A verifier scores their final answers. That outcome trains the earlier note-writing choices as well as the answer.</p>
+<p>At ordinary runtime, the writer gets the question, previous note, and current chunk—not the answer key.</p>
+<p><strong>What persists:</strong> only the latest generated note between chunk calls. A new document/question starts again.</p>
+<p>The defining operation is: <strong>old note + next chunk → replacement note.</strong> Exact prompts, budgets, and the training objective are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memagent">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Process a long document in sequential chunks while keeping only a bounded generated memory between calls. The question is known while memory is written. After the last chunk, answer using the question and final memory.</p>
 <p>This is not ordinary retrieval: the basic loop does not search the document or jump backward to a forgotten chunk. It is a learned <strong>overwrite policy</strong> for text memory.</p>
@@ -117,7 +147,7 @@ final verified reward for the rollout
 <h2>Implementation and reproduction tests</h2>
 <p>Use a fake model adapter that returns M1, M2, then the answer. Assert that the second call contains M1 and chunk 2 but not chunk 1; assert that the final call contains only the question and M2. Check overwrite rather than append, token-budget enforcement, sample-ID mapping, and reward broadcast.</p>
 <p>For training, assert that output tokens from all conversations—not only the final answer—contribute to the intended loss, while prompt tokens are masked out.</p>
-<p>A new question/document initializes its memory again. The trained model persists, but the previous task's generated notebook does not. Running the loop with an untrained model tests the interface; reproducing the paper's learned method requires its training procedure/checkpoint.</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>A new question/document initializes its memory again. The trained model persists, but the previous task's generated notebook does not. Running the loop with an untrained model tests the interface; reproducing the paper's learned method requires its training procedure/checkpoint.</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

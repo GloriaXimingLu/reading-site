@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Implementing ShadowFrog: source-addressed discoveries and lookup hooks</title>
+<title>ShadowFrog: leave notes beside the code</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
 <link rel="stylesheet" href="../style.css">
 <script>
@@ -13,7 +13,32 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ShadowFrog: source-addressed discoveries and lookup hooks</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#shadowfrog">Short overview</a></p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>ShadowFrog: leave notes beside the code</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>The idea:</strong> the coding agent writes discoveries at addresses matching the source files. A future agent working on those files finds the notes.</p>
+<p>This is an engineering system. Follow an invented cache bug.</p>
+<h2>1. The agent checks existing notes</h2>
+<p>Before investigating <code>src/cache.py</code>, it reads relevant project notes and that file's existing “shadow” notes.</p>
+<p>Those notes are evidence to check against the current code, not automatically trusted facts.</p>
+<h2>2. The agent discovers a behavior</h2>
+<p>It reads the key-building function and runs a test with two tenants.</p>
+<p>The test shows that both tenants get the same cache key. The agent now has evidence worth preserving.</p>
+<h2>3. The same agent writes a discovery</h2>
+<p>It writes under the key-building function's heading in <code>.shadow/src/cache.py.md</code>:</p>
+<blockquote>
+<p>Tenant identity is absent from the key. The two-tenant test demonstrated a collision.</p>
+</blockquote>
+<p>The note also records how the finding was verified, where it came from, and which test demonstrates it. No separate observer model is needed.</p>
+<h2>4. The conversation ends; the file remains</h2>
+<p>The note is on disk. A later session need not receive the old conversation.</p>
+<p>Saving this note does not itself shorten or reset the active conversation.</p>
+<h2>5. A later task leads back to the note</h2>
+<p>The new task touches <code>src/cache.py</code>. The file-aware hook surfaces a bounded reminder, and the agent opens the full note.</p>
+<p>It now knows which behavior and test to examine before editing.</p>
+<h2>6. The agent verifies, fixes, and refreshes</h2>
+<p>It checks whether the collision still exists. After fixing it and rerunning the test, it updates the discovery so an old bug report does not masquerade as current behavior.</p>
+<p><strong>What persists:</strong> source-addressed Markdown discoveries and their links.</p>
+<p><strong>Feedback boundary:</strong> the writer sees its code reads, tests, and other supplied evidence—not a hidden solution.</p>
+<p>The defining operation is: <strong>put a verified finding where work on that source file will uncover it.</strong> Exact file layout, heading syntax, and cross-file rules are below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#shadowfrog">Short overview</a></p>
 <h2>What you are building</h2>
 <p>Build a repository notebook organized at the same addresses as source code. The <strong>task-solving agent</strong> writes discoveries; no separate observer is required. Later sessions find those discoveries by file/symbol, project-wide preferences, cross-references, or search.</p>
 <p>This is an engineering system, not a trained memory policy. The <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog/SKILL.md">pinned ShadowFrog instructions</a> define the storage and behavior below. Hook reminders and the writer's instructions must both be installed; a folder alone does not produce this behavior.</p>
@@ -132,7 +157,7 @@ session B:
 <p>Optional dream experiments produce additional evidence through extra work; they are not free memory writes. Do not include their benefits without counting that investigation budget.</p>
 <h2>Before running a comparison</h2>
 <p>Test the exact path mapping and symbol-heading syntax; ensure an edit hook finds the intended file; test that a duplicate claim updates rather than multiplies; and check cross-reference consistency. The viewer's static invariant checker covers only some structural checks, not semantic correctness of every discovery.</p>
-<p>A useful end-to-end test is to give session A a fact obtainable through a probe, close its conversation, and ask session B a task requiring it. Check separately whether the fact was written, surfaced, read, and applied. A failure at any one of those stages is different from “memory does not work.”</p></article>
-<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<p>A useful end-to-end test is to give session A a fact obtainable through a probe, close its conversation, and ask session B a task requiring it. Check separately whether the fact was written, surfaced, read, and applied. A failure at any one of those stages is different from “memory does not work.”</p></div></details></article>
+<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
