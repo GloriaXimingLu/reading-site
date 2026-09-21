@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing ShadowFrog: source-addressed discoveries and lookup hooks</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ShadowFrog: source-addressed discoveries and lookup hooks</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#shadowfrog">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build a repository notebook organized at the same addresses as source code. The <strong>task-solving agent</strong> writes discoveries; no separate observer is required. Later sessions find those discoveries by file/symbol, project-wide preferences, cross-references, or search.</p>
+<p>This is an engineering system, not a trained memory policy. The <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog/SKILL.md">pinned ShadowFrog instructions</a> define the storage and behavior below. Hook reminders and the writer's instructions must both be installed; a folder alone does not produce this behavior.</p>
+<h2>Step 1 — Create the addresses before writing findings</h2>
+<p>For a source file <code>src/cache.py</code>, use <code>.shadow/src/cache.py.md</code>. A top-level function has a level-two Markdown heading with its name in backticks. A class method has a level-three heading. The viewer depends on that formatting.</p>
+<pre><code class="language-text">.shadow/
+  _index.md
+  _prefs.md
+  _cross/
+  _meta/state.json
+  _dreams/_index.md
+  src/cache.py.md
+</code></pre>
+<p>An initialized file can contain symbol headings but no discoveries. Initialization inventories code; it does not prove behavioral claims.</p>
+<p>The path mapping itself is simple:</p>
+<pre><code class="language-python">from pathlib import PurePosixPath
+
+def shadow_path(source_path):
+    p = PurePosixPath(source_path)
+    if p.is_absolute() or &quot;..&quot; in p.parts:
+        raise ValueError(&quot;expected repository-relative source path&quot;)
+    return &quot;.shadow/&quot; + p.as_posix() + &quot;.md&quot;
+</code></pre>
+<p>The validation is a recommended containment check. It is not an additional learned component.</p>
+<h2>Step 2 — Implement the pre-work reader</h2>
+<p>Before investigating or editing, provide the solver with these actions in order:</p>
+<ol>
+<li>Read <code>_prefs.md</code> for repository-wide conventions.</li>
+<li>List <code>_cross/</code> and open findings relevant to the affected area.</li>
+<li>Check the dreams index for relevant experiment reports.</li>
+<li>Open the shadow of the specific file being investigated.</li>
+<li>Read current source code to establish whether stored claims still apply.</li>
+</ol>
+<p>The agent chooses relevant notes based on the task and file. This is not vector search over all previous conversations. The index can be stale, so the instructions require direct checking of per-file and cross-cutting notes.</p>
+<p>A pre-edit integration can make the target file mechanically available:</p>
+<pre><code class="language-text">incoming edit request: src/cache.py
+hook maps it to:      .shadow/src/cache.py.md
+hook response:        bounded discoveries + reminder to inspect full notes
+solver:               reads the note, then performs the requested edit
+</code></pre>
+<p>The <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/hook-templates/scripts/shadow-frog-pre-tool.sh">pre-tool hook</a> has a bounded snippet—at the inspected pin, up to three discoveries and 600 characters. That snippet is not the complete notebook or a guarantee that every relevant finding was shown.</p>
+<h2>Step 3 — Decide what the solver should write</h2>
+<p>The writer's evidence is ordinary investigation: code reads, executions, tests, user explanations, and prior notes. The policy should capture a behavioral fact that will change future work, not narrate every tool call.</p>
+<p>Suppose <code>make_key</code> omits tenant identity and a regression test demonstrates two tenants collide. Store the behavior, evidence status, provenance, and the other affected symbol:</p>
+<pre><code class="language-markdown"># Shadow: src/cache.py
+
+## `make_key`
+
+- Tenant identity is omitted from the key; the two-tenant test
+  demonstrated a collision.
+  _(verified, source: exploration, labels: [bug])_
+  Also involves: `tests/test_cache.py::test_two_tenants`
+
+## Cross-References
+</code></pre>
+<p>This is an invented finding using the source's actual format. The status distinguishes verified, uncertain, and refuted claims. Provenance distinguishes exploration, user input, and interaction. A label such as bug is optional.</p>
+<p>The canonical address is <code>file::symbol</code>. There is no separate UUID required for each per-file discovery.</p>
+<h2>Step 4 — Apply the placement and merge rules</h2>
+<p>Before adding a discovery, read the existing entries under that symbol:</p>
+<ul>
+<li>Same claim already present: update it rather than duplicate it.</li>
+<li>New evidence extends a claim: merge the information.</li>
+<li>Claims conflict: investigate, retain the supported account, and mark the contradicted one refuted.</li>
+<li>No related claim: append the new discovery.</li>
+</ul>
+<p>Do not replace the entire file merely because you learned one fact. Preserve unrelated discoveries and the final Cross-References section.</p>
+<p>Placement depends on scope:</p>
+<table>
+<thead>
+<tr>
+<th>Knowledge scope</th>
+<th>Write destination</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>General user preference</td>
+<td><code>_prefs.md</code></td>
+</tr>
+<tr>
+<td>One source file/symbol</td>
+<td>Its shadow</td>
+</tr>
+<tr>
+<td>Two files</td>
+<td>Per-file discovery with <code>Also involves</code></td>
+</tr>
+<tr>
+<td>Three or more files</td>
+<td><code>_cross/&lt;descriptive-slug&gt;.md</code> plus back-pointers</td>
+</tr>
+</tbody>
+</table>
+<p>For a cross-cutting finding, keep both directions: the cross entry lists source-symbol references, and each affected file links back to that entry. These are maintained links, not automatically inferred graph edges.</p>
+<h2>Step 5 — Verify before marking a discovery verified</h2>
+<p>For a structural claim, reading the code may suffice. For runtime behavior, construct a test or probe. In the cache example:</p>
+<pre><code class="language-text">hypothesis: tenant A and tenant B can obtain identical cache keys
+probe:      same resource ID, different tenant IDs
+observed:   equal keys
+write:      verified exploration discovery, linked to the test
+</code></pre>
+<p>After changing <code>make_key</code> to include the tenant, rerun the probe. The old “omits tenant” statement is no longer a description of current behavior. Refresh it or mark it refuted and retain relevant historical context only if useful. The <a href="https://github.com/microsoft/ShadowFrog/blob/6ae4fc8c6bdd33e95803677aab25abdb60a30823/skills/shadow-frog-update/SKILL.md">update instructions</a> are part of the implementation, not optional housekeeping.</p>
+<p>User-provided preferences have their own provenance rules. They are not benchmark-certified facts. A repository notebook should still remain subordinate to the current task's authorized instructions.</p>
+<h2>Step 6 — Follow the next-session read</h2>
+<p>On the next cache task, the agent starts with normal task instructions and reminders. The edit target identifies the relevant shadow. Reading it supplies the remembered collision and test location. The solver can rerun that test before editing.</p>
+<p>The storage stayed on disk while the conversation changed. Nothing in this step requires the original conversation to remain in the prompt.</p>
+<pre><code class="language-text">session A:
+  read code -&gt; run probe -&gt; write discovery at file::symbol
+
+session B:
+  task mentions file -&gt; hook points to shadow -&gt; solver reads finding
+  solver verifies current code -&gt; uses test/constraint during new work
+</code></pre>
+<h2>What is not provided by this mechanism</h2>
+<p>The notebook does not automatically summarize and evict the active conversation. A “write notes, reset context, resume” controller would need its own trigger, write-completion check, and next-prompt construction. Label that as a combined design.</p>
+<p>Optional dream experiments produce additional evidence through extra work; they are not free memory writes. Do not include their benefits without counting that investigation budget.</p>
+<h2>Before running a comparison</h2>
+<p>Test the exact path mapping and symbol-heading syntax; ensure an edit hook finds the intended file; test that a duplicate claim updates rather than multiplies; and check cross-reference consistency. The viewer's static invariant checker covers only some structural checks, not semantic correctness of every discovery.</p>
+<p>A useful end-to-end test is to give session A a fact obtainable through a probe, close its conversation, and ask session B a task requiring it. Check separately whether the fact was written, surfaced, read, and applied. A failure at any one of those stages is different from “memory does not work.”</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

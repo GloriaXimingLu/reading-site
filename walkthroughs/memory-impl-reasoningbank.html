@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing ReasoningBank: from an attempt to a reusable lesson</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ReasoningBank: from an attempt to a reusable lesson</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#reasoningbank">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build an agent that starts task B with procedural lessons distilled from earlier tasks. The solver, judge, and extractor can use the same underlying model, but they are <strong>separate calls with different inputs</strong>. The method does not train model weights or require the solver to edit a global policy document.</p>
+<p>We will implement the single-attempt, self-judged loop. The WebArena code at <a href="https://github.com/google-research/reasoning-bank/tree/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena">this pinned revision</a> is our implementation reference. MaTTS is an additional rollout policy, described separately below.</p>
+<h2>Step 1 — Define the two persistent records</h2>
+<p>Keep the experience payload and its retrieval key separately:</p>
+<pre><code class="language-python">experience = {
+    &quot;task_id&quot;: &quot;task_17&quot;,
+    &quot;query&quot;: &quot;Find an item meeting the requested constraints&quot;,
+    &quot;status&quot;: &quot;fail&quot;,
+    &quot;memory_items&quot;: [
+        {
+            &quot;title&quot;: &quot;Verify eligibility on the detail page&quot;,
+            &quot;description&quot;: &quot;Use when search results omit a required attribute.&quot;,
+            &quot;content&quot;: &quot;List constraints; inspect each candidate's detail page; &quot;
+                       &quot;verify every constraint before choosing.&quot;
+        }
+    ]
+}
+embedding_record = {
+    &quot;id&quot;: &quot;task_17&quot;,
+    &quot;text&quot;: experience[&quot;query&quot;],
+    &quot;embedding&quot;: [0.8, 0.6]  # invented unit vector for this lesson
+}
+</code></pre>
+<p>This dictionary is a <strong>normalized teaching representation</strong>. The released extractor emits Markdown items and saves a JSONL experience containing query, trajectory fields, status, and split memory text. Do not feed the dictionary above directly into that parser without an adapter.</p>
+<p>The retrieval key answers “which earlier task resembles this one?” The item content answers “what procedure should I apply?” A title alone is not the entire memory.</p>
+<h2>Step 2 — Retrieve before you solve or write the new experience</h2>
+<p>Normalize stored embedding vectors and compare them with an embedding of the new task. The code's Gemini path uses an instruction-wrapped query for matching against cached past-query embeddings. Use a compatible embedding model/dimension for both sides; changing the embedding model without rebuilding the cache breaks this contract.</p>
+<p>The basic paper setting selects one prior experience. That experience can contain several memory items. “Top 1” therefore does not mean “inject one sentence.”</p>
+<p>Here is the deterministic core once embeddings exist:</p>
+<pre><code class="language-python">from math import sqrt
+
+def unit(v):
+    norm = sqrt(sum(x * x for x in v))
+    if norm == 0:
+        raise ValueError(&quot;zero embedding&quot;)
+    return [x / norm for x in v]
+
+def select_experience(query_vector, rows):
+    if not rows:
+        return None
+    q = unit(query_vector)
+    def similarity(row):
+        v = unit(row[&quot;embedding&quot;])
+        if len(v) != len(q):
+            raise ValueError(&quot;embedding dimensions differ&quot;)
+        return sum(a * b for a, b in zip(q, v))
+    return max(rows, key=similarity)[&quot;id&quot;]
+</code></pre>
+<p>This is a readable reconstruction of cosine ranking, not a replacement for the repository's embedding client. The <a href="https://github.com/google-research/reasoning-bank/blob/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena/memory_management.py">retrieval code</a> also persists the new query embedding during retrieval, but computes similarity against the previously loaded cache. Do not accidentally retrieve an unfinished task's own empty experience.</p>
+<p>With no prior experiences, skip the memory block and run the ordinary solver.</p>
+<h2>Step 3 — Construct the solver's input</h2>
+<p>The solver gets:</p>
+<pre><code class="language-text">Ordinary task instructions and available environment tools
+Retrieved lesson:
+  title
+  when applicable
+  procedural content
+Current task query
+Current environment observation
+</code></pre>
+<p>Then run the existing action–observation loop until its stopping condition. Memory does not execute those actions for the solver. If the lesson says to inspect a detail page, the solver still has to issue the browser action and interpret the new result.</p>
+<p>Record the attempt. Keep task identity, generated actions, visible results, and final output in your harness logs. The released WebArena extraction path specifically formats recorded think/action fields. That is not a promise that every observation from the full browser log enters the extractor.</p>
+<h2>Step 4 — Judge the completed attempt</h2>
+<p>Make a <strong>new judge call</strong>, not another environment action. In the self-judged setting, its evidence comes from the task and recorded attempt, not a reference solution. The result selects which extraction prompt runs.</p>
+<p>An illustrative judgment could be:</p>
+<pre><code class="language-json">{&quot;success&quot;: false, &quot;reason&quot;: &quot;The selected item was never checked for the required width.&quot;}
+</code></pre>
+<p>This JSON is our explanatory interface; use the actual evaluator parser when porting the release. Its self-evaluation result is read as a reward field, and an available explanation can be forwarded to the extractor.</p>
+<p><strong>The distinction that matters:</strong> “the judge thinks this failed” is not “the benchmark certifies this failed.” Log both separately if a hidden benchmark evaluator exists. Only pass benchmark feedback into memory if that is an explicitly chosen experimental condition.</p>
+<h2>Step 5 — Extract the lesson using a success-specific or failure-specific prompt</h2>
+<p>Do not leave this as an unexplained function named "summarize." The <a href="https://github.com/google-research/reasoning-bank/blob/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena/prompts/memory_instruction.py">actual prompt contracts</a> tell the extractor to:</p>
+<ol>
+<li>Inspect why the attempt succeeded or failed.</li>
+<li>Produce no more than three distinct items.</li>
+<li>Make each item actionable for future similar tasks.</li>
+<li>Give it a title, a short applicability description, and procedural content.</li>
+<li>Avoid copying task-specific product names or literal query strings into what should be a transferable procedure.</li>
+</ol>
+<p>The failure path is therefore not “save the failed answer.” It should extract a prevention or correction procedure. In our example, save the missing verification step, not the incorrect product ID.</p>
+<p>The released format uses a Memory Item heading with Title, Description, and Content subheadings. A faithful port should keep the supplied prompt and parser together. A JSON-normalized store is an engineering adaptation that can preserve those semantics, but changing the prompt itself should be recorded.</p>
+<h2>Step 6 — Append and continue</h2>
+<p>Persist the new experience and ensure its embedding ID resolves to it. Do not overwrite the previous nearest neighbor. The next task can retrieve either old or newly appended experience, depending on similarity.</p>
+<p>The complete orchestration is:</p>
+<pre><code class="language-text">load bank and embedding cache
+for task in ordered task stream:
+    retrieve prior experience by task-query similarity
+    assemble solver input with that experience's lessons
+    execute task and retain its attempt record
+    obtain self-judgment from task + attempt evidence
+    choose success or failure extraction instruction
+    extract up to three title/description/content items
+    persist task -&gt; extracted items
+    make its query embedding available for later tasks
+</code></pre>
+<p>The loop is sequential with respect to memory visibility. Parallel tasks need a declared snapshot/order policy; otherwise different scheduling changes what each solver sees.</p>
+<h2>Follow one attempt all the way through</h2>
+<p>Task A: choose an item with a width limit. The agent finds a relevant search result, fails to open the specification page, and returns that item. The judge marks failure because eligibility was not established.</p>
+<p>The extractor writes the eligibility-check item shown above. On task B, the query concerns a different product category but also contains several constraints. Suppose its embedding is closer to A than to an unrelated account-settings task. A is retrieved. B's solver input now contains the verification procedure. It opens the specification page and checks the new measurements.</p>
+<p>What changed: the <strong>prompt for B</strong>. Neither the underlying model nor A's already recorded score changed. Whether B now succeeds is an empirical question, not guaranteed by the memory write.</p>
+<h2>Feedback, variants, and an implementation test</h2>
+<p>The <a href="https://github.com/google-research/reasoning-bank/blob/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena/induce_memory.py">extraction entrypoint</a> supports both self-evaluation and ground-truth reward criteria. The latter uses the benchmark's outcome to select the extraction path. Label the criterion in the run configuration.</p>
+<p>MaTTS changes the evidence available before extraction: parallel mode obtains multiple attempts at one task; sequential mode asks the agent to inspect and refine its previous attempt. These extra calls are not part of the single-attempt loop. Consult the <a href="https://arxiv.org/html/2509.25140v2">paper's MaTTS procedure</a> before claiming a MaTTS reproduction.</p>
+<p>Before running a benchmark, test that an empty bank yields no injection; a known query selects the expected ID; a failure invokes the failure prompt; an appended record becomes retrievable; and a judge error is not silently treated as task failure. The last behavior is recommended harness error handling, not a claim about every release script.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

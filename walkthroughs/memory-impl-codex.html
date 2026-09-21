@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing compaction: readable handoffs and opaque continuation state</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing compaction: readable handoffs and opaque continuation state</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#codex">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Compaction changes the <strong>input window for the next model call</strong>. Saving a note on disk does not do that by itself.</p>
+<p>There are two interfaces to understand: a readable handoff constructed by a client, and the provider's opaque compaction state. The <a href="inner-loop-memory.html#codex">existing source audit</a> covers the pinned readable Codex path; the provider integration below follows the current <a href="https://developers.openai.com/api/docs/guides/compaction">official compaction guide</a>.</p>
+<p>The opaque provider's internal compression algorithm is not public. We can explain how to implement its caller, not invent an implementation of its hidden compressor.</p>
+<h2>Step 1 — Keep active input separate from your diagnostic log</h2>
+<p>Your harness can maintain:</p>
+<pre><code class="language-python">state = {
+    &quot;instructions&quot;: &quot;Task and tool-use instructions&quot;,
+    &quot;active_items&quot;: [],       # actually sent on the next request
+    &quot;diagnostic_log&quot;: [],     # retained for your own inspection
+    &quot;compaction_count&quot;: 0
+}
+</code></pre>
+<p>This is an illustrative client state object, not an SDK schema. Its purpose is to avoid a common mistake: keeping a full transcript on disk does not mean the next model call receives it.</p>
+<p>Append completed assistant outputs and tool responses to the active input according to your API's item schema. Preserve tool-call identities and matching results. For a teaching harness, choosing completed tool-exchange boundaries simplifies compaction bookkeeping; it is our boundary choice, not a claim that native compaction always waits for those boundaries.</p>
+<h2>Step 2 — Decide when to compact</h2>
+<p>Let the model context capacity be <span class="arithmatex">\(W\)</span>, your reserved generation/tool headroom be <span class="arithmatex">\(R\)</span>, and the active input size be <span class="arithmatex">\(L\)</span>. A client-controlled example trigger is <span class="arithmatex">\(L&gt;W-R\)</span>. The choice of <span class="arithmatex">\(R\)</span> is yours, not a universal Codex constant.</p>
+<p>Compact while the submitted window still fits. Triggering only after an oversized request has already been rejected may leave the compressor unable to accept that same window.</p>
+<p>Count the actual serialized model input, including instructions and tool definitions, rather than only the visible prose. Token estimates are approximate unless the provider supplies an authoritative count.</p>
+<h2>Step 3A — For a readable handoff, make a separate summarization call</h2>
+<p>Supply the available conversation to a writer with a handoff instruction. The output should tell the next solver what remains to do and what evidence established the current state.</p>
+<p>An authored teaching contract is:</p>
+<pre><code class="language-text">Produce a continuation handoff containing:
+- current user goal and constraints
+- completed actions and their observed results
+- relevant file/resource locations
+- unresolved questions and unverified assumptions
+- next actions still needed
+Do not report unrun checks as passed.
+</code></pre>
+<p>This is not the literal Codex prompt. Use the pinned handoff prompt from the source audit for a faithful port.</p>
+<p>The audited readable path retains selected real-user messages under an approximately 20K-token retention budget and combines them with the handoff and initial-context handling. It does not generally promise to retain a raw recent-tool tail. A portable “summary plus recent exchanges” policy is a different retention choice.</p>
+<h2>Step 4A — Replace the active window, do not merely append the handoff</h2>
+<p>Suppose the pre-compaction history contains a cache investigation, an edit, and one targeted passing test. A useful handoff is:</p>
+<pre><code class="language-text">Goal: isolate cache entries by tenant.
+Changed src/cache.py to include tenant identity in key construction.
+The targeted two-tenant regression passed.
+The full suite has not run.
+Next: inspect adjacent call sites, then run the remaining checks.
+</code></pre>
+<p>The state transition is:</p>
+<pre><code class="language-text">active before:
+  instructions + user requirements + long investigation
+
+active after:
+  initial context + retained user messages + generated handoff
+
+diagnostic log:
+  still contains the original investigation, if your harness retained it
+</code></pre>
+<p>Appending the handoff to the unchanged long history saves no context. Conversely, replacing the history means omitted facts are unavailable unless another tool/store exposes them.</p>
+<p>After a successful replacement, increment your compaction count and continue with the ordinary solver. Repeated compaction summarizes summaries, so evaluate whether crucial facts survive multiple cycles.</p>
+<h2>Step 3B — For standalone provider compaction, preserve returned items</h2>
+<p>The standalone endpoint accepts the current input and returns a compacted output array. Feed that array into the next response request. It includes opaque continuation state; extracting only human-readable output discards the object you needed. <a href="https://developers.openai.com/api/reference/python/resources/responses/methods/compact">Endpoint contract</a></p>
+<pre><code class="language-python">def compact_and_continue(client, model_id, instructions, active_items, next_message):
+    compacted = client.responses.compact(
+        model=model_id,
+        instructions=instructions,
+        input=active_items,
+    )
+    replacement = list(compacted.output)
+    continued = client.responses.create(
+        model=model_id,
+        instructions=instructions,
+        input=replacement + [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: next_message}],
+    )
+    return replacement + [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: next_message}] + list(continued.output)
+</code></pre>
+<p>This is an integration sketch, not an API call executed by this tutorial. Choose a supported model and SDK version in your application. The replacement and new user message become the next active window; subsequent tool outputs still need normal handling.</p>
+<p>Treat each returned item as an API object. Do not stringify the entire array into one chat message, decode encrypted content, or discard an unfamiliar item type because it lacks output text.</p>
+<h2>Step 4B — Or use server-side compaction, without a standalone call</h2>
+<p>Server-side compaction configures <code>context_management</code> on the response request. The server checks the threshold and emits compaction state as needed. Continue either by carrying the output items in a stateless input array or by using <code>previous_response_id</code> chaining; these are distinct state-management patterns. <a href="https://developers.openai.com/api/docs/guides/compaction">Official server-side flow</a></p>
+<p>An illustrative request option is:</p>
+<pre><code class="language-json">{
+  &quot;context_management&quot;: [
+    {&quot;type&quot;: &quot;compaction&quot;, &quot;compact_threshold&quot;: 20000}
+  ]
+}
+</code></pre>
+<p>The number is illustrative, not a recommended threshold for every model. Use the guide's full schema and a budget appropriate to the selected model. You do not also need to call the standalone endpoint merely because the server-side feature is enabled.</p>
+<h2>Follow one concrete continuation</h2>
+<p>Before compaction, the solver knows that one targeted test passed. After compaction, ask it to continue validation.</p>
+<p>In the readable path, inspect whether that fact and the unrun-suite caveat appear in the handoff. In the opaque path, inspect the <strong>subsequent behavior</strong>: does the solver distinguish completed checks from pending ones? You cannot audit opaque memory by reading its internal representation.</p>
+<p>A correct client can still receive a lossy or mistaken handoff. Client transport correctness and information preservation are separate tests.</p>
+<h2>Feedback and what to test</h2>
+<p>The writer sees supplied conversation state, which may contain test output or user corrections. Compaction does not grant a separate answer-key channel.</p>
+<p>Test that replacement actually shortens the active window; user constraints survive; pending tool calls are handled consistently; instructions are resent as required; opaque output objects are passed intact; and an API failure leaves the old active state recoverable. The rollback behavior is recommended client engineering.</p>
+<p>There is no Cartridges-style per-corpus gradient update or published Still-style KV architecture established by this interface. A provider compaction object should not be labeled either one simply because it is numerical or opaque.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

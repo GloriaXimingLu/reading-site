@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing Still: learn a function that compresses KV caches</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Still: learn a function that compresses KV caches</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#still">Short overview</a></p>
+<p>Cartridges optimizes a new prefix for a particular corpus. Still instead trains a <strong>compactor function</strong> once and applies that function to a new context's existing key/value cache. At deployment, the new context needs a prefill and compactor forward pass, not a new optimization run.</p>
+<p>This is a paper-level implementation guide: a compatible official code/checkpoint release was not verified in this audit. The architecture and training description adapt <a href="https://arxiv.org/html/2606.07878">Still, Sections 2 and Appendices A–F</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. The tensor example and integration tests are explanatory additions. Do not read the pseudocode as an upstream API.</p>
+<h2>1. Obtain the uncompressed cache</h2>
+<p>Run the frozen language model on the context, <strong>before the new question/continuation</strong>. For each layer you obtain:</p>
+<pre><code class="language-text">K, V: [batch, KV_heads, original_context_length, head_dimension]
+</code></pre>
+<p>Use an invented single-batch example:</p>
+<pre><code class="language-text">H = 8 KV heads
+T = 4096 original positions
+d = 128 values per head
+t = 256 compressed positions
+D = 256 compactor latent width
+
+Each layer:
+  input K/V:  [1, 8, 4096, 128] each
+  output K/V: [1, 8,  256, 128] each
+</code></pre>
+<p>That is a 16-fold reduction in the prefix's K/V scalar count, not a claim of 16-fold end-to-end speedup. Prefill cost, compactor cost, attention kernels, and later query tokens still exist.</p>
+<p>You need internal cache access and differentiable model execution for training. A text-only API cannot implement this architecture.</p>
+<h2>2. Remove the backbone's positional rotation from keys</h2>
+<p>Cached keys in a RoPE model already contain position-dependent rotations. Apply the <strong>inverse backbone RoPE</strong> at the original positions to get position-free keys. Values are not rotated.</p>
+<p>Then concatenate keys and values <strong>along the feature dimension</strong>:</p>
+<div class="arithmatex">\[
+X_h=[K_h;V_h]\in\mathbb{R}^{T\times 2d}.
+\]</div>
+<p>In the example, each KV head gives a 4096×256 matrix. Concatenating along the time dimension instead would produce 8192×128 and implement a different operation.</p>
+<p>The compactor's own RoPE, introduced next, is separate from the backbone's RoPE. Do not use the compactor's base 10 when undoing the backbone rotation.</p>
+<h2>3. Allocate learned latent slots and projection weights</h2>
+<p>Each transformer layer gets its own compactor. Within a layer:</p>
+<ul>
+<li>A learned latent bank has shape <span class="arithmatex">\(H\times t\times D\)</span>.</li>
+<li>Every KV head has its own latent slots.</li>
+<li>Linear projections are shared across the layer's KV heads.</li>
+<li>Different transformer layers do not communicate through a separate compactor channel.</li>
+</ul>
+<p>The canonical configuration uses two residual blocks, cross-attention in both blocks, one cross-attention head, one latent self-attention head, and no feed-forward sublayer. The optional attention-bias channel is disabled.</p>
+<p>Copy the latent parameters into the current computation, then update that <strong>activation</strong> through the blocks. Do not overwrite the learned parameters with each context's resulting latent state.</p>
+<h2>4. Compute one cross-attention update</h2>
+<p>For one KV head, let <span class="arithmatex">\(Z\)</span> be its <span class="arithmatex">\(t\times D\)</span> latent matrix. First apply non-parametric RMS normalization to its rows. Then:</p>
+<div class="arithmatex">\[
+\widetilde Q=\operatorname{RMSNorm}(Z)W_Q+b_Q,\quad
+\widetilde K=XW_K+b_K,\quad V_X=XW_V.
+\]</div>
+<p>Shapes are <span class="arithmatex">\(W_Q:D\times D\)</span> and <span class="arithmatex">\(W_K,W_V:2d\times D\)</span>. Q/K projections have biases; the value projection does not.</p>
+<p>Normalize each Q/K row to unit length. Apply the <strong>compactor's</strong> RoPE to Q at <span class="arithmatex">\(t\)</span> positions evenly spaced across the original range, and to K at the original <span class="arithmatex">\(T\)</span> positions. Its canonical RoPE base is 10.</p>
+<p>Now compute:</p>
+<div class="arithmatex">\[
+A=\operatorname{softmax}\left(DQK^\top\right),\qquad
+Z_1=Z+(AV_X)W_O.
+\]</div>
+<p>The attention matrix is <span class="arithmatex">\(t\times T\)</span>. <strong>The multiplier is <span class="arithmatex">\(D\)</span></strong> after unit normalization, not the usual <span class="arithmatex">\(1/\sqrt D\)</span>. Using ordinary scaled dot-product defaults here would change the canonical architecture.</p>
+<p>For multiple compactor attention heads, each head has width <span class="arithmatex">\(D\)</span>, not <span class="arithmatex">\(D/n_{\text{heads}}\)</span>; concatenate their outputs and project back to <span class="arithmatex">\(D\)</span>.</p>
+<h2>5. Mix latent slots, repeat, and project back to K/V</h2>
+<p>Apply latent self-attention to RMS-normalized <span class="arithmatex">\(Z_1\)</span>, using Q/K normalization and the same <span class="arithmatex">\(D\)</span> logit scale, <strong>without RoPE</strong>, and add its output residually. Repeat the block.</p>
+<p>Finally, separate linear heads map the resulting latent matrix to keys and values:</p>
+<div class="arithmatex">\[
+C_K=Z_{\mathrm{out}}W_{\mathrm{key}},\qquad
+C_V=Z_{\mathrm{out}}W_{\mathrm{value}},
+\]</div>
+<p>where each output projection has shape <span class="arithmatex">\(D\times d\)</span>.</p>
+<p>Reapply the <strong>backbone</strong> key rotation at the compact slots' evenly spaced positions over the original range. Again, do not rotate values. Install the resulting <span class="arithmatex">\(t\)</span>-slot cache for that layer. Repeat across layers.</p>
+<p>In mixed global/sliding-window backbones, the paper compacts global-attention layers while retaining the sliding-window layers' usual local cache semantics.</p>
+<h2>6. Preserve logical positions when installing the cache</h2>
+<p>After compressing 4096 positions into 256 entries, the next token is logically position <strong>4096</strong>, not 256. Physical cache length and logical sequence length must be separate.</p>
+<p>A small integration helper illustrates the offset contract:</p>
+<pre><code class="language-python">def continuation_positions(original_length, physical_prefix_length, count):
+    if not 0 &lt;= physical_prefix_length &lt;= original_length:
+        raise ValueError(&quot;invalid compact-prefix lengths&quot;)
+    if count &lt; 0:
+        raise ValueError(&quot;negative continuation length&quot;)
+    offset = original_length - physical_prefix_length
+    physical_positions = range(physical_prefix_length,
+                               physical_prefix_length + count)
+    return [position + offset for position in physical_positions]
+</code></pre>
+<p>For <code>(4096, 256, 3)</code> this returns <code>[4096, 4097, 4098]</code>. This is an explanatory position calculation, not a complete model cache class.</p>
+<p>The integration layer must also construct attention masks, concatenate new dynamic K/V correctly, and use the backbone's expected cache layout. Naïvely assigning a shorter tensor while letting the model infer positions from its length can silently corrupt decoding.</p>
+<h2>7. Initialize near a pass-through before training</h2>
+<p>Still's identity-style initialization requires <span class="arithmatex">\(D=2d\)</span>:</p>
+<ol>
+<li>Initialize the first cross-attention value and output projections to pass through the concatenated K/V features.</li>
+<li>Initialize the final key/value projections to select the respective feature halves.</li>
+<li>Zero the latent bank and cross-attention key projection; align the query/key biases.</li>
+<li>Let the compactor's positional rotations produce localized initial attention.</li>
+<li>Zero the self-attention output projections and later cross-attention output projections so those residual branches initially contribute nothing.</li>
+</ol>
+<p>At <span class="arithmatex">\(t=T\)</span>, this should behave approximately like retaining the original cache. It is <strong>not an exact identity guarantee</strong>: attention still mixes positions. At <span class="arithmatex">\(t&lt;T\)</span>, each latent initially pools a local region.</p>
+<p>This gives you a useful first diagnostic: a catastrophic answer-quality drop at equal input/output lengths suggests cache integration, rotation, or initialization problems before compression difficulty becomes the explanation.</p>
+<h2>8. Train with full-context teacher versus compact-cache student</h2>
+<p>A training example contains context tokens, question/prompt tokens, and answer tokens. The paper constructs context-dependent MCQs, verifies them with the frozen teacher, and filters questions answerable without the context.</p>
+<p>For each example:</p>
+<ol>
+<li>Prefill the frozen backbone on context to obtain full K/V.</li>
+<li>Teacher path: answer the question against full K/V and retain answer-side token distributions.</li>
+<li>Student path: pass that same context K/V through Still, install the compact cache, and teacher-force the question and target answer.</li>
+<li>Compute forward KL from teacher to student <strong>only on answer-side positions</strong>.</li>
+<li>Backpropagate through the student backbone into Still.</li>
+<li>Update only compactor parameters; leave backbone weights frozen.</li>
+</ol>
+<p>The canonical loss uses the teacher's top-200 vocabulary support with the gold answer token forced into that support. Prompt and padding positions are masked. The paper does not specify every numerical support/normalization implementation detail sufficiently to call a new implementation bit-identical; make those conventions explicit in a reproduction.</p>
+<p>The compactor's direct input remains <strong>context K/V</strong>, not the question or gold answer. The gold answer and teacher distributions affect its parameters through training. At inference on a new context, neither is needed.</p>
+<p>As with Cartridges, frozen backbone parameters do not justify putting the entire student forward pass in <code>no_grad</code>: gradients must pass through its attention computations back to the compact cache.</p>
+<h2>9. Implement streaming as a separate schedule</h2>
+<p>The paper's iterative setting is not “repeatedly squeeze everything into the same 256 slots.” For ratio <span class="arithmatex">\(c\)</span>, compact each raw block of <span class="arithmatex">\(c\,t\)</span> tokens into <span class="arithmatex">\(t\)</span> entries while retaining accumulated compact blocks.</p>
+<p>In its lookahead schedule:</p>
+<ol>
+<li>Prefill two raw blocks.</li>
+<li>Compact the older block; retain the newer raw block as lookahead.</li>
+<li>Prefill another raw block conditioned on the compact prefix and retained raw state.</li>
+<li>Compact the previously retained block.</li>
+<li>Repeat.</li>
+</ol>
+<p>The new raw block's states were computed with the existing compact history; this differs from independently prefilling all chunks and concatenating their summaries. Cache size grows roughly with <span class="arithmatex">\(T/c\)</span>, plus a raw lookahead block.</p>
+<p>Iterative training is also a separate recipe, including rollout through repeated compaction and reported stabilization variants. Do not assume a single-pass checkpoint is validated for arbitrarily many recursive applications.</p>
+<h2>10. Tests before interpreting model quality</h2>
+<ul>
+<li>Feature concatenation and output shapes match every layer/head.</li>
+<li>Inverse then forward backbone RoPE recovers keys within numeric tolerance.</li>
+<li>The compact slots use mapped original positions; continuation starts at original length.</li>
+<li>Student loss produces compactor gradients but no backbone gradients.</li>
+<li>Teacher targets and gold answers never enter the compactor's inference input.</li>
+<li>Equal-length initialization is approximately pass-through.</li>
+<li>Independent queries do not inherit each other's dynamic cache.</li>
+<li>Iterative and independent-chunk schedules are evaluated separately.</li>
+</ul>
+<p>The complete path is <strong>context prefill → per-layer K/V resampling → position-correct cache replacement → ordinary question answering</strong>. The practical work is in implementing that cache contract, not in writing a summarization prompt.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

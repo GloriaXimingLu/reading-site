@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing AgentFold: replace a range of steps, then continue</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing AgentFold: replace a range of steps, then continue</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#agentfold">Short overview</a></p>
+<p>AgentFold makes the acting model also decide how to rewrite its working history. You will implement an ordered list of step blocks, parse a fold directive from the model, replace a suffix of those blocks, and put the resulting list into the next prompt. There is no embedding search or persistent experience bank in this loop.</p>
+<p>This chapter follows the <a href="https://github.com/Alibaba-NLP/DeepResearch/blob/f72f75d8c3eb842f2bbbab096a12206ff66e270f/WebAgent/AgentFold/infer.py">released inference file, pinned at f72f75d</a>. The examples are invented; the validated helper below deliberately adds checks missing from that file.</p>
+<h2>1. Store intervals, not a growing chat transcript</h2>
+<p>Use the release's three fields:</p>
+<pre><code class="language-python">steps = [
+    {&quot;start&quot;: 0, &quot;end&quot;: 1, &quot;content&quot;: &quot;Candidate A fails the date requirement.&quot;},
+    {&quot;start&quot;: 2, &quot;end&quot;: 2, &quot;content&quot;: &quot;Candidate B appears eligible; verify affiliation.&quot;},
+    {&quot;start&quot;: 3, &quot;end&quot;: 3, &quot;content&quot;: &quot;Motivation: check affiliation. Tool: visit(B). Result: B joined in 2012.&quot;},
+]
+</code></pre>
+<p>The first entry represents two past actions. The last entry is the <strong>latest interaction</strong>, including motivation, tool call, and tool response. Older entries are folded summaries. The release numbers turns from zero; the paper's equations use one-based steps.</p>
+<p>Keep a separate full diagnostic log if you need to inspect failures. Do not send that log back alongside the folded list: that would undo the context reduction. A new question initializes an empty list.</p>
+<h2>2. Assemble precisely what the model sees</h2>
+<p>Every iteration creates a fresh two-message request:</p>
+<pre><code class="language-text">SYSTEM:
+  Instructions for the structured response.
+  Search and visit tool schemas.
+
+USER:
+  Question: Which candidate satisfies the date and affiliation constraints?
+  Previous Steps:
+    [compressed range 0–1] Candidate A fails the date requirement.
+    [compressed step 2] Candidate B appears eligible; verify affiliation.
+    [latest step 3] Motivation + visit call + its full result.
+</code></pre>
+<p>The labels here are explanatory rather than copied formatting. The release's formatter uses its own Step/CompressedStep labels.</p>
+<p>The model sees the task, summaries, and latest observation. It does not see a hidden reference answer. Although the model generates deliberation, the next stored interaction keeps its concise motivation rather than appending all that deliberation.</p>
+<h2>3. Parse one output containing both memory and action decisions</h2>
+<p>After its deliberation, the model emits a compression block, motivation, and action. Here is a synthetic compression block in the <strong>released field names</strong>:</p>
+<pre><code class="language-xml">&lt;compress&gt;
+{&quot;compress_range&quot;: [2, 3], &quot;compress_text&quot;: &quot;Candidate B meets the affiliation constraint: joined in 2012. Date constraint still needs primary-source verification.&quot;}
+&lt;/compress&gt;
+&lt;motivation&gt;Verify the remaining date constraint from a primary source.&lt;/motivation&gt;
+</code></pre>
+<p>A search or visit call follows using the runner's tool-call format. The fold and action are generated in the <strong>same model call</strong>. Consequently, the fold cannot include the result of the new action that has not executed yet.</p>
+<p>The paper calls the corresponding fields <code>range</code> and <code>summary</code>. Sending those names unchanged to this release's parser will fail; its updater expects <code>compress_range</code> and <code>compress_text</code>.</p>
+<h2>4. Apply the fold to whole existing blocks</h2>
+<p>The simple upstream updater removes entries whose <strong>start</strong> is inside the requested interval, appends the new block, and sorts by start. It does not fully validate overlapping ranges.</p>
+<p>Here is a defensive implementation of the paper's whole-block suffix operation. Its validation is an engineering addition, not a claim about upstream behavior:</p>
+<pre><code class="language-python">def fold_suffix(steps, start, end, summary):
+    if not steps or not isinstance(summary, str) or not summary.strip():
+        raise ValueError(&quot;fold needs existing steps and a nonempty summary&quot;)
+    ordered = sorted(steps, key=lambda step: step[&quot;start&quot;])
+    if any(step[&quot;start&quot;] &gt; step[&quot;end&quot;] for step in ordered):
+        raise ValueError(&quot;invalid existing interval&quot;)
+    if any(a[&quot;end&quot;] + 1 != b[&quot;start&quot;] for a, b in zip(ordered, ordered[1:])):
+        raise ValueError(&quot;existing steps must be a contiguous partition&quot;)
+    starts = [step[&quot;start&quot;] for step in ordered]
+    if start not in starts or end != ordered[-1][&quot;end&quot;]:
+        raise ValueError(&quot;fold must cover whole blocks through the latest step&quot;)
+    first = starts.index(start)
+    return [
+        *[dict(step) for step in ordered[:first]],
+        {&quot;start&quot;: start, &quot;end&quot;: end, &quot;content&quot;: summary},
+    ]
+</code></pre>
+<p>Applying <code>fold_suffix(steps, 2, 3, new_summary)</code> leaves block 0–1 unchanged and replaces blocks 2 and 3 with one block 2–3. Requesting 1–3 is rejected: step 1 is buried inside block 0–1, so that boundary would split an already compressed block.</p>
+<p><strong>Granular condensation:</strong> choose only the latest step. <strong>Deep consolidation:</strong> choose a suffix beginning at an older block boundary. Both use the same deterministic replacement function; the model chooses the boundary and text.</p>
+<h2>5. Execute the tool and construct the next state</h2>
+<p>In the pinned runner, the order is:</p>
+<ol>
+<li>Generate and parse the response from the old context.</li>
+<li>If it contains a final answer, terminate; that branch skips folding.</li>
+<li>Execute the new tool call.</li>
+<li>Apply the already generated fold to the previous steps.</li>
+<li>Append the new motivation, call, and returned observation as a fresh single-step block.</li>
+<li>Reformat that list for the next call.</li>
+</ol>
+<p>The paper describes folding before acting; the release executes the tool before applying the fold. The information boundary is the same: the fold was authored before the tool result existed.</p>
+<p>There is a practical consequence: if parsing the compression JSON fails <strong>after</strong> a tool executes, an unguarded retry can repeat the external action. This web-search runner is not a safe transaction design for payments or other irreversible tools. For those environments, validate the full response before execution and deduplicate action IDs; those are adaptations.</p>
+<h2>6. Follow the example across a call boundary</h2>
+<pre><code class="language-text">Before call 4:
+  [0–1] A rejected.
+  [2]   B candidate.
+  [3]   B affiliation source, full tool response.
+
+Call 4 generates:
+  fold 2–3 → B affiliation confirmed; date still unverified
+  action → search for B's dated announcement
+
+Tool result:
+  announcement dated 2016
+
+Before call 5:
+  [0–1] A rejected.
+  [2–3] B affiliation confirmed; date still unverified.
+  [4]   Search motivation + query + full announcement result.
+</code></pre>
+<p>Call 5 can preserve the date when it folds step 4. It cannot recover an omitted detail from steps 2–3 through a built-in archive read: this runner provides no such memory dereference operation. It would need to revisit the external source.</p>
+<h2>7. Train the policy, if you do not use an existing checkpoint</h2>
+<p>The paper's Fold-Generator collects structured teacher responses, rejects malformed steps and trajectories with excessive environment errors, then performs <strong>supervised fine-tuning</strong>, not RL. Its training examples are current-context/validated-response pairs. <a href="https://arxiv.org/html/2510.24699">Paper, Section 3.4</a></p>
+<p>For the example above, the training input must be the state <strong>before call 4</strong>, and the target is the teacher's response that selected fold 2–3 and the next search. The newly returned announcement belongs to the next input, not the current input. Training on the full final transcript as every input would leak future observations.</p>
+<p>Implement ordinary causal next-token cross-entropy on the response tokens; mask the system/user input tokens. Save the exact input snapshot rather than reconstructing it later from the final, already-folded history. This paragraph spells out the mechanics of SFT, not undisclosed teacher prompts or rejection thresholds.</p>
+<h2>8. Tests that distinguish this from generic summarization</h2>
+<ul>
+<li>A one-step fold and a multi-block fold both preserve chronological coverage.</li>
+<li>The example retains block 0–1 byte-for-byte while replacing only 2–3.</li>
+<li>A fold cannot begin inside an existing block.</li>
+<li>The current tool result appears only in the new latest interaction, never in the previously generated summary.</li>
+<li>The next prompt excludes discarded raw history.</li>
+<li>A new question begins with no prior question's step blocks.</li>
+<li>A malformed response cannot silently execute an irreversible tool twice in an adapted runner.</li>
+</ul>
+<p>The core implementation is small: <strong>structured prompt → fold/action response → interval replacement → latest interaction append</strong>. The learned part is deciding which interval to fold and what its summary must preserve.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

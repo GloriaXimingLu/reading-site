@@ -13,11 +13,81 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">36 min · 14 methods and systems · 2026-09-21</p><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">38 min · 14 methods and systems · 2026-09-21</p><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
 
 <p>The question for this tutorial is: <strong>could you execute one cycle of the method yourself, and say exactly what changed?</strong> For each selected method, we follow its inputs, memory object, writes, reads, and next model call. Training is explained separately from deployment. The examples use invented tasks and values to make the published mechanisms concrete; they are not experimental results.</p>
 <p>The three engineering systems—Codex compaction, ShadowFrog, and Claude-Mem—are labeled as systems, not papers. This page covers the <strong>14 selections in the reading edition</strong>, not all 33 entries in the <a href="memory-management.html">broader survey</a>.</p>
-<h2>Reading route</h2>
+<h2>Implementation chapters — start here</h2>
+<p>Each method now has a separate chapter. Follow its numbered implementation steps and worked trace; use the shorter sections farther down this page only as a comparison reference.</p>
+<table>
+<thead>
+<tr>
+<th>Chapter</th>
+<th>What you should be able to implement after reading</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="memory-impl-reasoningbank.html">1. ReasoningBank</a></td>
+<td>Query embeddings → prior experience → solver → judge → extracted lessons → append</td>
+</tr>
+<tr>
+<td><a href="memory-impl-ace.html">2. ACE</a></td>
+<td>Generator/Reflector/Curator calls, retry branches, stable IDs, counters, and delta application</td>
+</tr>
+<tr>
+<td><a href="memory-impl-memrl.html">3. MemRL</a></td>
+<td>Candidate filtering, normalized ranking, selected-ID reward updates, and builder variants</td>
+</tr>
+<tr>
+<td><a href="memory-impl-shadowfrog.html">4. ShadowFrog</a></td>
+<td>File/symbol-addressed notes, pre-edit lookup, verification, and cross-reference maintenance</td>
+</tr>
+<tr>
+<td><a href="memory-impl-claude-mem.html">5. Claude-Mem</a></td>
+<td>Event capture, observer XML, asynchronous storage, search → timeline → detail/raw reads</td>
+</tr>
+<tr>
+<td><a href="memory-impl-codex.html">6. Codex compaction</a></td>
+<td>Active-window replacement and intact opaque-item continuation through the API</td>
+</tr>
+<tr>
+<td><a href="memory-impl-memex.html">7. Memex / MemexRL</a></td>
+<td>Indexed archival, anchor extraction, compression/read tools, and segmented RL</td>
+</tr>
+<tr>
+<td><a href="memory-impl-pro-long.html">8. PRO-LONG</a></td>
+<td>Raw logging, programmatic evidence reads, action-file parsing, and environment execution</td>
+</tr>
+<tr>
+<td><a href="memory-impl-memagent.html">9. MemAgent</a></td>
+<td>Chunk-by-chunk memory overwrite, final answer call, and Multi-Conv DAPO</td>
+</tr>
+<tr>
+<td><a href="memory-impl-agentfold.html">10. AgentFold</a></td>
+<td>Fold directives, whole-block range replacement, next-step construction, and SFT pairs</td>
+</tr>
+<tr>
+<td><a href="memory-impl-contextpilot.html">11. ContextPilot</a></td>
+<td>Memory/edit tool schemas, source recovery, branch selection, and snapshot-level RL credit</td>
+</tr>
+<tr>
+<td><a href="memory-impl-automem.html">12. AutoMem</a></td>
+<td>LOG/PLAN file operations, two-model handoff, scaffold evolution, and specialist training</td>
+</tr>
+<tr>
+<td><a href="memory-impl-cartridges.html">13. Cartridges</a></td>
+<td>Self-study data, trainable KV prefixes, shifted distillation loss, and query-cache reset</td>
+</tr>
+<tr>
+<td><a href="memory-impl-still.html">14. Still</a></td>
+<td>Per-layer compactor shapes/attention, RoPE handling, logical positions, and training</td>
+</tr>
+</tbody>
+</table>
+<p><strong>For our first design discussion:</strong> read the full ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex chapters. They expose the concrete choices we need to make about the writer, reader, feedback, and context replacement. The later chapters explain what additional training or model-internal access would require.</p>
+<p>The code examples implement the small deterministic operations where possible. Model/API adapters and unreleased internals are explicitly identified. “Teaching representation” means a readable reconstruction; a linked pinned schema/prompt remains the reference for a faithful port. No model-training or benchmark-performance run is claimed by this tutorial.</p>
+<h2>Short-overview navigation</h2>
 <ul>
 <li><strong>Experience reused across tasks:</strong> <a href="#reasoningbank">1. ReasoningBank</a> → <a href="#ace">2. ACE</a> → <a href="#memrl">3. MemRL</a>.</li>
 <li><strong>Practical stores and context control:</strong> <a href="#shadowfrog">4. ShadowFrog</a> → <a href="#claude-mem">5. Claude-Mem</a> → <a href="#codex">6. Codex compaction</a> → <a href="#memex">7. Memex / MemexRL</a> → <a href="#pro-long">8. PRO-LONG</a>.</li>
@@ -26,11 +96,12 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><a href="#feedback">Feedback: who sees the answer, and when?</a> · <a href="#adaptations">What changes if we adapt a method?</a></li>
 </ul>
 <p>If you are reading for today's design discussion, start with ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex. Then read the training sections before deciding whether we need a frozen-model design or a learned policy.</p>
-<p><strong>How to read a section:</strong> follow the numbered cycle, trace the worked example, then check the feedback and carry-forward rules. Code-shaped examples illustrate the pinned interface; they are not complete installation instructions. A paper algorithm and a released implementation can differ, so neither silently substitutes for the other.</p>
+<p><strong>How to read:</strong> use the implementation chapters above for the exact call and state transitions. The compact sections below preserve the earlier comparison and anchors. A paper algorithm and a released implementation can differ; each chapter identifies its chosen target.</p>
 <p><strong>Four training terms:</strong> <em>frozen</em> means the model's weights are unchanged; <em>supervised fine-tuning (SFT)</em> learns to imitate target outputs; <em>reinforcement learning (RL)</em> uses outcome rewards to change which outputs the policy favors; <em>distillation</em> matches a teacher's behavior. None is synonymous with appending a runtime note.</p>
 <p>Two lifetimes remain separate throughout: <strong>within-task memory</strong> preserves an unfinished investigation; <strong>across-task memory</strong> lets a completed attempt help a different, separately scored task. A session restart does not necessarily start a new task. Across-task experiments need not use short or independent tasks.</p>
 <h2 id="reasoningbank">1. ReasoningBank: retrieve an experience, solve, judge, extract lessons</h2>
 
+<p><a href="memory-impl-reasoningbank.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> A stored experience associates a past task with reusable memory items. Each item has a <strong>title</strong>, a short <strong>description</strong>, and detailed <strong>content</strong>. The retrieval key is the past task/query; the injected payload is its lessons. This is a bank of experiences, not one repeatedly rewritten global summary.</p>
 <h3>Execute one task</h3>
 <ol>
@@ -64,6 +135,7 @@ for task in task_stream:
 <p><strong>Optional variant, not the baseline:</strong> MaTTS spends additional inference on parallel attempts or sequential refinement and uses the extra evidence for memory extraction. Do not silently include that extra solve budget in a single-attempt comparison. <a href="https://arxiv.org/html/2509.25140v2">Paper</a></p>
 <h2 id="ace">2. ACE: generate, reflect, and apply a small playbook delta</h2>
 
+<p><a href="memory-impl-ace.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> A playbook of ID-addressed bullets: strategies, domain facts, and pitfalls, with helpful/harmful usage metadata. The Generator receives the playbook as context. The important difference from ReasoningBank is the <strong>maintenance operation</strong>: propose a local delta to a persistent playbook instead of appending an independent experience or regenerating the entire document.</p>
 <h3>Execute one update</h3>
 <ol>
@@ -89,10 +161,11 @@ for task in task_stream:
 <p>The parser expects the outer <code>reasoning</code> and <code>operations</code> fields; the object inside the array is one delta. The application layer gives the new bullet an ID. Existing unrelated bullets stay unchanged. On task B the playbook includes both the extraction advice and the new period check. The example section name and content are illustrative.</p>
 <p><strong>Carry-forward:</strong> the playbook, IDs, and usage metadata survive the adaptation stream. Task B gets the revised playbook, not task A's complete conversation.</p>
 <p><strong>What is learned?</strong> Textual instructions and metadata change; this procedure does not require gradient updates to the Generator. The paper's full playbook injection is also not the same as retrieving three bullets through our own search policy.</p>
-<p><strong>Writer feedback.</strong> In the inspected Reflector, <code>use_ground_truth</code> selects whether an available reference answer enters its prompt. Both prompt paths can receive <code>environment_feedback</code>. Thus the no-reference path can still be externally informed. In online evaluation, record the current answer's score <strong>before</strong> using its feedback to revise the playbook.</p>
+<p><strong>Writer feedback.</strong> In the inspected Reflector, <code>use_ground_truth</code> selects whether an available reference answer enters its prompt. Both prompt paths can receive <code>environment_feedback</code>. In the pinned adaptation loop, that feedback can contain a correctness message computed against the target even when target text is hidden. The loop can also retry the same example and generate again after curation. Record the initial score separately from those feedback-assisted results. <a href="memory-impl-ace.html">Exact call sequence</a></p>
 <p><strong>Paper/code boundary.</strong> The checked Curator explicitly states that only <code>ADD</code> operations are fully supported. Although its comments mention UPDATE/MERGE/DELETE, that is not evidence of a complete arbitrary-edit implementation. Preserve the paper's distinction between delta generation and refinement; do not invent a working delete API. <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/core/curator.py">Pinned Curator</a></p>
 <h2 id="memrl">3. MemRL: retrieve by relevance, learn usefulness from reward</h2>
 
+<p><a href="memory-impl-memrl.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> A triplet <span class="arithmatex">\((z_i,e_i,Q_i)\)</span>: an intent/query representation, an experience, and a learned scalar utility. The LLM remains frozen. “RL” here primarily changes the <strong>values used to choose memories</strong>, not the model's parameters.</p>
 <h3>Paper algorithm</h3>
 <ol>
@@ -157,6 +230,7 @@ after:  experience B, utility 0.400 + 0.2 × (1 - 0.400) = 0.520
 <p><strong>Writer feedback, concretely.</strong> In the inspected ALFWorld runner, success flags update retrieved memories' utilities and are also passed to the memory-update layer. A vanilla builder stores a trajectory, a generated script, or both; a validation updater writes only successes; an adjustment updater can explicitly tell a reflector that a trajectory failed. The builder interface has no separate gold-answer argument. This establishes those code paths, not the contents of every other benchmark's trajectory. <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/run/alfworld_rl_runner.py">Runner</a> · <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/updater.py">Updater variants</a> · <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/builders.py">Memory builders</a></p>
 <h2 id="shadowfrog">4. ShadowFrog: the solver writes discoveries at code addresses</h2>
 
+<p><a href="memory-impl-shadowfrog.html">Read the full implementation chapter →</a></p>
 <p><strong>System, not a paper. Memory object:</strong> Markdown under <code>.shadow/</code>, mirroring source files and symbol headings. A discovery includes a verification status and provenance. This is a project notebook, not a new model context window.</p>
 <h3>Execute the write/read cycle</h3>
 <ol>
@@ -175,6 +249,7 @@ after:  experience B, utility 0.400 + 0.2 × (1 - 0.400) = 0.520
 <p><strong>Writer feedback.</strong> The writer sees what the solver observed, including tests and user corrections. “Verified” is a claim about evidence the agent checked; it does not mean a hidden benchmark evaluator certified the final solution.</p>
 <h2 id="claude-mem">5. Claude-Mem: a separate observer turns tool events into searchable records</h2>
 
+<p><a href="memory-impl-claude-mem.html">Read the full implementation chapter →</a></p>
 <p><strong>System, not a paper. Memory object:</strong> structured observations and session summaries in a database, plus search indexes and best-effort raw tool I/O. The observer is a different model call from the solver.</p>
 <h3>Follow one event through the system</h3>
 <ol>
@@ -198,6 +273,7 @@ get_tool_uses(relevant IDs) -&gt; captured evidence, if available
 <p><strong>Timing matters.</strong> Ingestion acknowledgment can precede observation completion and searchable indexing. Before a deliberate reset, “event accepted” is weaker than “the memory I will need is stored and retrievable.” An explicit readiness barrier would be an experimental addition. <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/http/routes/SessionRoutes.ts">Asynchronous ingestion</a></p>
 <h2 id="codex">6. Codex compaction: replace the model's active history</h2>
 
+<p><a href="memory-impl-codex.html">Read the full implementation chapter →</a></p>
 <p><strong>System, not a paper.</strong> Unlike the two notebooks above, compaction changes what the next model call receives. Distinguish the readable source-code path from provider-native opaque compaction.</p>
 <h3>A. Readable, client-orchestrated path</h3>
 <ol>
@@ -213,6 +289,7 @@ get_tool_uses(relevant IDs) -&gt; captured evidence, if available
 <p><strong>Writer feedback.</strong> Both paths operate on supplied conversation state. Tests already in the conversation can inform compaction; compaction does not grant the answer key. Opaque state is not evidence that the provider is implementing Cartridges, Still, or any particular KV algorithm.</p>
 <h2 id="memex">7. Memex / MemexRL: save blocks, keep their index, replace working context</h2>
 
+<p><a href="memory-impl-memex.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory objects.</strong> A short indexed summary stays in the prompt; selected experience blocks live in an external store. The summary must retain enough description and IDs for the agent to know what can be recovered.</p>
 <h3>Runtime procedure</h3>
 <ol>
@@ -268,6 +345,7 @@ after ReadExperience(db_index=&quot;cache_check_1&quot;):
 <p><strong>Writer feedback.</strong> At deployment, the agent writes from current task, observations, and stored/retrieved state. Later task reward trains its policy; that is not a reference answer inserted into <code>CompressExperience</code>. Prompting an untrained model with the tools tests Memex's interface, not reproduction of MemexRL's learned policy.</p>
 <h2 id="pro-long">8. PRO-LONG: make a lossless interaction log executable evidence</h2>
 
+<p><a href="memory-impl-pro-long.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> A persistent filesystem containing the interaction log, plus any notes or helper code the coding agent chooses to create. The primary writer is the harness recording what happened; there need not be an LLM summarizing every step.</p>
 <p>The procedure below refers to the paper's ARC-AGI-3 research implementation, not every feature of the repository's later general-purpose CLI.</p>
 <h3>Execute one environment cycle</h3>
@@ -293,6 +371,7 @@ archive after:  old records + new records
 <p>The paper's within-game continuity is not a demonstration that arbitrary records should persist between unrelated benchmark tasks. This is a raw-history/read-policy reference, not a learned summary writer.</p>
 <h2 id="memagent">9. MemAgent: repeatedly overwrite a bounded, question-aware text memory</h2>
 
+<p><a href="memory-impl-memagent.html">Read the full implementation chapter →</a></p>
 <p><strong>Inputs:</strong> one question and a long document split into sequential chunks. <strong>Memory:</strong> a bounded generated text string. There is no vector database and no choice of which chunk to retrieve next in the basic procedure.</p>
 <h3>Inference, one chunk at a time</h3>
 <ol>
@@ -326,10 +405,11 @@ final answer:  Orion
 <p><img alt="MemAgent's sequential chunk processing and recurrent memory" src="../tutorials/assets/memory-management/memagent.png" />
 <em>Source figure from MemAgent; the compact memory, rather than the full preceding document, links the calls.</em></p>
 <h3>Training, separately</h3>
-<p>The paper uses Multi-Conv RL: sample complete memory-and-answer trajectories, score the final answer against the reference, compute group-relative advantages, and train the generated outputs across the multiple independent-context conversations. The final outcome supplies credit to earlier memory-writing decisions. The learner must retain each call's real input; concatenating all chunks into a single training conversation would eliminate the bottleneck being trained. <a href="https://arxiv.org/html/2507.02259v2">Paper, §2</a></p>
+<p>The paper uses Multi-Conv DAPO: sample complete memory-and-answer trajectories, score the final answer against the reference, subtract the group mean reward <strong>without dividing by standard deviation</strong>, and train generated outputs across the multiple independent-context conversations using token-level clipping. The final outcome supplies credit to earlier memory-writing decisions. The learner must retain each call's real input; concatenating all chunks into a single training conversation would eliminate the bottleneck being trained. <a href="https://arxiv.org/html/2507.02259v2">Paper, §2</a></p>
 <p><strong>Writer feedback.</strong> Each runtime write receives the question, old memory, and current chunk—not the reference answer. A training verifier can use the reference after the final answer. Training changes the policy that writes the memory; runtime changes the text memory. These are two different updates.</p>
 <h2 id="agentfold">10. AgentFold: replace selected step ranges with summaries</h2>
 
+<p><a href="memory-impl-agentfold.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> An ordered list of summary blocks, each covering a contiguous range of step IDs, plus the latest interaction kept at higher detail. The context also retains the question and tool definitions.</p>
 <h3>One forward step: paper-level data flow</h3>
 <ol>
@@ -369,6 +449,7 @@ then:
 <p>Fold-Generator collects structured step/response pairs from strong models, rejects malformed steps and trajectories with excessive environment errors, and uses the validated pairs for supervised fine-tuning. This teaches the joint fold-and-act format; it is not the RL procedure of MemAgent or ContextPilot. At deployment the folding writer sees the current task state and observations, not an injected reference answer. <a href="https://arxiv.org/html/2510.24699">Paper, §3.4</a></p>
 <h2 id="contextpilot">11. ContextPilot: train when to write, retrieve, and offload context</h2>
 
+<p><a href="memory-impl-contextpilot.html">Read the full implementation chapter →</a></p>
 <p><strong>State.</strong> Active messages, a searchable document/chunk store, keyed notes, and structured memories with entity/event relationships. This is a tool-using context manager: the model chooses operations rather than applying one summary function at every fixed boundary.</p>
 <h3>Runtime operations and their effects</h3>
 <ol>
@@ -415,6 +496,7 @@ S=\alpha\Delta C+\beta\Delta H.
 <p><strong>Writer feedback.</strong> Gold answers score terminal training outputs; they are not automatically supplied to runtime memory tools. Giving a frozen model these tools omits the learned action-selection policy.</p>
 <h2 id="automem">12. AutoMem: optimize the memory scaffold, then train its operator</h2>
 
+<p><a href="memory-impl-automem.html">Read the full implementation chapter →</a></p>
 <p><strong>Runtime memory object:</strong> a directory of files. <strong>Learned artifacts:</strong> first an improved scaffold—prompts, schema, code, tools—and then a memory-specialist adapter. Those are not the same thing as the contents of the current episode's notebook.</p>
 <h3>Inner loop: LOG → PLAN → environment action</h3>
 <ol>
@@ -454,6 +536,7 @@ harness      -&gt; the stored failed-move record
 <p><strong>Feedback boundary.</strong> The runtime writer has current observations and accessible memory. The meta-optimizer sees completed trajectories and evaluation results, so it has hindsight unavailable at the original write. Training selects successful memory behaviors; this does not imply that the deployed writer receives the correct next action. Borrowing only LOG/PLAN is a useful design choice, but omits both optimization loops.</p>
 <h2 id="cartridges">13. Cartridges: fit a reusable KV prefix to one corpus</h2>
 
+<p><a href="memory-impl-cartridges.html">Read the full implementation chapter →</a></p>
 <p><strong>Memory object.</strong> Trainable key/value vectors at each transformer layer, with a chosen prefix length <span class="arithmatex">\(p\)</span>. These are not text tokens or a Markdown notebook. The base model's weights stay frozen; the cartridge vectors are optimized <strong>for a particular corpus</strong>.</p>
 <h3>Preparation: self-study</h3>
 <ol>
@@ -473,7 +556,7 @@ F(\cdot\mid\tilde c,x_{1:i-1})
 F_Z(\cdot\mid x_{1:i-1})
 \right).
 \]</div>
-<p><span class="arithmatex">\(Z\)</span> is the trainable prefix, <span class="arithmatex">\(\tilde c\)</span> the source subcorpus, and <span class="arithmatex">\(x\)</span> a synthetic conversation. Both sides share the frozen model <span class="arithmatex">\(F\)</span>. This matches distributions, rather than merely asking the cartridge to reproduce the corpus text.</p>
+<p><span class="arithmatex">\(Z\)</span> is the trainable prefix, <span class="arithmatex">\(\tilde c\)</span> the source subcorpus, and <span class="arithmatex">\(x\)</span> a synthetic conversation. Both sides share the frozen model <span class="arithmatex">\(F\)</span>. This matches distributions, rather than merely asking the cartridge to reproduce the corpus text. The pinned trainer uses stored top-token teacher probabilities and a causal one-token shift; it does not calculate literal full-vocabulary KL on every step. See the <a href="memory-impl-cartridges.html">implemented loss and reduction</a>.</p>
 <h3>Worked example: what does “write memory” mean here?</h3>
 <p>Suppose the corpus is a technical manual. Self-study generates requests about definitions, procedures, and relationships in different sections. During one training step, the full-context teacher gives high probability to the correct next term; the cartridge-conditioned student does not. The optimizer changes numerical KV vectors to reduce that difference.</p>
 <pre><code class="language-text">before fitting: Z contains initialized KV vectors
@@ -487,6 +570,7 @@ serving query 2: frozen model + same Z + &quot;When should A be avoided?&quot;
 <p><strong>Practical boundary.</strong> It requires access to model internals and compatible KV-prefix serving. An ordinary text-only API cannot implement the same method by supplying a shorter summary. Preparation cost and retained-KV savings must be accounted for separately from per-query latency.</p>
 <h2 id="still">14. Still: synthesize a short KV cache with a trained compactor</h2>
 
+<p><a href="memory-impl-still.html">Read the full implementation chapter →</a></p>
 <p><strong>State:</strong> per-layer, per-head keys/values <span class="arithmatex">\(K,V\in\mathbb{R}^{T\times d}\)</span>; output <span class="arithmatex">\(C_k,C_v\in\mathbb{R}^{t\times d}\)</span>.</p>
 <h3>Runtime steps</h3>
 <ol>
@@ -523,6 +607,6 @@ serving query 2: frozen model + same Z + &quot;When should A be avoided?&quot;
 <p>Our earlier V0–V3 proposals remain <strong>controlled adaptations/ablations</strong>, not reproductions or an agreed implementation order. For instance, “solver-written notes + grep + periodic checkpoint” combines choices from multiple systems; it is not exactly ShadowFrog, Claude-Mem, or MemexRL.</p>
 <p>For brainstorming, now ask: <strong>which state transition solves our bottleneck?</strong> A better writer, a better reader, reliable evidence recovery, active-context replacement, and learned KV compression are different changes. Choose the mechanism before simplifying it.</p>
 <p><a href="memory-management.html">Broader survey and results</a> · <a href="inner-loop-memory.html">Focused code-level walkthrough</a> · <a href="memory-baseline-experiments.html">Separate experiment protocols</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></article>
-<footer>Generated 2026-09-21 06:36 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

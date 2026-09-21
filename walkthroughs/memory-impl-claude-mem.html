@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing Claude-Mem: event capture, observer writes, and staged retrieval</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Claude-Mem: event capture, observer writes, and staged retrieval</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#claude-mem">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build a pipeline in which a separate observer model reads captured tool events and turns useful ones into persistent observations. A later solver first searches a small index, then fetches selected details.</p>
+<p>The defining separation is:</p>
+<pre><code class="language-text">solver tool execution -&gt; event capture -&gt; observer call -&gt; database/index
+future solver         -&gt; search -&gt; choose IDs -&gt; fetch notes/evidence
+</code></pre>
+<p>Claude-Mem is an engineering system. This chapter follows the <a href="https://github.com/thedotmack/claude-mem/tree/d8bc9755e74915e5c3b999181e10a67c889bce2a">pinned release</a>; simplified record shapes below are implementation explanations, not a claim that its SQL schema has these exact column names.</p>
+<h2>Step 1 — Capture an event the observer can actually see</h2>
+<p>Register the tool-event hook. After a permitted tool execution, capture its identity, session/project metadata, input, and result. Hand the event to the worker rather than asking the solver to write a note manually.</p>
+<p>A normalized example:</p>
+<pre><code class="language-json">{
+  &quot;project&quot;: &quot;cache-service&quot;,
+  &quot;session_id&quot;: &quot;session_A&quot;,
+  &quot;tool_use_id&quot;: &quot;tool_17&quot;,
+  &quot;tool_name&quot;: &quot;test&quot;,
+  &quot;tool_input&quot;: {&quot;target&quot;: &quot;test_two_tenants&quot;},
+  &quot;tool_response&quot;: &quot;FAILED: tenant A and tenant B produced the same key&quot;
+}
+</code></pre>
+<p>The observer does not automatically receive every thought, every file on disk, or a hidden evaluator score. What is not captured and supplied is not evidence it can inspect.</p>
+<p>The release filters events and retains raw I/O on a best-effort basis. Each captured input/result field has a 64-KiB cap at the inspected pin. Treat raw storage as useful evidence with known limits, not a lossless archive of all agent activity.</p>
+<h2>Step 2 — Run the observer with a fixed output contract</h2>
+<p>The <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/modes/code.json">code-mode prompt</a> asks for meaningful findings such as discoveries, changes, and fixes, and permits skipping routine events. It emits structured XML observations.</p>
+<p>A schema-shaped invented output:</p>
+<pre><code class="language-xml">&lt;observation&gt;
+  &lt;type&gt;discovery&lt;/type&gt;
+  &lt;title&gt;Cache keys collide across tenants&lt;/title&gt;
+  &lt;subtitle&gt;Tenant identity is missing from the key&lt;/subtitle&gt;
+  &lt;facts&gt;
+    &lt;fact&gt;The two-tenant regression returned identical keys.&lt;/fact&gt;
+  &lt;/facts&gt;
+  &lt;narrative&gt;The observed failure motivates checking tenant scope in key construction.&lt;/narrative&gt;
+  &lt;concepts&gt;&lt;concept&gt;gotcha&lt;/concept&gt;&lt;/concepts&gt;
+  &lt;files_read&gt;&lt;file&gt;src/cache.py&lt;/file&gt;&lt;/files_read&gt;
+  &lt;files_modified&gt;&lt;/files_modified&gt;
+&lt;/observation&gt;
+</code></pre>
+<p>The files field is warranted only if the supplied event stream establishes the file. Our single test event above does not by itself prove the implementation file was read; add the preceding captured read event before producing this complete example. This is precisely why writer inputs matter.</p>
+<p>The observer is not an autonomous investigator. It should not fill missing evidence by imagining a code inspection. A later successful test and edit can support a separate bugfix observation.</p>
+<h2>Step 3 — Parse and persist; distinguish acceptance from completion</h2>
+<p>The <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/agents/ResponseProcessor.ts">response processor</a> turns model output into stored records. Search indexing follows asynchronously.</p>
+<p>In your implementation, distinguish these states:</p>
+<pre><code class="language-text">event received
+event queued
+observer output produced
+observation parsed and stored
+observation indexed for search
+</code></pre>
+<p>These labels describe the stages, not literal release status-enum values. An HTTP acknowledgment at the first stage does not establish the last one.</p>
+<p>For a simplified implementation, keep raw event records, observation records, and index entries as distinct objects. Associate observations with their source event identities so a reader can recover evidence later. A malformed observer output or a skipped routine event need not produce an observation.</p>
+<p>If you add a barrier before deliberately resetting a solver, wait for the required records to become retrievable. Such a guaranteed barrier is an engineering addition to test explicitly, not something implied by asynchronous ingestion.</p>
+<h2>Step 4 — Produce the initial context for a future solver</h2>
+<p>At session start, provide a bounded selection of recent memory context plus access to search. Do not paste the whole database into the prompt. Context injection is an initial reading convenience; it is not equivalent to replacing the complete active conversation.</p>
+<p>The observer's session summary is a separate artifact from individual observations. Summary fields cover the request, investigation, learning, completed work, next steps, and notes. The <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/modes/code.json">same mode configuration</a> specifies both contracts.</p>
+<h2>Step 5 — Implement the actual three-stage reader</h2>
+<p>The <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/plugin/skills/mem-search/SKILL.md">search skill</a> prescribes staged disclosure. The solver chooses the query and filters IDs based on results.</p>
+<p>First, obtain short index results:</p>
+<pre><code class="language-text">search(query=&quot;tenant cache&quot;, limit=20, project=&quot;cache-service&quot;)
+</code></pre>
+<p>Suppose the response includes observation 41, “Cache keys collide across tenants,” and observation 55, “Tenant identity added to cache key.” Reading only the first title could leave the solver believing the bug is still present.</p>
+<p>Second, inspect neighboring records:</p>
+<pre><code class="language-text">timeline(anchor=55, depth_before=3, depth_after=3, project=&quot;cache-service&quot;)
+</code></pre>
+<p>Third, fetch selected full observations:</p>
+<pre><code class="language-text">get_observations(ids=[41, 55], project=&quot;cache-service&quot;)
+</code></pre>
+<p>Now the solver receives detailed facts and narrative about the failure and subsequent fix. The first call returns an index, the second provides chronology, and the third provides full selected content. They solve different reading problems.</p>
+<p>The <a href="https://github.com/thedotmack/claude-mem/blob/d8bc9755e74915e5c3b999181e10a67c889bce2a/src/services/worker/search/SearchOrchestrator.ts">search orchestrator</a> is the source to port for actual routing. Replacing its search behavior with a home-built embedding search changes the implementation condition.</p>
+<h2>Step 6 — Fetch raw evidence only when needed</h2>
+<p>If the stored note omits the exact failing output, use the associated tool identity:</p>
+<pre><code class="language-text">get_tool_uses(ids=[&quot;tool_17&quot;], project=&quot;cache-service&quot;)
+</code></pre>
+<p>Observation IDs and tool-use IDs are different namespaces. Do not pass observation 41 as though it necessarily identifies the raw test event.</p>
+<p>Raw retrieval can return truncated or missing information. The solver must inspect that status before claiming an exact historical result. It may need to rerun a permitted test against the current repository.</p>
+<h2>Trace the whole example</h2>
+<p>Session A reads <code>src/cache.py</code>, runs the failing test, edits the key, and runs a passing test. Captured events let the observer write the discovery and fix records. The worker stores them and the search index catches up.</p>
+<p>Session B asks whether tenant isolation is covered. Its initial prompt need not contain the whole prior session. It searches, sees both records, examines their timeline, fetches selected details, and—if exact output matters—fetches the raw test evidence. It can then verify the current implementation.</p>
+<p>The observer's write was based on visible event evidence. Session B's useful context was selected by its reader. Neither operation changes the model weights.</p>
+<h2>Tests and implementation boundaries</h2>
+<p>Use recorded fake events to test skipped routine activity, malformed XML, multiple observations, database persistence, project filtering, timeline ordering, and raw-ID lookup. Separately test delayed indexing: an accepted event must not be reported as searchable before it is.</p>
+<p>These are recommended conformance checks, not benchmark results. The persistent database survives sessions; the active solver prompt still needs its own context-management policy. Pairing Claude-Mem with a compactor is possible, but is a combined system.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

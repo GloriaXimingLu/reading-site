@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing Memex and MemexRL: indexed archives, context replacement, and training</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing Memex and MemexRL: indexed archives, context replacement, and training</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memex">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Implement two memory tools inside the ordinary agent loop. <code>CompressExperience</code> writes selected blocks to an external store and replaces active history with a short index-bearing summary. <code>ReadExperience</code> brings a chosen block back into active history.</p>
+<p>The agent chooses when to invoke them. Memex is the interface and loop; MemexRL additionally trains the policy operating that interface.</p>
+<p>This chapter follows the <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/agents/memory/mixin.py">pinned memory mixin</a>, with the indexed-store mode separated from the release's summary-only and RAG variants.</p>
+<h2>Step 1 — Define active and external state</h2>
+<pre><code class="language-python">messages = [
+    {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: &quot;Agent instructions&quot;},
+    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Investigate the cache collision&quot;},
+]
+archive = {}       # db_index -&gt; stored block
+segments = []      # training/diagnostic records, not solver-visible memory
+</code></pre>
+<p>The first two messages have a special role in the inspected implementation: compression literally keeps them and replaces the rest. If your harness has additional fixed messages or later user requirements, map them deliberately; do not reuse that positional assumption blindly.</p>
+<p>The external archive survives compression within this task. The procedure starts each task with a fresh store.</p>
+<h2>Step 2 — Expose status and let the policy choose</h2>
+<p>After tool observations, report context usage. The paper's status distinguishes working size, total size, and a threshold. It is a soft signal: the model may compress now, retrieve, perform another task action, or finish.</p>
+<p>A threshold does not itself specify which details to preserve. The model must author both a useful summary and recoverable block addresses. The <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/agents/memory/prompts.py">tool prompts</a> are part of that policy interface.</p>
+<h2>Step 3 — Implement both block-writing paths</h2>
+<p>The literal code argument names are <code>summary</code> and <code>db_blocks</code>. An authored block looks like:</p>
+<pre><code class="language-json">{
+  &quot;summary&quot;: &quot;The two-tenant test failed. Investigate make_key. Raw failure: failure_1.&quot;,
+  &quot;db_blocks&quot;: [
+    {
+      &quot;db_index&quot;: &quot;failure_1&quot;,
+      &quot;db_content&quot;: &quot;The test returned equal keys for distinct tenants.&quot;
+    }
+  ]
+}
+</code></pre>
+<p>An authored block is already a summary. For evidence that must be recovered more exactly, select an existing span using three ordered anchors:</p>
+<pre><code class="language-text">BEGIN cache test
+test_two_tenants FAILED: identical keys
+END cache test
+</code></pre>
+<pre><code class="language-json">{
+  &quot;db_index&quot;: &quot;failure_1&quot;,
+  &quot;start_anchor&quot;: &quot;BEGIN cache test&quot;,
+  &quot;mid_anchor&quot;: &quot;test_two_tenants FAILED&quot;,
+  &quot;end_anchor&quot;: &quot;END cache test&quot;
+}
+</code></pre>
+<p>The runtime—not the model—extracts the span. An exact-path teaching implementation is:</p>
+<pre><code class="language-python">def anchored_span(source, start, mid, end):
+    p = source.find(start)
+    while p &gt;= 0:
+        m = source.find(mid, p + len(start))
+        while m &gt;= 0:
+            e = source.find(end, m + len(mid))
+            if e &gt;= 0:
+                return source[p:e + len(end)]
+            m = source.find(mid, m + 1)
+        p = source.find(start, p + 1)
+    raise ValueError(&quot;anchors not found in order&quot;)
+</code></pre>
+<p>The release additionally tries whitespace-normalized matching. That fallback returns whitespace-collapsed text, not identical original bytes. It can also combine authored content with extraction, including an extraction placeholder. Keep that distinction if exact evidence matters.</p>
+<h2>Step 4 — Validate before committing the replacement</h2>
+<p>Check the summary is nonempty; the block list exists in indexed mode; each ID is valid; IDs do not repeat inside the request; and each block has authored content or a complete valid anchor set.</p>
+<p>The release permits updating an already stored ID but rejects duplicate IDs within one compression request. Its ID syntax permits letters, numbers, underscores, and dashes, with a maximum length of 64.</p>
+<p>Resolve every block before mutating state. This simplified authored-block path illustrates the commit:</p>
+<pre><code class="language-python">import re
+
+def compress_authored(messages, archive, summary, blocks):
+    if len(messages) &lt;= 2 or not isinstance(summary, str) or not summary.strip():
+        raise ValueError(&quot;invalid compression&quot;)
+    if not blocks:
+        raise ValueError(&quot;blocks required&quot;)
+    resolved = {}
+    for b in blocks:
+        key, content = b[&quot;db_index&quot;], b[&quot;db_content&quot;]
+        if not re.fullmatch(r&quot;[A-Za-z0-9_-]{1,64}&quot;, key):
+            raise ValueError(&quot;invalid block ID&quot;)
+        if key in resolved or not isinstance(content, str) or not content.strip():
+            raise ValueError(&quot;duplicate ID or empty content&quot;)
+        resolved[key] = content
+    next_archive = dict(archive)
+    next_archive.update(resolved)
+    next_messages = messages[:2] + [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: summary}]
+    return next_messages, next_archive
+</code></pre>
+<p>This reconstruction omits the release's metadata, compression header, optional summary cap, and training-segment capture. It makes the central state mutation explicit; it is not a drop-in class replacement.</p>
+<h2>Step 5 — Make retrieval change the next prompt</h2>
+<p>When the model calls <code>ReadExperience(db_index="failure_1")</code>, look up that exact ID and return its content through the tool channel. Append the resulting observation to the active messages.</p>
+<p>Do not return all archived blocks. Do not re-run the original test merely to reconstruct information that was stored. The model decides which ID to dereference using the indexed summary.</p>
+<p>A failed lookup returns an error; it should not invent an empty success. If the summary forgot which IDs exist, the archive can contain useful evidence that the agent never asks for. Index quality is therefore part of writing quality.</p>
+<h2>Follow the whole trace</h2>
+<pre><code class="language-text">1. Read implementation; run test; receive the failure log.
+2. CompressExperience:
+     active := system + task + &quot;failure_1 holds the regression evidence&quot;
+     archive[&quot;failure_1&quot;] := selected evidence
+3. Continue investigating using the shorter active prompt.
+4. Need exact failure detail:
+     ReadExperience(&quot;failure_1&quot;)
+5. Tool observation reintroduces &quot;identical keys&quot; into active context.
+6. Edit the key and run a new test against the changed state.
+</code></pre>
+<p>A new test after a code change is not redundant just because a similar test command was run earlier.</p>
+<p>“Lossless” is a release mode name. Selected authored blocks can be lossy, unselected history is absent, and the index can be inadequate. The mechanism offers <strong>dereferencing of retained evidence</strong>, not an unconditional full-history guarantee.</p>
+<h2>Step 6 — Implement MemexRL's training records and objective</h2>
+<p>Preserve each pre-compression segment and each subsequent segment's actual inherited summary. All segments from a rollout share its terminal return. Do not reconstruct later training prefixes from the complete raw transcript.</p>
+<p>The paper's return is:</p>
+<div class="arithmatex">\[
+R=R_{\mathrm{task}}-P_{\mathrm{context}}-P_{\mathrm{redundancy}}-P_{\mathrm{format}}.
+\]</div>
+<p>The normalized penalty definitions are:</p>
+<div class="arithmatex">\[
+P_{\mathrm{context}}=\min\left(1,\frac{\sum_{t\in\mathcal I}\max(0,C_t-\tau)}{\tau\,T}\right),\quad
+P_{\mathrm{redundancy}}=\frac{N_{\mathrm{redundant}}}{N_{\mathrm{nonmemory\ calls}}},\quad
+P_{\mathrm{format}}=\frac{N_{\mathrm{malformed}}}{N_{\mathrm{attempted\ tool\ steps}}}.
+\]</div>
+<p>Here <span class="arithmatex">\(\mathcal I\)</span> indexes non-compression steps, <span class="arithmatex">\(T\)</span> is the total trajectory step count, <span class="arithmatex">\(C_t\)</span> is context size, and <span class="arithmatex">\(\tau\)</span> is the soft threshold. Compression steps are omitted from the overflow numerator, not from the total-step denominator. Redundancy means repeating an identical non-memory tool signature without an intervening state change. Declare a zero-denominator convention for runs with no relevant calls; do not let a NaN become a measured score. The equation uses reconstructed notation for the paper's penalty components.</p>
+<p><strong>Released shaper details:</strong> the <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/rewards/shapers/memory_efficiency_shaper.py">reward code</a> applies configurable weights to these components; its class defaults are 0.5, 0.3, and 0.2. Its format ratio counts <strong>steps with format errors</strong>, not every individual parse error. Empty relevant counts produce zero component penalty. Those choices must be recorded when matching a run.</p>
+<p>This normalized teaching helper reproduces its overflow calculation:</p>
+<pre><code class="language-python">def context_penalty(steps, threshold, weight=0.5):
+    if threshold &lt;= 0:
+        raise ValueError(&quot;positive threshold required&quot;)
+    overflow = sum(max(0, step[&quot;context_length&quot;] - threshold)
+                   for step in steps if not step[&quot;compressed&quot;])
+    ratio = min(1.0, overflow / (threshold * len(steps))) if steps else 0.0
+    return -weight * ratio
+</code></pre>
+<p>For context lengths [150, 1000, 100], threshold 100, and compression only in the middle step, the ratio is 50/300, not 50/200. The compression removes that step's overflow contribution but does not remove the step from the denominator.</p>
+<p>Sample a group of rollouts for one task, compute <span class="arithmatex">\((R-\mathrm{mean})/(\mathrm{std}+\epsilon)\)</span>, and apply a clipped policy-ratio objective to generated tokens under each segment's real prefix, with optional reference-policy KL. The policy is warm-started with well-formed memory demonstrations. <a href="https://arxiv.org/html/2603.04257">Training procedure and equations</a></p>
+<p>Concretely, calculate each generated token's likelihood ratio
+<span class="arithmatex">\(\rho=\exp(\log\pi_\theta-\log\pi_{\mathrm{old}})\)</span> under its saved prefix. Maximize the clipped term:</p>
+<div class="arithmatex">\[
+\min(\rho A,\operatorname{clip}(\rho,1-\epsilon_c,1+\epsilon_c)A).
+\]</div>
+<p>Apply the selected token/segment reduction and reference-KL configuration from the training recipe. Tool observations and inherited summaries are input, not newly sampled policy tokens in the receiving segment.</p>
+<p>For an invented two-rollout example, one return is 1 and another 0: normalized advantages are approximately +1 and -1. Every segment in the successful rollout receives its positive advantage, including an early compression that only paid off much later. The verifier's answer/outcome is supervision; it was not inserted into the original memory tool arguments.</p>
+<h2>Tests and reproduction boundary</h2>
+<p>Test invalid anchors, duplicate IDs, existing-ID updates, missing retrieval, two consecutive compressions, and exact post-compression message contents. For RL, verify a sampled token's training prefix equals the prefix seen during rollout.</p>
+<p>Giving these tools to a frozen model implements a Memex-style runtime. It does not reproduce MemexRL's learned behavior without its training procedure and checkpoint.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

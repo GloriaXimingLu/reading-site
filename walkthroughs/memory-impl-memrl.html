@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing MemRL: candidate filtering, value-aware retrieval, and reward updates</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing MemRL: candidate filtering, value-aware retrieval, and reward updates</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memrl">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build an experience retriever with a learned utility attached to each memory. The solver model stays frozen. A task outcome changes which memories are likely to be used next time.</p>
+<p>There are <strong>two explicit implementation targets</strong>: the paper's normalized similarity-plus-utility selection, and the pinned release's Q-sorted epsilon-greedy selector. We implement the paper's deterministic ranking below, then identify the code variant. Never combine them accidentally.</p>
+<h2>Step 1 — Store intent, experience, and utility separately</h2>
+<pre><code class="language-python">memory = {
+    &quot;id&quot;: &quot;B&quot;,
+    &quot;intent&quot;: &quot;Move an object to a destination&quot;,
+    &quot;embedding&quot;: [0.7, 0.7141428429],
+    &quot;experience&quot;: &quot;Inspect the destination before attempting placement.&quot;,
+    &quot;q&quot;: 0.4
+}
+</code></pre>
+<p>The embedding supports relevance filtering. The experience is the text injected into the solver. Q is an estimate of the return obtained when that experience is used, not a score computed by asking the model whether the prose sounds good.</p>
+<p>Your durable store needs to update Q by stable ID without changing the text or retrieval key. The <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/value_driven.py">released updater</a> also records visits, last reward, and timestamps. Those bookkeeping fields are useful, but distinct from the retrieval algorithm.</p>
+<h2>Step 2 — Build the relevant candidate set</h2>
+<p>Embed the current query. Compute cosine similarity against past intent embeddings. Reject memories at or below threshold <span class="arithmatex">\(\delta\)</span>, then keep at most <span class="arithmatex">\(k_1\)</span> highest-similarity memories.</p>
+<p>If no memory qualifies, call the solver without one. Do not select an unrelated high-Q memory to fill the quota.</p>
+<p>For teaching, assume the embedding backend already returned these similarities:</p>
+<pre><code class="language-python">rows = [
+    {&quot;id&quot;: &quot;A&quot;, &quot;sim&quot;: 0.90, &quot;q&quot;: 0.00, &quot;experience&quot;: &quot;Use the shortcut.&quot;},
+    {&quot;id&quot;: &quot;B&quot;, &quot;sim&quot;: 0.70, &quot;q&quot;: 0.40, &quot;experience&quot;: &quot;Inspect destination.&quot;},
+    {&quot;id&quot;: &quot;C&quot;, &quot;sim&quot;: 0.30, &quot;q&quot;: 0.90, &quot;experience&quot;: &quot;Unrelated procedure.&quot;},
+]
+</code></pre>
+<p>With <span class="arithmatex">\(\delta=0.5\)</span> and <span class="arithmatex">\(k_1=2\)</span>, C is removed despite its high Q.</p>
+<h2>Step 3 — Normalize and rank within that set</h2>
+<p>The <a href="https://arxiv.org/html/2601.03192">paper's rule</a> combines z-scored similarity and Q:</p>
+<div class="arithmatex">\[
+s_i=(1-\lambda)\widehat{\mathrm{sim}}_i+\lambda\widehat Q_i.
+\]</div>
+<p>The following code implements that rule. Its zero-variance convention and deterministic tie-breaking are <strong>explicit teaching choices</strong>, not unspecified paper defaults:</p>
+<pre><code class="language-python">from math import sqrt
+
+def zscore(values):
+    mean = sum(values) / len(values)
+    sd = sqrt(sum((v - mean) ** 2 for v in values) / len(values))
+    return [0.0] * len(values) if sd == 0 else [(v - mean) / sd for v in values]
+
+def choose_memories(rows, threshold, k1, k2, utility_weight):
+    if k1 &lt; 1 or not 0 &lt;= k2 &lt;= k1 or not 0 &lt;= utility_weight &lt;= 1:
+        raise ValueError(&quot;invalid retrieval configuration&quot;)
+    candidates = sorted(
+        [r for r in rows if r[&quot;sim&quot;] &gt; threshold],
+        key=lambda r: (-r[&quot;sim&quot;], r[&quot;id&quot;]),
+    )[:k1]
+    if not candidates:
+        return []
+    similarities = zscore([r[&quot;sim&quot;] for r in candidates])
+    utilities = zscore([r[&quot;q&quot;] for r in candidates])
+    ranked = [
+        ((1 - utility_weight) * sim + utility_weight * q, row)
+        for row, sim, q in zip(candidates, similarities, utilities)
+    ]
+    ranked.sort(key=lambda pair: (-pair[0], pair[1][&quot;id&quot;]))
+    return [row for _, row in ranked[:k2]]
+</code></pre>
+<p>For A and B, normalized similarities are <span class="arithmatex">\(+1,-1\)</span>, and normalized utilities are <span class="arithmatex">\(-1,+1\)</span>. With <span class="arithmatex">\(\lambda=0.75\)</span>, scores are <span class="arithmatex">\(-0.5,+0.5\)</span>. For <span class="arithmatex">\(k_2=1\)</span>, B wins.</p>
+<p>The LLM receives <strong>"Inspect destination."</strong> It does not receive a magical reward signal merely because B has a high selection score.</p>
+<h2>Step 4 — Solve and remember exactly which IDs were injected</h2>
+<p>Construct a prompt containing the current task and the chosen experience texts. Run the ordinary task solver. Keep the injected IDs alongside the attempt record.</p>
+<p>This ID list matters: the terminal reward updates memories actually used in the prompt, not all <span class="arithmatex">\(k_1\)</span> candidates and not all semantically similar records.</p>
+<p>If two memories were injected, both can receive the same outcome update. That is coarse credit assignment. It does not demonstrate that each memory causally helped.</p>
+<h2>Step 5 — Apply the reward update</h2>
+<p>For the terminal version:</p>
+<div class="arithmatex">\[
+Q_i\leftarrow Q_i+\alpha(r-Q_i).
+\]</div>
+<pre><code class="language-python">def update_utilities(bank_by_id, injected_ids, reward, alpha):
+    if not 0 &lt;= alpha &lt;= 1:
+        raise ValueError(&quot;alpha outside [0,1]&quot;)
+    for memory_id in set(injected_ids):
+        row = bank_by_id[memory_id]
+        row[&quot;q&quot;] += alpha * (reward - row[&quot;q&quot;])
+</code></pre>
+<p>If B has <span class="arithmatex">\(Q=0.4\)</span>, <span class="arithmatex">\(\alpha=0.2\)</span>, and the task succeeds with <span class="arithmatex">\(r=1\)</span>, B becomes <span class="arithmatex">\(0.52\)</span>. If its next use receives <span class="arithmatex">\(r=-1\)</span>, it becomes <span class="arithmatex">\(0.216\)</span>. A and C stay unchanged if they were not injected.</p>
+<p>These values are illustrative. Choose the reward encoding explicitly; success/failure and a continuous task score are not interchangeable without scaling considerations.</p>
+<h2>Step 6 — Write a new experience independently</h2>
+<p>A separate builder takes the current query and trajectory and creates the new payload: a trajectory, a generalized script, or both, depending on the selected builder. Store it under a <strong>new ID</strong>, with the current intent embedding and the configured initial utility. Do not inherit B's updated utility.</p>
+<p>The <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/run/alfworld_rl_runner.py">ALFWorld runner</a>, <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/builders.py">builders</a>, and <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/updater.py">updaters</a> make this division concrete. A success-validation updater can skip failed attempts; a failure-adjustment updater can run reflection on failure. Thus “MemRL writes a summary” is not a complete builder configuration.</p>
+<h3>What each builder actually does</h3>
+<ul>
+<li><strong>Trajectory:</strong> return the supplied trajectory unchanged; no writer-model call.</li>
+<li><strong>Script:</strong> make one model call with the trajectory and instructions to extract three to five high-level steps and important decision points. Keep the strategy transferable, rather than listing every low-level action.</li>
+<li><strong>Proceduralization:</strong> make the same script call, then concatenate a SCRIPT section and a TRAJECTORY section containing the original trace.</li>
+</ul>
+<p>For example, a successful trace that searched several rooms, found an object, navigated to the destination, and placed it might yield: inspect likely locations; pick up the target; verify the destination; navigate and place; check completion. This is an invented script, not a guaranteed model output.</p>
+<p>The <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/providers/llm.py">released script prompt</a> receives the trajectory; the task-description parameter in the builder is not itself forwarded as a separate prompt field. This is another reason to inspect the assembled writer input rather than infer it from a method name.</p>
+<h2>The whole lifecycle</h2>
+<pre><code class="language-text">load persistent bank
+for task:
+    retrieve relevant candidate intents
+    select memories using the declared ranking policy
+    retain selected IDs and inject their experience texts
+    run frozen solver to completion
+    obtain the allowed task reward
+    update Q for injected IDs only
+    build a new experience according to the chosen updater
+    if updater accepts it:
+        insert new ID + intent embedding + payload + initial Q
+    persist both utility changes and any new experience
+</code></pre>
+<p>The bank and Q values survive into the next task. A new model call alone does not erase them. A benchmark reset protocol must state which task streams share a bank.</p>
+<h2>If you use the released selector instead</h2>
+<p>The inspected ValueAwareSelector sorts by Q, uses similarity to break ties, and with probability epsilon samples from its candidate set. Its configuration declares additional optional filters and recency behavior. Do not assume a declared threshold is enforced inside this selector: inspect the caller that supplies candidates.</p>
+<p>Its Q updater can include a discounted next-value term; the single-step configuration uses <span class="arithmatex">\(\gamma=0\)</span>. This is a different implementation choice from silently reproducing the paper's weighted z-score ranking. <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/value_driven.py">Exact selector and updater</a></p>
+<h2>Feedback and the tests that establish the implementation</h2>
+<p>The utility updater sees reward. The memory builder's inputs are separate: inspected builder interfaces consume trajectories, while updater variants can receive success/failure and supply failure feedback to a reflector. They do not have a separate gold-answer argument. That does not prove arbitrary task data contains no reference leakage.</p>
+<p>Test empty retrieval, threshold rejection, opposing similarity/Q order, constant Q, one candidate, <span class="arithmatex">\(k_2=0\)</span>, utility updates for selected IDs only, and new-record initialization. Run a sequential toy stream and check that a repeatedly rewarded experience rises in ranking. This verifies mechanics, not the benchmark performance of the paper.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

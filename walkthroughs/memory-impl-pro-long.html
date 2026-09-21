@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing PRO-LONG: raw interaction logs and programmatic readers</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing PRO-LONG: raw interaction logs and programmatic readers</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#pro-long">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build an environment runner that records interactions in a persistent filesystem and asks a coding agent to analyze those records with tools and code. The coding agent outputs an action batch; the runner executes it and records the results.</p>
+<p>Unlike a learned summary writer, the primary memory write is ordinary logging. The intelligence lies partly in <strong>how the agent interrogates that log</strong>.</p>
+<p>We follow the <a href="https://github.com/alexisfox7/PRO-LONG/tree/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3">ARC-AGI-3 research implementation</a>, not every feature of the repository's general-purpose CLI.</p>
+<h2>Step 1 — Separate the world runner from the coding agent</h2>
+<p>The runner owns the environment state and action execution. The coding agent receives a workspace, log location, legal-action descriptions, and file/code tools. It should not need to load the game engine directly into its reasoning prompt.</p>
+<p>Keep these objects:</p>
+<pre><code class="language-text">Environment:
+  current board, score/progress, legal actions, termination state
+
+Persistent workspace:
+  logs.txt
+  actions.json          replaced per agent call
+  optional notes and helper programs
+
+Agent backend:
+  model/session configuration
+  session identity, if that backend resumes sessions
+</code></pre>
+<p>The directory persists across calls within the run. The action file is cleared before the next request so a stale action batch is not executed again.</p>
+<h2>Step 2 — Record observations without asking an LLM to summarize them</h2>
+<p>Append the initial board, actions, resulting boards, and available progress information. Preserve step ordering and distinguish animation frames from the committed state.</p>
+<p>The <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/game_state.py">game-state renderer</a> marks intermediate animation frames and the settled board. An analysis using an intermediate frame as the final state can infer a false game mechanic.</p>
+<p>The log markers described in the <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/prompts.py">agent prompt</a> include initial and post-action board states. Use that actual format when porting its parser-facing interface.</p>
+<p>A normalized teaching record might be:</p>
+<pre><code class="language-python">record = {
+    &quot;action_number&quot;: 18,
+    &quot;action&quot;: &quot;ACTION1&quot;,
+    &quot;before&quot;: [[0, 1], [0, 0]],
+    &quot;after&quot;: [[1, 0], [0, 0]],
+    &quot;score_before&quot;: 0,
+    &quot;score_after&quot;: 0
+}
+</code></pre>
+<p>This tiny grid and dictionary are an explanatory representation, not the release's textual log schema.</p>
+<h2>Step 3 — Give the agent a task that points to evidence</h2>
+<p>On the first call, tell the agent to inspect the log and write its first action batch. On later calls, point it to new records and any files it saved earlier.</p>
+<p>The prompt supplies action semantics and recommends programmatic analysis of large grids. The model can use Read, Write, Edit, Bash, Grep, and Glob-style tools, rather than receiving all 64×64 boards as one giant prompt.</p>
+<p>The agent may create a helper to parse board blocks, compute connected components, track objects, or compare distant states. Those helper files are derived memory. The original record remains the evidence against which they can be checked.</p>
+<h2>Step 4 — Implement one concrete programmatic read</h2>
+<p>Suppose the agent wants to know what action 18 changed. After parsing the two settled grids from the log, a deterministic comparison is:</p>
+<pre><code class="language-python">def changed_cells(before, after):
+    if len(before) != len(after):
+        raise ValueError(&quot;grid heights differ&quot;)
+    differences = []
+    for row_index, (a, b) in enumerate(zip(before, after)):
+        if len(a) != len(b):
+            raise ValueError(&quot;grid widths differ&quot;)
+        for col_index, (old, new) in enumerate(zip(a, b)):
+            if old != new:
+                differences.append((row_index, col_index, old, new))
+    return differences
+</code></pre>
+<p>For the toy record, this yields:</p>
+<pre><code class="language-text">(row=0, col=0): 0 -&gt; 1
+(row=0, col=1): 1 -&gt; 0
+</code></pre>
+<p>The agent sees a small computed result instead of re-reading two complete boards. It may infer that an object moved left, then test that hypothesis with a short action batch. The computation is exact; the interpretation remains a hypothesis.</p>
+<p>This is why raw-log memory need not imply raw-log prompt length: a program can turn a large persistent record into a small, task-specific observation.</p>
+<h2>Step 5 — Parse and execute the proposed actions</h2>
+<p>The inspected prompt asks for a file shaped like:</p>
+<pre><code class="language-json">{&quot;actions&quot;: [&quot;ACTION1&quot;, &quot;ACTION6(30,40)&quot;]}
+</code></pre>
+<p>The values are illustrative. The runner parses recognized action names and arguments, respects the configured batch cap, then invokes environment steps in order. Entries beyond the cap are not an invitation to perform unbounded actions. The <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/base.py">base agent parser</a> accepts supported string/object forms.</p>
+<p>For a new hypothesis, one or two actions make its effect easier to observe. A proven sequence may justify a larger batch. That choice belongs to the agent's planning policy and available action budget.</p>
+<p>After executing, append the observations before invoking the agent again. If an action changes the score or ends a level, that visible outcome becomes available evidence.</p>
+<h2>Step 6 — Keep the backend and log mode explicit</h2>
+<p>The source has full-log, truncated-log, and current-board-in-prompt modes. Full-log synchronization appends newly recorded bytes; a windowed setting supplies only the configured recent history.</p>
+<p>The <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/codex_agent.py">Codex backend</a> resumes a prior session when available. Therefore the method should not be described as obligatorily resetting the model context at every action batch.</p>
+<p>An external log, an agent session, and the environment's lifetime are three different things. Report all three when implementing a comparison.</p>
+<h2>Follow a complete cycle</h2>
+<p>At action 18, moving a piece exposes a switch. The log records both boards. The agent saves a helper that extracts that switch's neighborhood.</p>
+<p>At action 70, a similar structure appears. The agent searches its history, invokes the helper on old and current boards, and observes the same relative geometry. It writes a two-action plan, which the runner executes. New observations confirm or refute the analogy.</p>
+<p>The archive is now longer by two records. A helper or note may also have changed. There was no mandatory call to a memory summarizer, and the old evidence was not overwritten just to improve retrieval.</p>
+<h2>Feedback, reset, and tests</h2>
+<p>The logger sees environmental observations and available score/progress information. It does not reveal an unseen correct action sequence. The coding agent's notes inherit only the evidence it inspected.</p>
+<p>The workspace persists within the run. Cross-game or cross-task reuse is a separate protocol choice, not established merely by a persistent directory.</p>
+<p>Test action-file clearing, parser validation, batch caps, log ordering, settled-frame extraction, and byte synchronization. Then test a task that requires comparing distant observations. Measure the code/tool calls and tokens used by that read policy as well as task success.</p>
+<p>The <a href="https://arxiv.org/html/2607.20064v2">paper</a> motivates programmatic memory; the implementation above makes clear which component logs, which reasons, and which executes.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

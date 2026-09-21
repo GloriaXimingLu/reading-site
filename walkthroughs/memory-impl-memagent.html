@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing MemAgent: recurrent text memory and Multi-Conv DAPO</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing MemAgent: recurrent text memory and Multi-Conv DAPO</h1><p class="meta">5 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#memagent">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Process a long document in sequential chunks while keeping only a bounded generated memory between calls. The question is known while memory is written. After the last chunk, answer using the question and final memory.</p>
+<p>This is not ordinary retrieval: the basic loop does not search the document or jump backward to a forgotten chunk. It is a learned <strong>overwrite policy</strong> for text memory.</p>
+<p>The <a href="https://github.com/BytedTsinghua-SIA/MemAgent/blob/ef4219b23499a069cb00e5daff4c426d4c600851/quickstart.py">quickstart</a> and <a href="https://github.com/BytedTsinghua-SIA/MemAgent/blob/ef4219b23499a069cb00e5daff4c426d4c600851/recurrent/impls/memory.py">recurrent implementation</a> establish the runtime interfaces.</p>
+<h2>Step 1 — Choose separate input and output budgets</h2>
+<p>Keep four quantities distinct:</p>
+<pre><code class="language-text">question tokens
+chunk tokens C
+previous-memory tokens, at most M
+new-memory output budget M
+</code></pre>
+<p>The complete request must fit the model window, including template overhead and generation. The quickstart uses C=5,000 and M=1,024. It also clips contexts longer than 120,000 tokens to their beginning and end before chunking. That clipping is an evaluation-script limitation, not the recurrent method's definition.</p>
+<p>Use the intended tokenizer to split the document. Character slicing changes the token budget and can cut encoding boundaries differently.</p>
+<h2>Step 2 — Construct a fresh memory-writing request</h2>
+<p>Each write receives exactly the task-specific evidence intended for that stage:</p>
+<pre><code class="language-text">Instruction: update the memory to retain information useful for this question
+&lt;problem&gt;question&lt;/problem&gt;
+&lt;memory&gt;previous generated memory&lt;/memory&gt;
+&lt;section&gt;current document chunk&lt;/section&gt;
+Request: updated memory
+</code></pre>
+<p>This is a shortened explanation of the <a href="https://github.com/BytedTsinghua-SIA/MemAgent/blob/ef4219b23499a069cb00e5daff4c426d4c600851/quickstart.py">released templates</a>, not their verbatim prompt. Use the actual template for a reproduction.</p>
+<p>The first memory is an explicit no-previous-memory marker. Later requests contain the previous output, not all earlier prompts. The writer is expected to retain still-useful old details while adding useful new ones.</p>
+<h2>Step 3 — Replace memory, rather than append to it</h2>
+<pre><code class="language-python">def run_memagent(question, chunk_texts, generate, memory_budget):
+    memory = &quot;No previous memory&quot;
+    calls = []
+    for chunk in chunk_texts:
+        prompt = {
+            &quot;question&quot;: question,
+            &quot;memory&quot;: memory,
+            &quot;chunk&quot;: chunk
+        }
+        new_memory = generate(&quot;update_memory&quot;, prompt, memory_budget)
+        calls.append((prompt, new_memory))
+        memory = new_memory
+    answer_input = {&quot;question&quot;: question, &quot;memory&quot;: memory}
+    answer = generate(&quot;answer&quot;, answer_input, memory_budget)
+    return answer, calls
+</code></pre>
+<p>Here <code>generate</code> is the model adapter: it must render the selected template and make a fresh request. It is not a hidden retrieval or memory algorithm. The actual algorithm is the construction and replacement around that call.</p>
+<p>The local <code>calls</code> list is a diagnostic/training record. It must not be appended to the model input, or the test no longer measures the intended bottleneck.</p>
+<p>An API failure should stop or retry the affected call under an explicit policy. Treating an empty failed response as a valid memory would silently erase prior information; guarding against that is recommended harness engineering.</p>
+<h2>Step 4 — Trace a question that requires two chunks</h2>
+<p>Question: “Which acquisition preceded the director's resignation?”</p>
+<pre><code class="language-text">chunk 1:
+  The company acquired Orion in 2018.
+  Many unrelated events follow.
+
+model output M1:
+  Acquisition: Orion, 2018.
+
+chunk 2:
+  The director resigned in 2020.
+  Another acquisition occurred in 2022.
+
+model output M2:
+  Orion acquired in 2018; director resigned in 2020;
+  later acquisition in 2022. Orion precedes the resignation.
+
+final request:
+  question + M2, no document chunks
+
+answer:
+  Orion
+</code></pre>
+<p>These are invented outputs. The important dependency is that chunk 2's call cannot recover “2018” if M1 lost it. At the same time, storing every unrelated event would consume the bounded memory.</p>
+<p>This example explains why a memory writer can produce fluent summaries yet perform poorly: it must retain the particular relation needed by the eventual answer.</p>
+<h2>Step 5 — Make the final answer call</h2>
+<p>After consuming the selected chunks, switch to the answer template. It contains the question and final memory, but no new chunk. The released template requests a boxed answer for its evaluator.</p>
+<p>The last memory write and the answer are different generations. Do not score the memory text as though it were the final answer. In batched recurrent inference, keep sample identities straight when documents have different chunk counts.</p>
+<p>The recurrent code tracks which conversations are final and maps conversations back to original samples. That bookkeeping is essential for training credit.</p>
+<p><img alt="MemAgent recurrent memory flow" src="../tutorials/assets/memory-management/memagent.png" /></p>
+<p><em>Original source figure: each next call receives compact memory rather than the preceding document.</em></p>
+<h2>Step 6 — Train the writer with Multi-Conv DAPO</h2>
+<p>For each document/question, sample a group of complete memory-and-answer rollouts. Verify each final answer against gold. Give every generated conversation in rollout i the same advantage:</p>
+<div class="arithmatex">\[
+A_i=R_i-\mathrm{mean}(R_1,\ldots,R_G).
+\]</div>
+<p><strong>Do not divide by group standard deviation in this paper's formulation.</strong> Optimize the token-level clipped policy objective across group, conversation, and output-token axes, normalized by the total generated-token count; it uses separate lower/upper clipping bounds and a reference-KL term in the stated objective. Each token's probability must be computed under its own actual conversation input. <a href="https://arxiv.org/html/2507.02259v2">Paper, Section 2.2</a></p>
+<p>To implement the clipping, for each generated token <span class="arithmatex">\(u\)</span> compute
+<span class="arithmatex">\(\rho_u=\exp(\log\pi_\theta(u\mid x)-\log\pi_{\mathrm{old}}(u\mid x))\)</span>,
+where <span class="arithmatex">\(x\)</span> is that token's actual within-conversation prefix. Its reward term is:</p>
+<div class="arithmatex">\[
+\min(\rho_u A_i,\operatorname{clip}(\rho_u,1-\epsilon_{\mathrm{low}},1+\epsilon_{\mathrm{high}})A_i).
+\]</div>
+<p>Sum over generated tokens across conversations and divide by their total count; subtract the configured reference-KL penalty when maximizing this objective. The input mask prevents document and question tokens from becoming policy actions.</p>
+<p>For illustrative rewards [1, 0, 1, 0], advantages are [+0.5, -0.5, +0.5, -0.5]. M1, M2, and the final answer of the first rollout all receive +0.5. That shared signal rewards a successful chain without claiming to know which individual memory sentence was responsible.</p>
+<p>The training record you need is:</p>
+<pre><code class="language-text">original sample ID
+rollout-group ID
+for every memory/answer conversation:
+  exact prompt token IDs
+  generated token IDs
+  generated-token mask
+  sampling-policy log probabilities
+  final-conversation flag
+final verified reward for the rollout
+</code></pre>
+<p>Gold is used by the final verifier. It is not an extra field in the runtime memory prompt. Parameter updates improve future writing; runtime memory remains ordinary text.</p>
+<h2>Implementation and reproduction tests</h2>
+<p>Use a fake model adapter that returns M1, M2, then the answer. Assert that the second call contains M1 and chunk 2 but not chunk 1; assert that the final call contains only the question and M2. Check overwrite rather than append, token-budget enforcement, sample-ID mapping, and reward broadcast.</p>
+<p>For training, assert that output tokens from all conversations—not only the final answer—contribute to the intended loss, while prompt tokens are masked out.</p>
+<p>A new question/document initializes its memory again. The trained model persists, but the previous task's generated notebook does not. Running the loop with an untrained model tests the interface; reproducing the paper's learned method requires its training procedure/checkpoint.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

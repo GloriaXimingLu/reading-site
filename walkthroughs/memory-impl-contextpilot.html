@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing ContextPilot: explicit memory tools and branch-based training</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ContextPilot: explicit memory tools and branch-based training</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#contextpilot">Short overview</a></p>
+<p>ContextPilot has two pieces to implement: a tool-using agent that can edit its context, and an RL procedure that explores alternative edits. Giving a model the tools implements the harness, not the trained policy.</p>
+<p>The tool examples follow the <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/infer/tools/context-shaper_tools.json">inference schema at 782cbb6</a>. The training explanation adapts Pan et al.'s <a href="https://arxiv.org/html/2608.28476">paper, Sections 4.2–4.3</a>, available under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Worked numbers and example documents are invented.</p>
+<h2>1. Separate four kinds of state</h2>
+<table>
+<thead>
+<tr>
+<th>Store</th>
+<th>Example</th>
+<th>How the model accesses it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source chunks</td>
+<td>Chunk 17 of a novel</td>
+<td>Search an index, then read a chunk</td>
+</tr>
+<tr>
+<td>Active messages</td>
+<td>Message 8 containing a retrieved passage</td>
+<td>Already in the next prompt, unless edited</td>
+</tr>
+<tr>
+<td>Structured memories</td>
+<td>Key <code>departure</code> with facts and provenance</td>
+<td>Available-memory listing, then <code>loadMemory</code></td>
+</tr>
+<tr>
+<td>Simple notes</td>
+<td>Key <code>open_questions</code> with a task checklist</td>
+<td>Note listing, then <code>readNote</code></td>
+</tr>
+</tbody>
+</table>
+<p>A memory key, source chunk ID, and message ID are not interchangeable. Deleting message 8 need not delete source chunk 17 or the memory derived from it. Without this separation, “offload context” risks deleting the only evidence.</p>
+<p>Keep stable message IDs even when you replace bodies. Do not use a shrinking list's current offset as a historical ID in your own implementation.</p>
+<h2>2. Run the read–write–offload cycle</h2>
+<p>Suppose the question is “Why did Mira leave after the meeting?”</p>
+<ol>
+<li>Make source metadata and the available tools visible.</li>
+<li>The model chooses a plan and index/search operations.</li>
+<li>A search returns candidate chunk IDs; the model calls <code>readChunk</code> to inspect a relevant passage.</li>
+<li>The returned passage becomes an addressable tool-result message.</li>
+<li>The model decides what to preserve and calls <code>memorize</code> or <code>note</code>.</li>
+<li>The tool stores the record and reports success.</li>
+<li>The model chooses a context-editing tool for the now-redundant message.</li>
+<li>The runner modifies that message, rebuilds the active prompt and the memory listings, and calls the model again.</li>
+</ol>
+<p>Do not automatically perform steps 5–7 after every read and call it the same policy. In ContextPilot these are actions the policy chooses; the data-generation harness can impose additional cleanup guidance.</p>
+<h2>3. Make a complete memory call</h2>
+<p>If message 8 contains chunk 17, an illustrative <strong>schema-complete argument object</strong> is:</p>
+<pre><code class="language-json">{
+  &quot;key&quot;: &quot;departure&quot;,
+  &quot;summary&quot;: &quot;Mira left because the meeting revealed the broken agreement.&quot;,
+  &quot;content&quot;: &quot;Mira connects her departure to the broken agreement, not to the weather.&quot;,
+  &quot;entities&quot;: &quot;Mira: person; agreement: commitment discussed at the meeting&quot;,
+  &quot;episodes&quot;: &quot;Departure follows the meeting; exact calendar date unspecified&quot;,
+  &quot;relations&quot;: [
+    {
+      &quot;source&quot;: &quot;meeting&quot;,
+      &quot;target&quot;: &quot;departure&quot;,
+      &quot;relation&quot;: &quot;precedes&quot;,
+      &quot;description&quot;: &quot;Mira leaves after the meeting.&quot;,
+      &quot;evidence&quot;: &quot;chunk 17, message 8&quot;
+    }
+  ],
+  &quot;source&quot;: {&quot;chunk_ids&quot;: [17], &quot;msg_ids&quot;: [8]}
+}
+</code></pre>
+<p>This object is sent to <code>memorize</code>. The model must derive its content from the inspected passage; the example is not a reference answer injected by the harness.</p>
+<p>Notice that <code>entities</code> and <code>episodes</code> are <strong>strings</strong>, whereas <code>relations</code> and <code>source</code> are structured JSON. All top-level fields are required. When nothing supports a relation, use an empty array; do not fabricate a graph edge just to populate the field.</p>
+<p>The simpler <code>note</code> takes <code>key</code>, <code>summary</code>, and <code>content</code>. Use it for a checklist that does not require the entity/event schema.</p>
+<h2>4. Edit the active context without confusing the operations</h2>
+<table>
+<thead>
+<tr>
+<th>Released tool</th>
+<th>Argument contract</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deleteContext</code></td>
+<td><code>msg_id</code></td>
+<td>Replace the target with a placeholder</td>
+</tr>
+<tr>
+<td><code>truncateContext</code></td>
+<td><code>msg_id, start_sentence, stop_sentence</code></td>
+<td>Keep an inclusive sentence span in an eligible read/search result</td>
+</tr>
+<tr>
+<td><code>summarizeContext</code></td>
+<td><code>msg_id, summary</code></td>
+<td>Replace eligible tool-result text with the model-supplied summary</td>
+</tr>
+<tr>
+<td><code>compressContext</code></td>
+<td><code>msg_id, compression_rate</code></td>
+<td>Ask the configured compressor to retain a percentage</td>
+</tr>
+</tbody>
+</table>
+<p>For this example, the model could call <code>summarizeContext</code> with message 8 and a short, faithful statement of the meeting evidence. The <strong>writer supplies that summary</strong>; the tool is not secretly consulting the answer key.</p>
+<p>The automatic compressor path is different: the inspected tool implementation attempts LLMLingua-2 and has a random-word-sampling fallback when compression is unavailable. That fallback can destroy evidence. Log which path ran, and consider making fallback an explicit failure in an adapted experiment. Do not describe it as guaranteed semantic preservation. <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/train/verl/tools/contextpilot_memory.py">Memory tool implementation</a></p>
+<h2>5. Read the memory later</h2>
+<p>After unrelated investigation, the active prompt lists <code>departure</code>. The model sends:</p>
+<pre><code class="language-json">{&quot;key&quot;: &quot;departure&quot;, &quot;max_related&quot;: 5}
+</code></pre>
+<p>to <code>loadMemory</code>. It receives the requested record and directly related memories. This is <strong>key-addressed loading with graph neighbors</strong>, not an arbitrary semantic query over all notes. The schema requires a key copied from the available-memory listing.</p>
+<p>If the returned fact is insufficient, the model can use provenance to read chunk 17 again. The source, not a second summary of the summary, is the check on disputed wording.</p>
+<p>To edit a stored record, <code>updateMemory</code> supports append, overwrite, and delete modes. Its strict schema still requires all update fields; delete uses empty payload fields. Editing a memory record does not itself remove the old source message.</p>
+<p>The paper names <code>readMemory</code> and <code>searchContext</code>, while this schema uses <code>loadMemory</code> and <code>searchEngine</code>. The paper also discusses <code>foldHistory</code>, absent from this inspected inference schema. Copy the schema for the implementation you are actually running.</p>
+<h2>6. Reproduce the supervised stage</h2>
+<p>Collect teacher trajectories with the same source stores, message IDs, memory schema, and editing semantics as deployment. During collection, guidance can require reading retrieved evidence and cleanup near the context limit. Remove those generation-time hints from the final training input.</p>
+<p>Filter for correct answers and usable context-management behavior, then segment at context edits. Save the actual model-visible prompt for each segment: an edited history cannot be reconstructed by simply taking a prefix of the raw transcript.</p>
+<p>Train on the target assistant/tool-call tokens with input and tool-result tokens masked from the prediction loss. This teaches valid operations before optimizing which operations improve task success.</p>
+<h2>7. Explore alternative context edits during RL</h2>
+<p>Collect complete rollouts, then identify their context-edit boundaries. For each edit, compute:</p>
+<div class="arithmatex">\[
+\Delta C=|L_{\mathrm{after}}-L_{\mathrm{before}}|/L_{\mathrm{before}},
+\qquad
+\Delta H=H_{\mathrm{after}}-H_{\mathrm{initial}},
+\qquad
+S=\alpha\Delta C+\beta\Delta H.
+\]</div>
+<p>Here entropy is the average over the first <span class="arithmatex">\(k\)</span> generated tokens following the relevant observation. The reference is the <strong>initial trajectory entropy</strong>, not the immediately preceding edit.</p>
+<p>For an invented edit that changes length 10,000→2,000 and entropy 1.2→1.5, <span class="arithmatex">\(\alpha=\beta=1\)</span> gives <span class="arithmatex">\(S=0.8+0.3=1.1\)</span>. This selects where to spend exploration, not whether the edit was good.</p>
+<p>If the initial rollouts yield <span class="arithmatex">\(M\)</span> snapshots below budget <span class="arithmatex">\(N\)</span>, rank candidate edits by sensitivity and use the remaining budget for partial rollouts. <strong>Branch from the parent of the selected edit</strong>, allowing a different edit to be sampled. Branching after the edit would never test whether that edit should have been different.</p>
+<p>The paper's recipe starts with eight rollouts, up to eight snapshots each, and fills a 128-snapshot budget per query. These are training settings, not extra inference calls required at deployment.</p>
+<h2>8. Turn terminal outcomes into update weights</h2>
+<p>Grade each terminal branch using answer correctness, output format, and tool/context penalties. An intermediate snapshot gets the mean reward of terminal branches that descend from it:</p>
+<pre><code class="language-python">def snapshot_value(descendant_rewards):
+    if not descendant_rewards:
+        raise ValueError(&quot;a snapshot needs a completed descendant&quot;)
+    return sum(descendant_rewards) / len(descendant_rewards)
+</code></pre>
+<p>Illustratively, an edit that deleted the crucial reason has descendant rewards [0, 0]; its value is 0. A preserve-then-offload edit with [1, 1] has value 1. A common ancestor has value 0.5. These are sampled estimates, not proof that memory alone caused the result.</p>
+<p>Standardize snapshot values against the mean and standard deviation of <strong>all snapshots for the same query</strong>, then use those advantages in a clipped GRPO update. Preserve each snapshot's real prefix, generated-token mask, and old-policy log probabilities. Inherited text must not become newly sampled output merely because it appears in multiple snapshots.</p>
+<p>Ground truth belongs in the terminal grader. It is not added to the runtime <code>memorize</code> arguments. The gradient teaches the policy from outcomes across branches.</p>
+<h2>9. Minimum conformance tests</h2>
+<ul>
+<li>A schema-valid memory round-trips by its exact key.</li>
+<li>Deleting a message leaves its source chunk and saved memory accessible.</li>
+<li>Missing keys return a tool error, not a guessed memory.</li>
+<li>Cleanup reduces the <strong>actual next prompt</strong>, not only a display log.</li>
+<li>A training branch can choose a different edit at the same parent.</li>
+<li>Snapshot values use all completed descendants; empty descendants are not reward zero.</li>
+<li>Gold answers occur in grading records, not inference prompts.</li>
+<li>Compressor failures and token-limit violations remain visible.</li>
+</ul>
+<p>For a first implementation, make the tool semantics work with a frozen model. Treat that as the paper's tools-only baseline; add the snapshot collector and RL update only when reproducing the learned method.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

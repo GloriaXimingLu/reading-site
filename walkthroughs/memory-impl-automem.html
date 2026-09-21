@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing AutoMem: evolve the scaffold, then train a memory specialist</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing AutoMem: evolve the scaffold, then train a memory specialist</h1><p class="meta">7 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#automem">Short overview</a></p>
+<p>AutoMem is not one fixed “summarize the past” prompt. It searches for a memory scaffold, then trains a model to operate that scaffold. To make this implementable, we will first run one concrete released scaffold: <strong>Crafter v5, two-model mode</strong>. Then we will separate its two offline improvement loops from its ordinary gameplay loop.</p>
+<p>Source pin: <a href="https://github.com/autoLearnMem/AutoMem/tree/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b">AutoMem at 1987b8f</a>. Do not assume the other environments or scaffold versions have identical prompts and operations.</p>
+<h2>1. Allocate episode files and two model clients</h2>
+<p>Maintain these conceptual objects:</p>
+<pre><code class="language-text">episode:
+  previous_action
+  current_observation
+  notebook_directory
+  environment/scaffold state
+  phase debug records
+
+memory_client:
+  LOG writing + PLAN memory consultation
+
+gameplay_client:
+  frozen base model making the final world-action choice
+</code></pre>
+<p>The notebook contains actual files that survive between steps of one episode. Initial files can contain supplied game knowledge or goals. Distinguish that supplied knowledge from facts the agent discovers.</p>
+<p>The scaffold also computes context such as inventory, threats, map information, and action prerequisites. Therefore its performance is not attributable solely to a learned text compressor.</p>
+<p>Episode reset clears/reinitializes the notebook for that episode. The scaffold code and trained adapter survive resets; a previous episode's discoveries do not automatically become a global knowledge bank. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/scaffolds/crafter_v5_twomodel/agents/memory_agent.py">Runtime implementation</a></p>
+<h2>2. Begin LOG after observing the previous action's result</h2>
+<p>Construct a fresh LOG conversation containing:</p>
+<ul>
+<li>the action just taken;</li>
+<li>the current observation;</li>
+<li>the notebook's file index;</li>
+<li>the scaffold's logging instructions and computed warnings.</li>
+</ul>
+<p>It is not a dump of the complete episode. The memory model can request file content when the index is insufficient.</p>
+<p>Suppose an attempted crafting action failed because a resource is missing. A useful note should preserve the failed prerequisite and current resource status, not invent a successful craft.</p>
+<p>Illustrative operations in the release's tag syntax:</p>
+<pre><code class="language-text">&lt;|SEARCH|&gt;events.txt|craft&lt;|END|&gt;
+&lt;|TAIL|&gt;events.txt|8&lt;|END|&gt;
+</code></pre>
+<p>Return the search/tail results as the next conversation message. The memory model can now avoid duplicating an existing note.</p>
+<h2>3. Execute notebook operations and finish LOG</h2>
+<p>Common operation forms are:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>READ</code> filename</td>
+<td>Read a file</td>
+</tr>
+<tr>
+<td><code>SEARCH</code> filename|keyword</td>
+<td>Return matching content</td>
+</tr>
+<tr>
+<td><code>TAIL</code> filename|N</td>
+<td>Read the last N lines</td>
+</tr>
+<tr>
+<td><code>COUNT</code> filename|keyword</td>
+<td>Count matching occurrences</td>
+</tr>
+<tr>
+<td><code>APPEND</code> filename|text</td>
+<td>Append a record</td>
+</tr>
+<tr>
+<td><code>WRITE</code> filename|text</td>
+<td>Replace file contents</td>
+</tr>
+<tr>
+<td><code>CREATE</code> filename</td>
+<td>Create a file</td>
+</tr>
+</tbody>
+</table>
+<p>The operation name appears inside <code>&lt;|...|&gt;</code> and arguments terminate at <code>&lt;|END|&gt;</code>. The selected scaffold also has specialized map handling; these common file operations are not its entire parser.</p>
+<p>An illustrative continuation is:</p>
+<pre><code class="language-text">&lt;|APPEND|&gt;events.txt|Craft attempt failed: insufficient wood. Collect wood before retrying; do not repeat the same action with unchanged inventory.&lt;|END|&gt;
+&lt;|DONE|&gt;
+</code></pre>
+<p>The harness performs the write, returns its result as needed, and terminates LOG on the completion marker or its bounded iteration limit. A valid LOG phase can choose to write nothing. “Store every observation” is not the rule.</p>
+<p>The failure signal here comes from the observed environment/scaffold context. LOG does not receive an evaluator's future optimal action sequence.</p>
+<h2>4. Start PLAN as a new conversation</h2>
+<p>PLAN receives the current observation, goals, file index, and planning guidance. It does <strong>not</strong> inherit the entire LOG chat. The files are the durable connection between the phases.</p>
+<p>During memory consultation, the memory client can use the permitted read operations. For example:</p>
+<pre><code class="language-text">&lt;|SEARCH|&gt;events.txt|insufficient&lt;|END|&gt;
+</code></pre>
+<p>The result tells it the last attempt failed from missing wood. The consultation context now includes both the current inventory and the relevant prior failure.</p>
+<p>PLAN is read-only with respect to these notebook operations in the selected scaffold. If your implementation accepts an APPEND from PLAN, you changed the phase contract; it is not merely a different prompt.</p>
+<h2>5. Hand the same PLAN conversation to the gameplay model</h2>
+<p>This handoff is an important implementation detail:</p>
+<ol>
+<li>Run the memory model's bounded consultation loop.</li>
+<li>Append its read requests and returned file contents to PLAN.</li>
+<li>If its response contains an ACTION tag, strip that commitment before handing off. Keep the permitted consultation material.</li>
+<li>Add the handoff instruction.</li>
+<li>Call the gameplay model with the accumulated PLAN conversation.</li>
+<li>Allow that model to inspect more memory if needed, then emit the actual action.</li>
+<li>Check scaffold prerequisites; a rejected action can trigger another bounded attempt.</li>
+<li>Return the accepted action to the environment.</li>
+</ol>
+<p>Thus a trained memory specialist does not replace the frozen gameplay model. A memory-model ACTION is a transition out of consultation, not direct permission to execute that world action. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/scaffolds/crafter_v5_twomodel/agents/memory_agent.py">Two-model PLAN loop</a></p>
+<h2>6. Trace two complete steps</h2>
+<pre><code class="language-text">Step t:
+  Environment: craft failed, insufficient wood.
+  LOG memory model: search notes → append missing-wood lesson → DONE.
+  PLAN memory model: read the lesson and inventory.
+  PLAN gameplay model: select an available wood-collection action.
+  Environment executes action.
+
+Step t+1:
+  Observation: inventory now contains more wood.
+  New LOG conversation: record a meaningful inventory change if useful.
+  New PLAN conversation: consult prerequisites and choose the next action.
+</code></pre>
+<p>The unchanged elements are the frozen gameplay weights and scaffold implementation. The changed elements are notebook contents and environment state. No optimizer runs between these two gameplay steps.</p>
+<h2>7. Offline loop one: improve the scaffold</h2>
+<p>Run the current scaffold on a fixed training/evaluation protocol and retain full traces, final notebook files, failures, and scores. A meta-level model inspects these artifacts and proposes edits to the <strong>scaffold code and prompts</strong>. Evaluate the candidate with the same protocol, compare it with the incumbent, and retain improvements according to the loop's scoring logic.</p>
+<p>Examples of the search space include what the LOG prompt exposes, how files are organized, and what planning guidance the harness supplies. These are candidate design changes, not additional runtime memory entries.</p>
+<p>To reproduce a comparison, version the candidate source, model, seed/task set, action budget, and score aggregation together. Otherwise a better score cannot be assigned to the scaffold edit. See the <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/loop1_scaffold_evolution/meta_loop.py">scaffold evolution driver</a>.</p>
+<h2>8. Offline loop two: select trace turns and train</h2>
+<p>The data engine selects the base model's own LOG turns and the memory-consultation part of PLAN. Selection is <strong>verbatim from traces</strong>, but the training pipeline then applies explicit deterministic transformations:</p>
+<ol>
+<li>Unwrap code fences around operation tags.</li>
+<li>End LOG targets at DONE.</li>
+<li>Remove PLAN's final ACTION commitment.</li>
+<li>Drop final responses with no remaining memory operation.</li>
+<li>Trim text after the last memory-operation terminator.</li>
+<li>Drop residual malformed fenced examples.</li>
+</ol>
+<p>That distinction matters: “verbatim selection” does not mean the final SFT target includes the world action. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/loop2_training_engine/data_engine.py">Selection contract and transformations</a></p>
+<p>Each selected example is a conversation for <strong>one phase</strong>, including its intermediate read results where present. The training target is an assistant memory-operation response in the same context form used at deployment. Do not concatenate an episode's separate phases into one invented conversation.</p>
+<p>Train the memory specialist with the selected data and candidate LoRA recipe; evaluate it paired with the frozen gameplay model. The outer training engine can revise the data and recipe based on measured results. This is offline selection and supervised training, not online reinforcement learning at each game step. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/loop2_training_engine/training_engine.py">Training engine</a></p>
+<h2>9. Check the three feedback boundaries</h2>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What can use feedback?</th>
+<th>What changes?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime LOG/PLAN</td>
+<td>Observations, action results, scaffold guidance</td>
+<td>Episode notebook and next action</td>
+</tr>
+<tr>
+<td>Scaffold evolution</td>
+<td>Completed runs, scores, traces, files</td>
+<td>Prompts/code/tool organization</td>
+</tr>
+<tr>
+<td>Specialist training loop</td>
+<td>Selected traces and candidate evaluation</td>
+<td>Data selection and memory-model adapter</td>
+</tr>
+</tbody>
+</table>
+<p>A meta-level learner seeing full completed episodes does not imply the runtime writer sees future observations. Preserve the original per-turn prompt in selected data.</p>
+<p>Minimum tests: LOG writes survive into PLAN; PLAN cannot silently write; the memory model's ACTION is not executed; notebook reset removes episode discoveries; trained weights survive reset; deterministic target processing removes final action commitments. These tests identify the architecture before any benchmark score does.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

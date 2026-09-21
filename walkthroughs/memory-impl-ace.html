@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementing ACE: generator, reflector, counters, and playbook deltas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Implementing ACE: generator, reflector, counters, and playbook deltas</h1><p class="meta">6 min · 1 implementation chapter · 2026-09-21</p><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-reading-edition.html#ace">Short overview</a></p>
+<h2>What you are building</h2>
+<p>Build a persistent playbook that changes through feedback on solved examples. ACE separates <strong>doing the task</strong>, <strong>diagnosing the attempt</strong>, and <strong>deciding what to retain</strong>. Those are distinct model calls, while applying IDs and counters is ordinary code.</p>
+<p>We use the <a href="https://github.com/ace-agent/ace/tree/82709de050e1db6e6ef2f07bcb0393560b94992a">pinned ACE release</a>. Its actual adaptation loop includes retries and a post-curation generation. That is more specific than the conceptual Generator → Reflector → Curator diagram.</p>
+<h2>Step 1 — Represent the playbook and its identifiers</h2>
+<p>A useful in-memory view is:</p>
+<pre><code class="language-python">playbook = {
+    &quot;calc-00001&quot;: {
+        &quot;section&quot;: &quot;Calculation checks&quot;,
+        &quot;content&quot;: &quot;Extract the two reported values before calculating growth.&quot;,
+        &quot;helpful&quot;: 2,
+        &quot;harmful&quot;: 0
+    }
+}
+next_global_id = 2
+</code></pre>
+<p>This is our normalized representation. The release stores a formatted text playbook, parses its lines, and renders counters with each bullet. IDs are stable references: the Generator cites them; the Reflector tags them; the counter updater locates them.</p>
+<p>Keep a section map and a monotonically increasing global ID counter. Persist the counter with the playbook, or reconstruct it safely when resuming. Reusing an ID would attach later feedback to the wrong instruction.</p>
+<p>The Generator receives the playbook context. Do not silently replace this with your own top-k retrieval system and call that the same condition.</p>
+<h2>Step 2 — Run the initial Generator call and preserve its score</h2>
+<p>The <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/prompts/generator.py">Generator prompt</a> takes question, task context, playbook, and reflection. The first reflection is empty. Its structured output has:</p>
+<pre><code class="language-json">{
+  &quot;reasoning&quot;: &quot;The values are 120 and 100, giving a 20% increase.&quot;,
+  &quot;bullet_ids&quot;: [&quot;calc-00001&quot;],
+  &quot;final_answer&quot;: &quot;20%&quot;
+}
+</code></pre>
+<p>The content is an invented visible rationale, not a record from the paper. The crucial machine-readable parts are the answer and IDs. Resolve IDs against the playbook; do not treat an invented ID as an existing bullet.</p>
+<p>Now evaluate the answer and save it as the <strong>pre-adaptation</strong> result. Subsequent retries must not replace that result when measuring first-attempt online performance.</p>
+<h2>Step 3 — Construct the Reflector input explicitly</h2>
+<p>The Reflector receives:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Question</td>
+<td>The task</td>
+</tr>
+<tr>
+<td>Reasoning trace and predicted answer</td>
+<td>The Generator output</td>
+</tr>
+<tr>
+<td>Used bullet text</td>
+<td>Resolve the Generator's cited IDs</td>
+</tr>
+<tr>
+<td>Environment feedback</td>
+<td>The benchmark/task adapter</td>
+</tr>
+<tr>
+<td>Ground truth, optionally</td>
+<td>The allowed reference-answer channel</td>
+</tr>
+</tbody>
+</table>
+<p>Its job is to identify the failure or effective strategy and tag used bullets as helpful, harmful, or neutral. An illustrative complete output is:</p>
+<pre><code class="language-json">{
+  &quot;reasoning&quot;: &quot;The arithmetic is consistent with the extracted numbers, but the periods differ.&quot;,
+  &quot;error_identification&quot;: &quot;A quarterly amount was compared with an annual amount.&quot;,
+  &quot;root_cause_analysis&quot;: &quot;The extraction step did not check period compatibility.&quot;,
+  &quot;correct_approach&quot;: &quot;Find values for matching periods, then recompute the change.&quot;,
+  &quot;key_insight&quot;: &quot;Check units and reporting periods before applying a growth formula.&quot;,
+  &quot;bullet_tags&quot;: [{&quot;id&quot;: &quot;calc-00001&quot;, &quot;tag&quot;: &quot;neutral&quot;}]
+}
+</code></pre>
+<p>These fields follow the <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/prompts/reflector.py">Reflector output contract</a>. In the growth example, extracting two values was reasonable, but their reporting periods were incomparable. A neutral tag is plausible; it is a model judgment, not a mathematically determined attribution.</p>
+<p><strong>Important code-level feedback detail:</strong> in this release's single-sample adaptation function, correctness is checked against the target even when the full target is hidden from the Reflector. The no-ground-truth option removes answer text, but the Reflector can still be told whether the prediction matched it. This setting is not observation-only learning. <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/ace.py">Actual call arguments</a></p>
+<h2>Step 4 — Apply tags in code, then follow the retry branch</h2>
+<p>The counter update is small and deterministic:</p>
+<pre><code class="language-python">def apply_tags(playbook, tags):
+    # Teaching representation; the release parses and rewrites text lines.
+    for tag in tags:
+        bullet = playbook.get(tag[&quot;id&quot;])
+        if bullet is None:
+            continue
+        if tag[&quot;tag&quot;] == &quot;helpful&quot;:
+            bullet[&quot;helpful&quot;] += 1
+        elif tag[&quot;tag&quot;] == &quot;harmful&quot;:
+            bullet[&quot;harmful&quot;] += 1
+        # &quot;neutral&quot; leaves both counters unchanged.
+</code></pre>
+<p>Counters are evidence about usage, not a probability of correctness.</p>
+<p>If the initial answer was wrong, the inspected loop runs bounded reflection/regeneration rounds. Each regeneration receives the reflection plus current playbook; its answer is checked again. It can stop when corrected. If the initial answer was correct, the loop still reflects to tag useful bullets. <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/ace.py">Loop and configuration</a></p>
+<p>This distinction explains why an implementation cannot account for ACE as exactly three model calls per example.</p>
+<h2>Step 5 — Ask the Curator for an operation list</h2>
+<p>At the configured curation frequency, pass the current playbook, recent reflection, task context, step information, token budget, and playbook statistics to the Curator. Ask for deltas, not a replacement essay.</p>
+<pre><code class="language-json">{
+  &quot;reasoning&quot;: &quot;The playbook lacks a reporting-period check.&quot;,
+  &quot;operations&quot;: [
+    {
+      &quot;type&quot;: &quot;ADD&quot;,
+      &quot;section&quot;: &quot;Calculation checks&quot;,
+      &quot;content&quot;: &quot;Compare matching reporting periods and units before calculating growth.&quot;
+    }
+  ]
+}
+</code></pre>
+<p>The <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/core/curator.py">Curator parser</a> expects the outer reasoning and operations fields. The section name here is illustrative and assumes that section already exists.</p>
+<p>In the pinned implementation, ADD is the supported application operation. Comments mentioning UPDATE, MERGE, or DELETE do not implement those operations. Paper-level refinement and optional analyzer behavior must not be confused with an arbitrary-edit Curator API.</p>
+<h2>Step 6 — Apply the delta without rewriting unrelated bullets</h2>
+<p>For each accepted ADD: normalize the section, choose the release's fallback section if needed, allocate the next ID, initialize both counters to zero, and append the content to that section.</p>
+<pre><code class="language-python">def add_bullet(playbook, next_id, section, content):
+    # Demonstration ID prefix; use the release's section-slug mapping in a port.
+    bullet_id = f&quot;calc-{next_id:05d}&quot;
+    if bullet_id in playbook:
+        raise ValueError(&quot;duplicate bullet ID&quot;)
+    playbook[bullet_id] = dict(
+        section=section, content=content, helpful=0, harmful=0
+    )
+    return next_id + 1
+</code></pre>
+<p>After our addition:</p>
+<pre><code class="language-text">calc-00001: original extraction advice; helpful=2, harmful=0
+calc-00002: new period/unit check; helpful=0, harmful=0
+next_global_id: 3
+</code></pre>
+<p>The <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/playbook_utils.py">application layer</a> owns these updates. Optional BulletpointAnalyzer refinement can merge overlap when enabled; report its configuration instead of assuming it always runs.</p>
+<h2>Step 7 — Generate after curation, then start the next example</h2>
+<p>The release makes another generation with the revised playbook and empty reflection, and records a post-adaptation result. On the next example, the persisted playbook is the reusable artifact; the previous example's entire conversation is not copied forward.</p>
+<pre><code class="language-text">for example:
+    initial = Generator(question, context, playbook, empty reflection)
+    record initial answer and correctness
+    if wrong:
+        repeat up to configured reflection rounds:
+            reflection, tags = Reflector(attempt, used bullets, allowed feedback)
+            increment helpful/harmful counters
+            attempt = Generator(question, context, playbook, reflection)
+            stop retrying if corrected
+    else:
+        reflection, tags = Reflector(initial attempt, used bullets, feedback)
+        increment counters
+    if curation is scheduled:
+        operations = Curator(playbook, latest reflection, context, budget)
+        apply supported additions with stable IDs
+        optionally run configured overlap analyzer
+    final_probe = Generator(question, context, playbook, empty reflection)
+    record post-adaptation result separately
+</code></pre>
+<h2>What you should test before calling this ACE</h2>
+<p>Use a fake Generator/Reflector/Curator with predetermined outputs. Check that the correct branch uses one reflection; the wrong branch respects its retry cap; neutral tags do not change counters; ADD does not alter unrelated content; unsupported operation types do not magically mutate the book; and pre/post scores remain distinct.</p>
+<p>Model weights remain frozen in this textual adaptation procedure. <a href="https://arxiv.org/html/2510.04618">The paper</a> explains grow-and-refine context adaptation; this chapter spells out the chosen release's orchestration, rather than assuming all ACE implementations have identical control flow.</p></article>
+<footer>Generated 2026-09-21 07:25 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>
