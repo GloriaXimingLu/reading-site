@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex Memory: Sessions, Consolidation, and Retrieval</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Codex Memory: Sessions, Consolidation, and Retrieval</h1><p class="meta">2 min · 1 implementation deep dive · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All memory methods</a> · <a href="memory-impl-codex.html">Separate topic: in-session compaction</a></p>
+<p><strong>The idea:</strong> a background writer extracts lessons from individual sessions; a consolidation agent turns them into a shared handbook; the next solver receives a small index and searches for the details it needs.</p>
+<p>This is <strong>cross-session memory</strong>, not the compaction that shortens an unfinished conversation. The following example is invented; no private session data is reproduced.</p>
+<h2>1. A coding session leaves evidence</h2>
+<p>In a fictional project, Juniper, a product cache returns tenant A's data to tenant B. The agent discovers that the cache key omits the tenant ID. It patches the key and passes a two-tenant regression. The full suite remains unrun.</p>
+<p>The saved session contains the request, investigation, tool results, patch, and qualification about tests.</p>
+<h2>2. A separate writer extracts that session</h2>
+<p>Later, after the session becomes eligible, a background model call reads its filtered record. It produces a session recap and candidate reusable lessons.</p>
+<p>The lesson is specific: “In Juniper's product cache, check tenant identity in the key.” It must not turn “one regression passed” into “all tests passed.”</p>
+<h2>3. The program stages the writer's output</h2>
+<p>It stores the structured result in a database. A later consolidation pass materializes selected results as Markdown files.</p>
+<p>Important: the file named <strong>raw_memories.md already contains LLM-written notes</strong>, not the original conversation.</p>
+<h2>4. A consolidation agent creates higher-level memory</h2>
+<p>It reads what changed, updates a searchable handbook, and writes a compact index. If another session establishes a similar failure in an authorization cache, it can connect those findings.</p>
+<p>A defensible abstraction is: “For Juniper caches whose results depend on identity, check which identity inputs the key omits.” It preserves which sessions support the claim.</p>
+<p>A repeated, verified workflow may also become a skill.</p>
+<h2>5. A new solver receives the small index</h2>
+<p>A later request mentions wrong cached results. Codex supplies the memory index and instructions for consulting it.</p>
+<p>The entire handbook and all old conversations are <strong>not</strong> automatically added to the prompt.</p>
+<h2>6. The solver searches, reads, and verifies</h2>
+<p>It searches the handbook for terms such as “Juniper,” “tenant,” and the cache function name. It opens the relevant block and, if needed, its linked session recap or skill.</p>
+<p>Then it checks today's code. Historical memory suggests where to look; it does not prove the current bug has the same cause.</p>
+<p><strong>What changes:</strong> external files and database records—not model weights. <strong>What the writer sees:</strong> recorded evidence, including available tests and user corrections; no additional answer-key channel.</p>
+<p><strong>Version boundary:</strong> this walkthrough teaches Codex's V1 file hierarchy. The pinned source also contains V2, which removes some layers. Read the version comparison before choosing an implementation.</p>
+<p><a href="#session-writer">Exact session-writing steps</a> · <a href="#consolidation">Exact consolidation steps</a> · <a href="#retrieval">Exact retrieval steps</a> · <a href="#versions">V1 versus V2</a> · <a href="#first-build">Our first implementation</a></p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><h2 id="scope">Implementation target and evidence</h2>
+
+<p>This chapter audits OpenAI's public Codex source at <a href="https://github.com/openai/codex/tree/c37b7307db57ab8510af14426f739a23e8186679">c37b730</a>, checked on 21 September 2026. It describes that checkout, not a guarantee about every released desktop/CLI build or this account's configuration.</p>
+<p>The source defaults to <strong>V1</strong>, with dedicated memory tools disabled. V2 and dedicated tools are separate settings. The <a href="https://learn.chatgpt.com/docs/customization/memories">official memory documentation</a> establishes the product controls and background behavior; the linked Rust code establishes the implementation details below.</p>
+<p>Code takes precedence over stale comments: the repository's memory README still points to an older source location, and its never-used-memory age description differs from the current SQL. This chapter follows the actual current files and query.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/config/src/types.rs">Version and configuration source</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/protocol/src/memory_version.rs">Namespace source</a></p>
+<h2 id="artifacts">First distinguish the six stored objects</h2>
+
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th>Who produces it?</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Original session rollout</td>
+<td>Session recorder</td>
+<td>Evidence of messages, calls, and returned results</td>
+</tr>
+<tr>
+<td>Stage-1 database record</td>
+<td>Program, from extractor JSON</td>
+<td>Durable per-session extraction and source/version bookkeeping</td>
+</tr>
+<tr>
+<td>rollout_summaries/*.md</td>
+<td>Program, from selected database records</td>
+<td>Detailed per-session recaps with evidence and source pointers</td>
+</tr>
+<tr>
+<td>raw_memories.md</td>
+<td>Program, merging selected raw_memory fields</td>
+<td>Candidate lessons supplied to consolidation</td>
+</tr>
+<tr>
+<td>MEMORY.md and optional skills/</td>
+<td>Consolidation agent</td>
+<td>Cross-session handbook and reusable procedures</td>
+</tr>
+<tr>
+<td>memory_summary.md</td>
+<td>Consolidation agent</td>
+<td>Small automatically supplied context and retrieval index</td>
+</tr>
+</tbody>
+</table>
+<p>The two Phase-1 text outputs are siblings from one extraction request. The program does not first run one model to produce a recap and a second model to produce raw memory.</p>
+<p>A rollout summary is a Markdown file. Its <strong>rollout_path</strong> metadata points to the original session log; those are not the same file or format. Reading a summary does not silently replay the original session.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1_output.rs">Output contract</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/storage.rs">Artifact writer</a></p>
+<h2 id="session-writer">Phase 1: exactly how one session becomes memory</h2>
+
+<h3>1. Trigger background work; do not wait for a goodbye message</h3>
+<p>An eligible root session's startup triggers the pipeline asynchronously. The startup path skips ephemeral sessions, disabled memory features, non-root agents, and an unavailable state database. A quota guard can also skip generation.</p>
+<p>It processes <strong>eligible earlier sessions</strong>, not the just-started session. The memory store is not freshly rebuilt synchronously before that session's first answer. Eligibility does not require a user to declare a task finished: the current thread is excluded; candidate threads must have memory generation enabled, an allowed interactive source, a sufficiently recent last update, enough idle time, and an extraction needing an update. Claims/leases prevent duplicate workers.</p>
+<p>At this source revision, the relevant defaults are <strong>6 idle hours</strong>, <strong>10 days maximum rollout age</strong>, and <strong>2 rollout candidates per startup</strong>. These are snapshot defaults, not requirements for our research harness. Extraction has a concurrency cap of 8 even though the default per-startup batch is smaller.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/start.rs">Startup</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/state/src/runtime/memories.rs">Eligibility query</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/config/src/types.rs">Limits</a></p>
+<h3>2. Build the extractor's input from recorded evidence</h3>
+<p>The program loads the rollout and filters it. It retains eligible user/assistant messages, tool calls/results, and inter-agent communication. It excludes developer messages, recognized injected AGENTS/skill instruction fragments, reasoning items, compaction items, and non-selected event/metadata records.</p>
+<p>It supplies the rollout path, working-directory hint, and serialized filtered conversation to the extraction prompt. Secrets are redacted. Oversized V1 input is truncated, keeping head and tail, to a budget computed as 70% of the model's effective input window; the fallback is 150,000 tokens.</p>
+<p><strong>Consequence:</strong> “the writer reads the session” does not mean it sees every original byte. Important middle evidence can be omitted. A faithful implementation must record truncation rather than pretend extraction was exhaustive.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1.rs">Filtering and model request</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/rollout_input.rs">Sanitization</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/rollout/src/policy.rs">Item policy</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/prompts.rs">Input budget</a></p>
+<h3>3. Make one structured model call—not a tool-using investigation</h3>
+<p>Phase 1 constructs an extraction prompt with a strict JSON output schema. It does not separately load the global handbook; any earlier memory echoed in retained session messages or tool results may still appear as evidence. Its runtime collects the model's text response; it does not run a shell-tool loop to revisit the repository.</p>
+<p>The V1 response has exactly these fields:</p>
+<pre><code class="language-json">{
+  &quot;rollout_summary&quot;: &quot;Markdown account of this session's useful tasks and evidence&quot;,
+  &quot;rollout_slug&quot;: &quot;juniper-tenant-cache&quot;,
+  &quot;raw_memory&quot;: &quot;Markdown candidate lessons, with task boundaries and retrieval handles&quot;
+}
+</code></pre>
+<p>Those strings explain the fields; they are not a complete example of the required Markdown inside them. The exact linked prompt defines that internal format. The schema permits a null slug; the prompt prefers a string, including an empty string for no-op.</p>
+<p>The writer is prompted to:</p>
+<ol>
+<li>Separate distinct tasks inside the session.</li>
+<li>Classify each as success, partial, fail, or uncertain from available evidence.</li>
+<li>Preserve concrete user requests/corrections and verified environmental facts.</li>
+<li>Record useful commands, paths, error strings, failed approaches, and successful pivots.</li>
+<li>Keep uncertain proposals and unverified completion claims labeled as such.</li>
+<li>Return all-empty fields if there is no durable signal worth retaining.</li>
+</ol>
+<p>This is an instructed behavior, not a guarantee that the model's judgments are correct.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/templates/memories/stage_one_system.md">Exact extraction prompt</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1_output.rs">JSON schema</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/runtime.rs">Request runtime</a></p>
+<h3>4. Follow the Juniper evidence into the two outputs</h3>
+<p>An illustrative <strong>rollout-summary excerpt</strong>:</p>
+<pre><code class="language-text">Task: isolate Juniper's product cache by tenant.
+Observed cause: product_key omitted tenant_id.
+Change: include tenant_id in the product-cache key.
+Validation: the two-tenant regression passed.
+Limit: full test suite not run.
+</code></pre>
+<p>An illustrative <strong>raw-memory excerpt</strong>:</p>
+<pre><code class="language-text">Reusable knowledge:
+- Juniper's product_key must distinguish tenants for tenant-dependent results.
+
+Failures and how to do differently:
+- A one-tenant test did not expose cross-tenant reuse.
+- Reproduce with identical product IDs in two tenants.
+
+References:
+- src/product_cache.py; product_key; tenant_id
+- tests/test_product_cache.py::test_two_tenants
+</code></pre>
+<p>The raw note is already a first abstraction from an event to future guidance. It is narrower and more reusable than a chronological transcript. Consolidation supplies the next abstraction across sessions.</p>
+<h3>5. Persist the result, with provenance</h3>
+<p>The program parses the schema, redacts generated fields, and stores a successful extraction in the memory database with its thread and source-update information. Empty output is a legitimate no-output outcome. In V1, an empty raw_memory <strong>or</strong> an empty rollout_summary causes the result to be treated as no-output; retaining only the other field is not a successful extraction. Failures use retry/lease handling.</p>
+<p>This is <strong>not</strong> “the main solver appends a lesson to MEMORY.md after every answer.” The ordinary solver, per-session extractor, and consolidator have different jobs.</p>
+<p>There is also an explicit-update route: if the user asks to remember, correct, or forget something, the read instructions direct the solver to create a small note under <strong>extensions/ad_hoc/notes/</strong>. Consolidation applies it. That is separate from automatic session extraction.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1.rs">Persistence path</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/templates/memories/read_path.md">Explicit-update instructions</a></p>
+<h2 id="consolidation">Phase 2: exactly how consolidation creates abstractions</h2>
+
+<h3>1. Select the input set and acquire one global lock</h3>
+<p>Consolidation is serialized for the selected memory namespace. The program claims the global job before changing the workspace.</p>
+<p>It selects up to <strong>256</strong> eligible nonempty stage-1 records by default. Selection prioritizes usage count, then last usage—or <strong>source_updated_at</strong> for never-used memories—with further deterministic tie-breaks. A default 30-day unused window limits eligibility. The selected set is returned in stable ascending thread-ID order for file generation.</p>
+<p>This is a retention policy, <strong>not</strong> query similarity retrieval and <strong>not</strong> proof that a frequently used memory is correct.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/state/src/runtime/memories.rs">Selection SQL</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase2.rs">Phase-2 controller</a></p>
+<h3>2. Materialize the evidence and compute what changed</h3>
+<p>The program writes:</p>
+<ul>
+<li>One selected session's recap per file in <strong>rollout_summaries/</strong>.</li>
+<li>The selected raw notes into <strong>raw_memories.md</strong>, with thread IDs, source times, working directories, rollout paths, and summary filenames.</li>
+<li><strong>phase2_workspace_diff.md</strong>, a Git-style diff against the previous successful consolidation baseline.</li>
+</ul>
+<p>Summary filenames combine a timestamp, short hash, and sanitized slug. Do not derive filenames merely from the model's slug; use the actual produced path.</p>
+<p>Unselected summaries are pruned. Their deletion appears in the diff. This is how the next writer learns that some older evidence no longer supports the current memory set.</p>
+<p>If the synchronized workspace is unchanged and required artifacts validate, the controller can skip the model agent.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/storage.rs">File materialization</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase2.rs">Diff and dispatch</a></p>
+<h3>3. Spawn an internal agent that can read and edit files</h3>
+<p>Unlike Phase 1, Phase 2 is an actual agent session with a local file-editing workflow. Its working directory is the memory root.</p>
+<p>It is ephemeral, does not generate further session memories, does not inject the usual memory context into itself, and cannot recursively delegate. MCP servers, apps, and plugins are disabled for this worker.</p>
+<p>For a <strong>managed</strong> parent sandbox, it gets memory-root write access and no network. Important qualification: this revision preserves a parent's explicitly disabled or external sandbox profile; “always network-isolated under all configurations” would be false.</p>
+<p>Its input includes the consolidation instructions and diff path. The prompt tells it <strong>not to open original rollout transcripts</strong>. It works from the staged notes, summaries, existing memory, and applicable extension inputs.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase2.rs">Agent configuration</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/templates/memories/consolidation.md">Exact consolidation instructions</a></p>
+<h3>4. Update a task-oriented handbook—not just concatenate notes</h3>
+<p>For a first build, the agent reads the available inputs and creates the artifacts. For an incremental update, it uses the diff to locate additions, modifications, deletions, and the affected existing blocks.</p>
+<p>Each V1 handbook block has a task-group heading, scope/applicability, task-specific source references and keywords, followed by consolidated preferences, reusable knowledge, and failure guidance where supported.</p>
+<p>A shortened <strong>teaching excerpt</strong>, not a full production block:</p>
+<pre><code class="language-text"># Task Group: Juniper identity-dependent caches
+scope: product and authorization cache isolation
+applies_to: cwd=/work/juniper; reuse_rule=verify current cache semantics
+
+## Task 1: Product cache tenant isolation, targeted regression passed
+### rollout_summary_files
+- rollout_summaries/&lt;actual-produced-filename&gt;.md
+  (cwd, rollout_path, updated_at, and thread_id retained)
+### keywords
+- Juniper, product_key, tenant_id, cross-tenant, test_two_tenants
+
+## Reusable knowledge
+- Product results varied by tenant; product_key omitted that input. [Task 1]
+
+## Failures and how to do differently
+- One-tenant tests missed the collision; vary tenant while holding product ID fixed. [Task 1]
+</code></pre>
+<p>The real format includes concrete metadata values, not the explanatory placeholders above. Similar words alone are not sufficient reason to merge two unrelated projects or tasks.</p>
+<h3>5. Promote only the abstraction supported by the evidence</h3>
+<p>Suppose a second Juniper session finds that an authorization cache ignores role, and a two-role test verifies the fix.</p>
+<p>Now the consolidator can group the two cases and write:</p>
+<blockquote>
+<p>For the identity-dependent Juniper caches examined, vary the relevant identity input while holding the object fixed; verify that keys separate outputs that should differ.</p>
+</blockquote>
+<p>This is a synthesis of two observations. It should retain both source references and the Juniper scope.</p>
+<p>It should <strong>not</strong> infer “all cache keys everywhere must include tenant and role.” It should not infer a user's global preference from a single task-specific instruction.</p>
+<p>There is no separate trained abstraction model or formal rule-learning algorithm here. A prompted LLM reads evidence and edits text. Grouping, deduplication, promotion, contradiction handling, and uncertainty preservation are part of that editorial task.</p>
+<h3>6. Optionally package a repeated procedure as a skill</h3>
+<p>The prompt recommends a skill when a reliable procedure recurs more than once and saves time or errors. Merely remembering a fact does not require a skill.</p>
+<p>For the two cache cases, an illustrative <strong>procedure excerpt</strong> could be:</p>
+<pre><code class="language-text">When to use: suspected cross-identity cache reuse in Juniper.
+1. Identify inputs that change the uncached result.
+2. Inspect which inputs participate in the key.
+3. Build a paired test: same object, different relevant identity input.
+4. Verify the failure before the patch.
+5. Change the key, then rerun the paired test and adjacent checks.
+Stop if the result is not identity-dependent; investigate another cause.
+</code></pre>
+<p>The complete skill lives in <strong>skills/<name>/SKILL.md</strong>, with trigger/inputs, steps, pitfalls, verification, and optional scripts/templates/examples. These are external instructions and helpers, not weight updates or automatic execution. A later solver has to read and follow the skill.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/templates/memories/consolidation.md">Handbook and skill formats</a></p>
+<h3>7. Write the small index last, then validate completion</h3>
+<p>The consolidator writes <strong>memory_summary.md</strong> after the handbook and skills reflect the final state. It includes a brief user profile, reusable preferences, general tips, and a “What's in Memory” navigation section. Its first line must be <strong>v1</strong>.</p>
+<p>A routing entry might mention Juniper cache isolation with the exact searchable handles <strong>product_key</strong>, <strong>tenant_id</strong>, and <strong>authorization cache</strong>. The point is to help a future solver choose a useful lookup without injecting the entire handbook.</p>
+<p>After the agent completes, the controller validates artifacts, verifies lock ownership, advances the workspace baseline, and records successful input snapshots. V1's runtime checks are structural: a MEMORY.md file, the required summary header, and symlink safeguards—not a semantic fact-check of every lesson.</p>
+<p>Do not assume this code provides an atomic, all-files publication transaction merely because it uses Git. For our evaluator, an explicit successful-consolidation barrier is advisable.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase2.rs">Completion handling</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/workspace.rs">Artifact validator</a></p>
+<h2 id="retrieval">Read path: exactly how search and retrieval work</h2>
+
+<h3>1. Automatically supply the index, not the whole library</h3>
+<p>When memory use is enabled and a nonempty summary exists, the extension reads <strong>memory_summary.md</strong>, caps it at <strong>2,500 tokens</strong>, renders the read instructions around it, and contributes developer-policy context.</p>
+<p>That summary is the automatic part. The ordinary solver decides which additional files to search/read. It is not a separate retrieval subagent, and the code does not automatically attach a top-k embedding result here.</p>
+<p>The consolidation prompt loosely calls this “system prompt” loading; the actual extension contributes a <strong>developer</strong> prompt fragment.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/src/prompts.rs">Summary loader</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/src/extension.rs">Prompt integration</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/src/lib.rs">Token cap</a></p>
+<h3>2. Let the model choose search words</h3>
+<p>In the example, the current task mentions a tenant leak. The index mentions the Juniper cache task family. The model chooses terms from both: <strong>tenant_id</strong>, <strong>product_key</strong>, and <strong>cross-tenant</strong>.</p>
+<p>An illustrative shell lookup, run from the selected memory root:</p>
+<pre><code class="language-bash">rg -n -i -C 4 'tenant_id|product_key|cross-tenant' MEMORY.md
+</code></pre>
+<p>This command is a teaching example, not a fixed string hardcoded in Codex. The model chooses the query; ripgrep does lexical matching. If the terms are poor, retrieval can fail.</p>
+<h3>3. Read the relevant block; follow a small number of pointers</h3>
+<p>A search hit identifies a useful region. The solver reads that block with a bounded file read, including its scope, evidence, and warnings—not only the matching keyword line.</p>
+<p>The V1 read prompt then directs it to open the one or two most relevant linked rollout summaries or skills when needed. It does not recommend scanning every recap.</p>
+<p>That distinction matters: <strong>search finds an address; reading obtains the lesson and its qualifications.</strong> Returned file text enters the current conversation as tool output, which makes it available to the next solver call.</p>
+<h3>4. Escalate to original evidence only when needed</h3>
+<p>If the recap is insufficient for an exact command, error, or chronology, the V1 reader may use its <strong>rollout_path</strong> to examine the original session.</p>
+<p>That allowance belongs to the later solver's read path. The consolidation prompt separately forbids opening original transcripts. Do not give both roles the same evidence access by accident.</p>
+<p>For the initial memory pass, the prompt suggests roughly <strong>4–6 search steps</strong>, stops on no relevant hits, and allows another pass if execution reveals a likely connection. This is prompt guidance, not a hard-coded search-loop counter.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/templates/memories/read_path.md">Exact V1 retrieval instructions</a></p>
+<h3>5. Verify present-day facts before acting</h3>
+<p>The old lesson says where a bug was found. It does not establish today's function implementation, branch state, API version, or test result.</p>
+<p>The solver inspects the current owning source when the claim can drift and matters. If it relies on historical information without refreshing it, the read instructions require appropriate qualification.</p>
+<p>This prevents a useful memory from becoming an unquestioned instruction to repeat an obsolete fix.</p>
+<h3>6. Distinguish optional dedicated tools from embeddings</h3>
+<p>When <strong>memories.dedicated_tools</strong> is enabled, the extension can expose <strong>memories.list</strong>, <strong>memories.search</strong>, <strong>memories.read</strong>, and <strong>memories.add_ad_hoc_note</strong>. This switch is separate from V1/V2 and defaults to false in the audited source.</p>
+<p>The local search backend performs <strong>substring matching</strong>. It supports case handling, optional alphanumeric normalization, any-query matches, all queries on one line, or all within a line window. It returns paths, line numbers, context, and pagination; results are ordered by path and line—not a semantic relevance score.</p>
+<p>Neither this local backend nor the shell-based V1 path requires an embedding model or vector database. The model's semantic judgment is in writing searchable memory, selecting query terms, interpreting hits, and deciding what to read next.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/src/tools/search.rs">Tool schema</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/src/local/search.rs">Actual local matcher</a></p>
+<h2 id="feedback">Feedback, forgetting, and failure boundaries</h2>
+
+<p><strong>Ground truth.</strong> There is no separate gold-answer input in the extractor's request. It can see tests, user corrections, and other feedback included in the filtered record. If a task's tools exposed a reference answer, that text could become input; absence of a special answer-key field does not itself prove an experiment is leakage-free.</p>
+<p><strong>Outcome labels.</strong> Phase 1 infers success/partial/fail/uncertain. These are textual judgments used in memory writing, not an externally verified reward or gradient update.</p>
+<p><strong>Usage.</strong> The read prompt requests source citations, including rollout IDs. The code parses those references and supports incrementing cited stage-1 usage counts and last-use time. Shell-read telemetry also exists, but it should not be confused with evidence that a remembered procedure succeeded. Retention favors use; it does not perform MemRL-style reward learning.</p>
+<p><strong>Forgetting.</strong> Pruning removes inputs from the selected set. The diff instructs consolidation to remove guidance supported only by deleted inputs, while preserving guidance that still has other support. This cleanup is partly an LLM task; provenance and regression tests matter.</p>
+<p><strong>Explicit corrections.</strong> User-authorized remember/forget/correction notes feed the consolidation process. Do not silently rewrite generated memory as though it were the authoritative user request.</p>
+<p><strong>Trust.</strong> Both writers are instructed to treat recorded content as evidence, not executable instructions. Redaction and prompts reduce risk, but do not constitute a guarantee against secret retention, prompt injection, false abstraction, or stale advice.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/core/src/stream_events_utils.rs">Citation-to-usage integration</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/read/src/citations.rs">Citation parser</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/state/src/runtime/memories.rs">Usage and retention</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/templates/memories/consolidation.md">Consolidation cleanup rules</a></p>
+<h2 id="versions">V1 and V2: do not accidentally build a hybrid</h2>
+
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>V1, taught above</th>
+<th>V2 in the same checkout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Storage namespace</td>
+<td>memories/</td>
+<td>memories_v2/</td>
+</tr>
+<tr>
+<td>Extractor outputs</td>
+<td>rollout_summary, rollout_slug, raw_memory</td>
+<td>rollout_summary and rollout_slug only</td>
+</tr>
+<tr>
+<td>Input budgeting</td>
+<td>Filtered evidence; head/tail truncation</td>
+<td>Evidence tiers prioritize human material, then final replies, other-agent messages, commentary, context, tools; selected evidence is rendered chronologically</td>
+</tr>
+<tr>
+<td>Per-session recap</td>
+<td>No V2-specific 9 KB cap</td>
+<td>Generated recap truncated to 9,000 bytes</td>
+</tr>
+<tr>
+<td>Consolidation</td>
+<td>Handbook + optional skills + summary/index</td>
+<td>Consolidates recaps into memory_summary.md; no requested handbook/skill layer</td>
+</tr>
+<tr>
+<td>Navigation</td>
+<td>Index → handbook → recap/skill → original evidence if needed</td>
+<td>Injected summary with direct recap pointers; read more only when it could change the answer</td>
+</tr>
+<tr>
+<td>Summary format</td>
+<td>Starts with v1</td>
+<td>Also starts with v1; validator additionally requires four sections and fewer than 10,000 UTF-8 bytes</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>v1 line inside the summary is a format marker, not proof that the V1 pipeline generated it</strong>. Configuration and directory namespace identify the pipeline.</p>
+<p>V2's shorter prompts explicitly guard against turning one task's request into a global preference. V1 also requires evidence and scope, but the architectures should be evaluated separately. This checkout has optional dual-writing; the configured version still selects which namespace supplies context.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1_output.rs">Versioned extraction</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/rollout_input.rs">V2 evidence selection</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/templates/memories/consolidation_v2.md">V2 consolidation prompt</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/ext/memories/templates/memories/read_path_v2.md">V2 reader prompt</a></p>
+<h2 id="first-build">What I would implement first for our experiment</h2>
+
+<p><strong>Proposal, not a claim about native Codex behavior:</strong> start with the V1 architecture because the object of interest is session extraction → cross-session abstraction/skills → agent-directed text retrieval. Keep compaction fixed and separate.</p>
+<h3>Minimal components</h3>
+<ol>
+<li>An append-only task/session evidence log.</li>
+<li>A schema-constrained per-session extractor using a pinned prompt and explicit evidence policy.</li>
+<li>A stage-1 store keyed by session ID and source revision.</li>
+<li>A single consolidation worker with bounded inputs, source references, and a restricted file workspace.</li>
+<li>A small summary injected before a new task; bounded search/read tools for everything else.</li>
+<li>A completion barrier before the next evaluated task uses the new memory snapshot.</li>
+</ol>
+<p>The high-level control flow is:</p>
+<pre><code class="language-text">AFTER AN ALLOWED SOURCE SESSION BECOMES ELIGIBLE:
+  evidence := filter_and_budget(recorded_session)
+  extracted := model_call(extraction_prompt, evidence, strict_schema)
+  validate_and_store(extracted, source_id, source_revision)
+
+AT A CONSOLIDATION CHECKPOINT:
+  acquire_single_writer_lease()
+  selected := choose_retained_stage1_records()
+  materialize_selected_notes_and_recaps(selected)
+  diff := compare_with_previous_successful_baseline()
+  if diff_exists OR required_artifacts_invalid:
+    run_consolidation_agent(diff, existing_memory_workspace)
+    validate_artifacts()
+  record_successful_snapshot()
+  release_lease()
+
+ON THE NEXT SOLVER TASK:
+  context := task + memory_read_instructions + bounded_summary
+  solver chooses search/read calls when relevant
+  returned memory text becomes tool context
+  solver checks current evidence and performs the task
+</code></pre>
+<p>This is control-flow pseudocode, not executable Codex Rust and not a complete failure-handling implementation. Native startup is asynchronous; a synchronous evaluation checkpoint would be our deliberate adaptation.</p>
+<h3>Trying the native feature is different from porting it</h3>
+<p>Local memories are off by default. In a build supporting the audited settings, this explicitly selects the V1 architecture:</p>
+<pre><code class="language-toml">[features]
+memories = true
+
+[memories]
+version = &quot;v1&quot;
+generate_memories = true
+use_memories = true
+dedicated_tools = false
+</code></pre>
+<p>This is a configuration example, <strong>not a change made to your settings</strong>. Extraction/consolidation model overrides exist, but the fallback model comes from the configured provider; there is no single model ID hardcoded by this tutorial.</p>
+<p><strong>Benchmark integration trap:</strong> the native extraction candidate list uses interactive session sources; it does not include the noninteractive <strong>Exec</strong> source. Merely turning on memories for a runner using <strong>codex exec</strong> is therefore not a verified way to learn from its completed benchmark runs. A port needs an explicit ingestion adapter and checkpoint policy. Confirm the runner's actual session source before relying on automatic collection.</p>
+<p><a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/features/src/lib.rs">Feature gate</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/rollout/src/lib.rs">Allowed session sources</a> · <a href="https://github.com/openai/codex/blob/c37b7307db57ab8510af14426f739a23e8186679/codex-rs/memories/write/src/phase1.rs">Model selection</a></p>
+<h3>Fix the evidence policy before comparing scores</h3>
+<p>For CL-style tasks, specify what is allowed after task A: observations only, a success/failure score, or a reference answer. Keep any hidden evaluator answer out of extraction and retrieval unless the protocol explicitly permits it. Score A before writing memory for B.</p>
+<p>Do not let consolidation read future-task materials. Decide whether the memory is per-user, per-project, or per-benchmark stream. Native Codex uses a broader user/host-local store and preserves project scopes inside its text; blindly sharing that store across evaluation splits would change the experiment.</p>
+<h3>Tests that would make me trust the first version</h3>
+<ul>
+<li>A writer preserves “targeted test passed; full suite unrun.”</li>
+<li>A single instruction does not become an unsupported global preference.</li>
+<li>A second verified example supports a scoped abstraction without erasing provenance.</li>
+<li>A search hit leads to reading scope and caveats, not keyword-only action.</li>
+<li>No matching memory leads to normal work, not endless searching.</li>
+<li>A deleted source removes only exclusively supported claims.</li>
+<li>A changed source is re-extracted; stale revisions are not silently reused.</li>
+<li>A failed writer or incomplete consolidation is not presented as a completed new snapshot.</li>
+<li>V1 and V2 artifacts never leak into each other's reader namespace.</li>
+<li>No-memory, raw-recap-only, handbook, and handbook-plus-skills conditions share the same solver, evidence permissions, and compaction policy.</li>
+</ul>
+<p>Those comparisons are proposed ablations, not results. This tutorial inspected source and tests its teaching examples/site behavior; it does not claim to have run Codex's Rust suites, model extraction, consolidation, or a benchmark.</p>
+<p><strong>The central design to copy:</strong> preserve evidence once, extract per-session knowledge, consolidate across sessions with source links, and let the solver retrieve only what the next task needs.</p>
+<p><a href="#">Back to the short walkthrough</a> · <a href="memory-impl-codex.html">Compaction is a separate layer</a> · <a href="../qa/codex-memory-system.html">Questions and answers</a></p></div></details></article>
+<footer>Generated 2026-09-21 19:09 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

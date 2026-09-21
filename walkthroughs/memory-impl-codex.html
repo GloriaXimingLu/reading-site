@@ -14,6 +14,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </head>
 <body>
 <article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Compaction: hand an unfinished task to a shorter context</h1><p class="meta">2 min · 1 worked example · 2026-09-21</p><div class="walkthrough-lesson"><p><a href="memory-reading-edition.html">All methods</a></p>
+<p><strong>Looking for session memories, consolidation, skills, or grep-based retrieval?</strong> Read the separate <a href="codex-memory-system.html">Codex cross-session memory tutorial</a>. This chapter is only about shortening an active conversation.</p>
 <p><strong>The idea:</strong> replace a long active conversation with a smaller continuation state, then resume the same unfinished task.</p>
 <p>Use an invented coding task. The agent has investigated a bug, made a patch, and passed one targeted test. It has not run the full suite.</p>
 <h2>1. The active conversation gets large</h2>
@@ -129,6 +130,6 @@ diagnostic log:
 <p>The writer sees supplied conversation state, which may contain test output or user corrections. Compaction does not grant a separate answer-key channel.</p>
 <p>Test that replacement actually shortens the active window; user constraints survive; pending tool calls are handled consistently; instructions are resent as required; opaque output objects are passed intact; and an API failure leaves the old active state recoverable. The rollback behavior is recommended client engineering.</p>
 <p>There is no Cartridges-style per-corpus gradient update or published Still-style KV architecture established by this interface. A provider compaction object should not be labeled either one simply because it is numerical or opaque.</p></div></details></article>
-<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 19:09 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

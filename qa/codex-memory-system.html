@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A: Codex cross-session memory</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<link rel="stylesheet" href="../style.css">
+<script>
+window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']]}};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
+<script defer src="../annotate.js"></script>
+</head>
+<body>
+<article><a class="crumb" href="../index.html">← all papers</a><h1>Q&amp;A: Codex cross-session memory</h1><p><a href="../walkthroughs/codex-memory-system.html">Dedicated Codex memory tutorial</a></p>
+<h2>Session 2026-09-21</h2>
+<p><strong>Q: Is this the same as Codex compaction?</strong></p>
+<p><strong>A:</strong> No. Compaction shortens the active context of an unfinished task. Cross-session memory extracts evidence from prior eligible sessions and supplies useful context to later work. They can be used together and should be controlled separately in an experiment.</p>
+<p><strong>Q: Who actually writes memory?</strong></p>
+<p><strong>A:</strong> In the audited V1 pipeline, a structured per-session model call produces a rollout summary and candidate raw memory. The program persists these in a database and materializes selected inputs as files. A separate internal consolidation agent updates the shared handbook, optional skills, and small summary/index. The ordinary solver retrieves from this library; it does not automatically edit the handbook after every reply.</p>
+<p><strong>Q: What does “raw memory” mean?</strong></p>
+<p><strong>A:</strong> It is already an LLM-written extraction, not the original transcript. The original rollout, its Markdown recap, and its reusable raw-memory note are distinct objects.</p>
+<p><strong>Q: How are abstractions created?</strong></p>
+<p><strong>A:</strong> The consolidation agent groups compatible tasks, preserves provenance and applicability, resolves supported changes, and writes reusable guidance. A recurring proven workflow may become a SKILL.md procedure. This is prompted editing of external text, not weight training or a separate formal abstraction algorithm.</p>
+<p><strong>Q: Is retrieval a vector search?</strong></p>
+<p><strong>A:</strong> Not in the inspected local paths. V1 automatically supplies a small index and instructs the solver to select keywords, search MEMORY.md, and follow relevant pointers. The optional dedicated search backend uses substring matching, with paths and line numbers. The model interprets relevance and chooses subsequent reads.</p>
+<p><strong>Q: Does the writer see ground truth?</strong></p>
+<p><strong>A:</strong> It receives filtered session evidence. Recorded tests, user corrections, and any answer information already exposed in that evidence can be visible. There is no additional gold-answer input. Hidden benchmark references must stay outside the writer's inputs unless the evaluation protocol explicitly allows them.</p>
+<p><strong>Q: Can the consolidator reopen the original session?</strong></p>
+<p><strong>A:</strong> The audited consolidation prompt forbids it: consolidation uses staged raw notes, recaps, existing memory, and extension inputs. The V1 later-solver read prompt separately allows following rollout_path when exact evidence is needed.</p>
+<p><strong>Q: Which Codex version should we reproduce first?</strong></p>
+<p><strong>A:</strong> The tutorial proposes V1 because its handbook/skill hierarchy matches the cross-session abstraction mechanism of interest. This is a starting hypothesis, not a performance claim. The same pinned checkout also includes V2, which consolidates per-session recaps into a compact summary with direct pointers and does not request the V1 handbook/skill layers. Keep the pipelines separate.</p>
+<p><strong>Q: Will enabling memories automatically train memory from benchmark codex exec runs?</strong></p>
+<p><strong>A:</strong> Do not assume so. The audited native candidate filter accepts interactive sources, not the Exec source. A benchmark port needs explicit ingestion, a defined post-task feedback policy, and a completed-consolidation barrier before later evaluation uses the snapshot.</p>
+<p>The <a href="../walkthroughs/codex-memory-system.html">tutorial</a> links every mechanism to source commit <a href="https://github.com/openai/codex/tree/c37b7307db57ab8510af14426f739a23e8186679">c37b730</a> and separates native behavior from proposed adaptations.</p></article>
+<footer>Generated 2026-09-21 19:09 UTC · <a href="../index.html">Reading Tracker</a></footer>
+</body>
+</html>

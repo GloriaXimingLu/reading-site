@@ -13,12 +13,18 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">1 min · 14 methods and systems · 2026-09-21</p><div class="walkthrough-lesson"><p>Each chapter starts with <strong>one small example, followed in order</strong>. Read that first. The code, equations, variants, and sources are under a closed “implementation details” section at the end.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">2 min · 15 methods and systems · 2026-09-21</p><div class="walkthrough-lesson"><p>Each chapter starts with <strong>one small example, followed in order</strong>. Read that first. The code, equations, variants, and sources are under a closed “implementation details” section at the end.</p>
 <p>The examples are invented to explain the methods, not reported experimental results.</p>
-<p><strong>Start here:</strong> <a href="memory-impl-reasoningbank.html">ReasoningBank</a> shows how an attempt becomes a lesson. Then <a href="memory-impl-memex.html">Memex</a> shows how evidence leaves and re-enters the active context.</p>
+<p><strong>Our implementation focus:</strong> <a href="codex-memory-system.html">Codex cross-session memory</a> follows session extraction, consolidation, abstractions/skills, and search/retrieval. It is separate from Codex compaction.</p>
+<p><strong>Other starting points:</strong> <a href="memory-impl-reasoningbank.html">ReasoningBank</a> shows how an attempt becomes a lesson. Then <a href="memory-impl-memex.html">Memex</a> shows how evidence leaves and re-enters the active context.</p>
 <h2>Use past experience on a new task</h2>
 <ul>
-<li><a href="memory-impl-reasoningbank.html">ReasoningBank</a> — a failed product search becomes advice for the next search.</li>
+<li>
+<p><a href="codex-memory-system.html">Codex cross-session memory</a> — per-session evidence becomes a shared handbook and skills, retrieved through an injected index and text search.</p>
+</li>
+<li>
+<p><a href="memory-impl-reasoningbank.html">ReasoningBank</a> — a failed product search becomes advice for the next search.</p>
+</li>
 <li><a href="memory-impl-ace.html">ACE</a> — a bad calculation leads to a new checklist rule.</li>
 <li><a href="memory-impl-memrl.html">MemRL</a> — task outcomes change which advice gets selected.</li>
 </ul>
@@ -47,9 +53,10 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <p>The earlier detailed comparison is retained below.</p></div><details class="implementation-reference" id="implementation-reference"><summary>Open implementation details, training, and sources</summary><div class="reference-content"><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
 
 <p>The question for this tutorial is: <strong>could you execute one cycle of the method yourself, and say exactly what changed?</strong> For each selected method, we follow its inputs, memory object, writes, reads, and next model call. Training is explained separately from deployment. The examples use invented tasks and values to make the published mechanisms concrete; they are not experimental results.</p>
-<p>The three engineering systems—Codex compaction, ShadowFrog, and Claude-Mem—are labeled as systems, not papers. This page covers the <strong>14 selections in the reading edition</strong>, not all 33 entries in the <a href="memory-management.html">broader survey</a>.</p>
+<p>The engineering systems—Codex cross-session memory, Codex compaction, ShadowFrog, and Claude-Mem—are labeled as systems, not papers. This page covers <strong>15 selections in the reading edition</strong>, not all 33 entries in the <a href="memory-management.html">broader survey</a>.</p>
 <h2>Implementation chapters — start here</h2>
 <p>Each method now has a separate chapter. Follow its numbered implementation steps and worked trace; use the shorter sections farther down this page only as a comparison reference.</p>
+<p><a href="codex-memory-system.html">Dedicated Codex memory deep dive →</a>: extractor inputs/outputs, consolidation agent and file hierarchy, abstraction/skills, text retrieval, V1/V2 differences, and benchmark-port boundaries.</p>
 <table>
 <thead>
 <tr>
@@ -116,7 +123,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </tr>
 </tbody>
 </table>
-<p><strong>For our first design discussion:</strong> read the full ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex chapters. They expose the concrete choices we need to make about the writer, reader, feedback, and context replacement. The later chapters explain what additional training or model-internal access would require.</p>
+<p><strong>For our first implementation:</strong> start with the <a href="codex-memory-system.html">dedicated Codex memory tutorial</a>. Use ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex as comparisons. They expose the concrete choices we need to make about the writer, reader, feedback, and context replacement. The later chapters explain what additional training or model-internal access would require.</p>
 <p>The code examples implement the small deterministic operations where possible. Model/API adapters and unreleased internals are explicitly identified. “Teaching representation” means a readable reconstruction; a linked pinned schema/prompt remains the reference for a faithful port. No model-training or benchmark-performance run is claimed by this tutorial.</p>
 <h2>Short-overview navigation</h2>
 <ul>
@@ -126,7 +133,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><strong>Memory as model state:</strong> <a href="#cartridges">13. Cartridges</a> → <a href="#still">14. Still</a>.</li>
 <li><a href="#feedback">Feedback: who sees the answer, and when?</a> · <a href="#adaptations">What changes if we adapt a method?</a></li>
 </ul>
-<p>If you are reading for today's design discussion, start with ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex. Then read the training sections before deciding whether we need a frozen-model design or a learned policy.</p>
+<p>For the planned first implementation, start with <a href="codex-memory-system.html">Codex cross-session memory</a>. Then read the training sections before deciding whether we need a frozen-model design or a learned policy.</p>
 <p><strong>How to read:</strong> use the implementation chapters above for the exact call and state transitions. The compact sections below preserve the earlier comparison and anchors. A paper algorithm and a released implementation can differ; each chapter identifies its chosen target.</p>
 <p><strong>Four training terms:</strong> <em>frozen</em> means the model's weights are unchanged; <em>supervised fine-tuning (SFT)</em> learns to imitate target outputs; <em>reinforcement learning (RL)</em> uses outcome rewards to change which outputs the policy favors; <em>distillation</em> matches a teacher's behavior. None is synonymous with appending a runtime note.</p>
 <p>Two lifetimes remain separate throughout: <strong>within-task memory</strong> preserves an unfinished investigation; <strong>across-task memory</strong> lets a completed attempt help a different, separately scored task. A session restart does not necessarily start a new task. Across-task experiments need not use short or independent tasks.</p>
@@ -638,6 +645,6 @@ serving query 2: frozen model + same Z + &quot;When should A be avoided?&quot;
 <p>Our earlier V0–V3 proposals remain <strong>controlled adaptations/ablations</strong>, not reproductions or an agreed implementation order. For instance, “solver-written notes + grep + periodic checkpoint” combines choices from multiple systems; it is not exactly ShadowFrog, Claude-Mem, or MemexRL.</p>
 <p>For brainstorming, now ask: <strong>which state transition solves our bottleneck?</strong> A better writer, a better reader, reliable evidence recovery, active-context replacement, and learned KV compression are different changes. Choose the mechanism before simplifying it.</p>
 <p><a href="memory-management.html">Broader survey and results</a> · <a href="inner-loop-memory.html">Focused code-level walkthrough</a> · <a href="memory-baseline-experiments.html">Separate experiment protocols</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></div></details></article>
-<footer>Generated 2026-09-21 13:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 19:09 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
