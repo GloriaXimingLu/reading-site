@@ -13,7 +13,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">31 min · 14 methods and systems · 2026-09-21</p><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: The Methods, Step by Step</h1><p class="meta">36 min · 14 methods and systems · 2026-09-21</p><p class="meta">Method walkthrough · Revised 21 September 2026 · Paper algorithms and pinned implementations are distinguished below.</p>
 
 <p>The question for this tutorial is: <strong>could you execute one cycle of the method yourself, and say exactly what changed?</strong> For each selected method, we follow its inputs, memory object, writes, reads, and next model call. Training is explained separately from deployment. The examples use invented tasks and values to make the published mechanisms concrete; they are not experimental results.</p>
 <p>The three engineering systems—Codex compaction, ShadowFrog, and Claude-Mem—are labeled as systems, not papers. This page covers the <strong>14 selections in the reading edition</strong>, not all 33 entries in the <a href="memory-management.html">broader survey</a>.</p>
@@ -26,6 +26,8 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <li><a href="#feedback">Feedback: who sees the answer, and when?</a> · <a href="#adaptations">What changes if we adapt a method?</a></li>
 </ul>
 <p>If you are reading for today's design discussion, start with ReasoningBank, ACE, ShadowFrog, Claude-Mem, and Memex. Then read the training sections before deciding whether we need a frozen-model design or a learned policy.</p>
+<p><strong>How to read a section:</strong> follow the numbered cycle, trace the worked example, then check the feedback and carry-forward rules. Code-shaped examples illustrate the pinned interface; they are not complete installation instructions. A paper algorithm and a released implementation can differ, so neither silently substitutes for the other.</p>
+<p><strong>Four training terms:</strong> <em>frozen</em> means the model's weights are unchanged; <em>supervised fine-tuning (SFT)</em> learns to imitate target outputs; <em>reinforcement learning (RL)</em> uses outcome rewards to change which outputs the policy favors; <em>distillation</em> matches a teacher's behavior. None is synonymous with appending a runtime note.</p>
 <p>Two lifetimes remain separate throughout: <strong>within-task memory</strong> preserves an unfinished investigation; <strong>across-task memory</strong> lets a completed attempt help a different, separately scored task. A session restart does not necessarily start a new task. Across-task experiments need not use short or independent tasks.</p>
 <h2 id="reasoningbank">1. ReasoningBank: retrieve an experience, solve, judge, extract lessons</h2>
 
@@ -57,6 +59,7 @@ for task in task_stream:
     bank.append(experience(task, items))
 </code></pre>
 <p>This is explanatory pseudocode, not a literal repository API.</p>
+<p><strong>Carry-forward:</strong> the bank survives between tasks in the learning stream. A new task retrieves lessons, not the entire previous conversation. An empty bank simply supplies no past lessons.</p>
 <p><strong>Writer feedback.</strong> The extractor learns the judge's success/failure assessment, which can itself be wrong. The inspected code can also append the judge's explanation. Importantly, the code offers both an <strong>autoeval</strong> criterion and a <strong>ground-truth reward</strong> criterion; selecting the latter changes the feedback condition. “ReasoningBank uses no gold” describes the paper's self-judged procedure, not every available code configuration. <a href="https://github.com/google-research/reasoning-bank/blob/ed80611788292ea739f1effd31f16c53823b8a0d/WebArena/induce_memory.py">Extraction and criterion switch</a></p>
 <p><strong>Optional variant, not the baseline:</strong> MaTTS spends additional inference on parallel attempts or sequential refinement and uses the extra evidence for memory extraction. Do not silently include that extra solve budget in a single-attempt comparison. <a href="https://arxiv.org/html/2509.25140v2">Paper</a></p>
 <h2 id="ace">2. ACE: generate, reflect, and apply a small playbook delta</h2>
@@ -73,12 +76,18 @@ for task in task_stream:
 <h3>Worked example: a delta, not a new essay</h3>
 <p>Suppose an existing bullet says to extract the two reported financial figures before calculating growth. The Generator uses it, but compares a quarterly figure with an annual one. The Reflector identifies the period mismatch. A Curator addition can have this actual operation shape:</p>
 <pre><code class="language-json">{
-  &quot;type&quot;: &quot;ADD&quot;,
-  &quot;section&quot;: &quot;Calculation checks&quot;,
-  &quot;content&quot;: &quot;Before calculating growth, verify that both values cover comparable reporting periods and use the same units.&quot;
+  &quot;reasoning&quot;: &quot;The attempted comparison mixed reporting periods.&quot;,
+  &quot;operations&quot;: [
+    {
+      &quot;type&quot;: &quot;ADD&quot;,
+      &quot;section&quot;: &quot;Calculation checks&quot;,
+      &quot;content&quot;: &quot;Before calculating growth, verify that both values cover comparable reporting periods and use the same units.&quot;
+    }
+  ]
 }
 </code></pre>
-<p>The application layer gives the new bullet an ID. Existing unrelated bullets stay unchanged. On task B the playbook includes both the extraction advice and the new period check. The example section name and content are illustrative.</p>
+<p>The parser expects the outer <code>reasoning</code> and <code>operations</code> fields; the object inside the array is one delta. The application layer gives the new bullet an ID. Existing unrelated bullets stay unchanged. On task B the playbook includes both the extraction advice and the new period check. The example section name and content are illustrative.</p>
+<p><strong>Carry-forward:</strong> the playbook, IDs, and usage metadata survive the adaptation stream. Task B gets the revised playbook, not task A's complete conversation.</p>
 <p><strong>What is learned?</strong> Textual instructions and metadata change; this procedure does not require gradient updates to the Generator. The paper's full playbook injection is also not the same as retrieving three bullets through our own search policy.</p>
 <p><strong>Writer feedback.</strong> In the inspected Reflector, <code>use_ground_truth</code> selects whether an available reference answer enters its prompt. Both prompt paths can receive <code>environment_feedback</code>. Thus the no-reference path can still be externally informed. In online evaluation, record the current answer's score <strong>before</strong> using its feedback to revise the playbook.</p>
 <p><strong>Paper/code boundary.</strong> The checked Curator explicitly states that only <code>ADD</code> operations are fully supported. Although its comments mention UPDATE/MERGE/DELETE, that is not evidence of a complete arbitrary-edit implementation. Preserve the paper's distinction between delta generation and refinement; do not invent a working delete API. <a href="https://github.com/ace-agent/ace/blob/82709de050e1db6e6ef2f07bcb0393560b94992a/ace/core/curator.py">Pinned Curator</a></p>
@@ -101,12 +110,48 @@ Q_i\leftarrow Q_i+\alpha(r-Q_i).
 \]</div>
 <p>Hats denote z-score normalization within candidates; <span class="arithmatex">\(\lambda\)</span> trades off relevance and utility; <span class="arithmatex">\(\alpha\)</span> controls the update size; <span class="arithmatex">\(r\)</span> is the observed reward.</p>
 <h3>Worked example: which number changes?</h3>
-<p>Two experiences both pass the relevance filter. One describes an ineffective navigation shortcut; the other describes checking the destination before moving an object. The second is retrieved.</p>
+<p>Use illustrative settings: similarity threshold <span class="arithmatex">\(0.5\)</span>, <span class="arithmatex">\(k_1=2\)</span>, <span class="arithmatex">\(k_2=1\)</span>, and <span class="arithmatex">\(\lambda=0.75\)</span>.</p>
+<table>
+<thead>
+<tr>
+<th>Stored experience</th>
+<th style="text-align: right;">Similarity</th>
+<th style="text-align: right;">Utility <span class="arithmatex">\(Q\)</span></th>
+<th>Passes similarity gate?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A: navigation shortcut</td>
+<td style="text-align: right;">0.90</td>
+<td style="text-align: right;">0.00</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>B: check destination before moving</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">0.40</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>C: unrelated but previously useful</td>
+<td style="text-align: right;">0.30</td>
+<td style="text-align: right;">0.90</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>Only A and B enter normalization. Using population standard deviations for this toy calculation, their normalized similarities are <span class="arithmatex">\(+1,-1\)</span>, and normalized utilities are <span class="arithmatex">\(-1,+1\)</span>. Therefore:</p>
+<pre><code class="language-text">score(A) = 0.25 × (+1) + 0.75 × (-1) = -0.50
+score(B) = 0.25 × (-1) + 0.75 × (+1) = +0.50
+</code></pre>
+<p>B wins despite being less similar. C cannot win through high utility because it failed the first gate. <strong>The solver receives B's experience text</strong>, not merely the number 0.50. The normalization convention here makes the arithmetic transparent; production code must define its behavior for ties and zero variance.</p>
 <p>For an illustrative <span class="arithmatex">\(\alpha=0.2\)</span>, <span class="arithmatex">\(Q=0.4\)</span>, and success reward <span class="arithmatex">\(r=1\)</span>:</p>
 <pre><code class="language-text">before: experience B, utility 0.400
 after:  experience B, utility 0.400 + 0.2 × (1 - 0.400) = 0.520
 </code></pre>
-<p>If the next use fails with reward <span class="arithmatex">\(-1\)</span>, its value becomes <span class="arithmatex">\(0.216\)</span>. The words of experience B need not change. A separate write stores the new attempt. Both retrieved memories would be credited if both had been injected; this is not a causal test proving which one helped.</p>
+<p>If the next use fails with reward <span class="arithmatex">\(-1\)</span>, its value becomes <span class="arithmatex">\(0.216\)</span>. The words of experience B need not change. A separate write stores the new attempt under its own intent, with a fresh initial utility—not B's updated value. Both memories would be credited if both had been injected; this is not a causal test proving which one helped.</p>
+<p><strong>Carry-forward:</strong> the experience bank and learned utilities persist into later tasks. Clearing them after every task removes the cross-task learning being tested.</p>
 <h3>The released code is a variant, not Eq. 7 verbatim</h3>
 <p>The inspected <code>ValueAwareSelector</code> sorts candidates by Q, uses similarity as a tie-breaker, and supports epsilon-greedy exploration. It is <strong>not</strong> the paper's normalized weighted-score implementation. Its updater supports a discounted target, with <span class="arithmatex">\(\gamma=0\)</span> as the single-step default. A reproduction must choose and label one of these selection rules. <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/value_driven.py">Selector and updater</a></p>
 <p><strong>Writer feedback, concretely.</strong> In the inspected ALFWorld runner, success flags update retrieved memories' utilities and are also passed to the memory-update layer. A vanilla builder stores a trajectory, a generated script, or both; a validation updater writes only successes; an adjustment updater can explicitly tell a reflector that a trajectory failed. The builder interface has no separate gold-answer argument. This establishes those code paths, not the contents of every other benchmark's trajectory. <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/run/alfworld_rl_runner.py">Runner</a> · <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/updater.py">Updater variants</a> · <a href="https://github.com/MemTensor/MemRL/blob/c1b322ca43de36ddf64c6712f89d0095bfc35ce0/memrl/service/builders.py">Memory builders</a></p>
@@ -190,7 +235,20 @@ get_tool_uses(relevant IDs) -&gt; captured evidence, if available
   ]
 }
 </code></pre>
-<p>This example uses <strong>authored</strong> block text. To retain an original log span, use the supported <code>start_anchor</code>, <code>mid_anchor</code>, and <code>end_anchor</code> fields instead. The implementation tries exact matching and a whitespace-normalized fallback.</p>
+<p>This example uses <strong>authored</strong> block text. For an anchor-based write, suppose the active tool result contains:</p>
+<pre><code class="language-text">BEGIN cache test
+test_two_tenants FAILED: identical keys
+END cache test
+</code></pre>
+<p>A block in the same <code>db_blocks</code> array can instead be:</p>
+<pre><code class="language-json">{
+  &quot;db_index&quot;: &quot;original_failure&quot;,
+  &quot;start_anchor&quot;: &quot;BEGIN cache test&quot;,
+  &quot;mid_anchor&quot;: &quot;test_two_tenants FAILED&quot;,
+  &quot;end_anchor&quot;: &quot;END cache test&quot;
+}
+</code></pre>
+<p>The harness locates the ordered anchors and stores the inclusive span, including <code>identical keys</code>, although the model did not retype that detail. All three anchors are required. Failed validation returns an error before compression. The exact-match path preserves the span; the fallback collapses whitespace, so it is not byte-for-byte preservation. Reusing an existing <code>db_index</code> can update that block; duplicate IDs within one request are rejected.</p>
 <p>The important state change is:</p>
 <pre><code class="language-text">before:
   active = instructions + task + many tool exchanges
@@ -206,6 +264,7 @@ after ReadExperience(db_index=&quot;cache_check_1&quot;):
 <p>“Lossless mode” is a code mode name, not a guarantee that the whole original trajectory is preserved. Authored blocks can already be lossy; unselected evidence is absent; a forgotten index can make a stored block hard to use. The inspected code literally rebuilds the messages as the first two messages plus the summary message. <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/agents/memory/mixin.py">Implementation</a> · <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/agents/memory/prompts.py">Tool instructions</a></p>
 <h3>What MemexRL trains</h3>
 <p>Collect rollouts in this tool environment; score task completion and penalize context-budget violations, redundant actions, and invalid behavior according to the training configuration. Use a group-relative policy update to make successful memory-management action sequences more likely. Because compression replaces prefixes, training must preserve the <strong>actual context seen at each segment</strong> rather than pretending the complete raw transcript was visible throughout. The released code saves pre-compression segments for this purpose. <a href="https://arxiv.org/html/2603.04257">Paper</a> · <a href="https://github.com/Accenture/MemexRL/blob/dbb1f12c4fb2778e92f025a577219cb005671da6/src/agents/memory/mixin.py">Segment capture</a></p>
+<p><strong>Carry-forward:</strong> compression preserves this task's external store while replacing its active messages. The described procedure starts a new task with an empty store; sharing archives across independent tasks would change that condition.</p>
 <p><strong>Writer feedback.</strong> At deployment, the agent writes from current task, observations, and stored/retrieved state. Later task reward trains its policy; that is not a reference answer inserted into <code>CompressExperience</code>. Prompting an untrained model with the tools tests Memex's interface, not reproduction of MemexRL's learned policy.</p>
 <h2 id="pro-long">8. PRO-LONG: make a lossless interaction log executable evidence</h2>
 
@@ -230,7 +289,8 @@ archive after:  old records + new records
 </code></pre>
 <p>The action values are illustrative. The point is that <strong>the stored raw record need not be rewritten to make retrieval more intelligent</strong>.</p>
 <p><strong>Writer feedback.</strong> The log contains observed states, actions, and visible progress/score information. It does not manufacture a hidden correct action sequence. A textual note written by the agent is a separate derived artifact.</p>
-<p><strong>Context and lifetime.</strong> An external log does not itself evict the active prompt. The coding-agent interface and its context policy still matter. The paper's within-game continuity is not a demonstration that arbitrary records should persist between unrelated benchmark tasks. This makes it a useful raw-history/read-policy reference, but not interchangeable with a learned summary writer.</p>
+<p><strong>Context and lifetime.</strong> An external log does not itself evict the active prompt. Concretely, the inspected Codex backend resumes its prior session when that session exists; it does <strong>not</strong> obligatorily start a blank conversation at each action batch. The complete-log setting is also distinct from the code's windowed-log and current-board-in-prompt variants. Keep the backend and log setting fixed when comparing memory. Workspace paths can be rendered relative by the backend. <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/codex_agent.py">Session handling</a> · <a href="https://github.com/alexisfox7/PRO-LONG/blob/9d2f2d46fea8759ed494ce5b0166c7004a2e97c4/research/arc-agi-3/prolong_agent/agent/base.py">Log synchronization and variants</a></p>
+<p>The paper's within-game continuity is not a demonstration that arbitrary records should persist between unrelated benchmark tasks. This is a raw-history/read-policy reference, not a learned summary writer.</p>
 <h2 id="memagent">9. MemAgent: repeatedly overwrite a bounded, question-aware text memory</h2>
 
 <p><strong>Inputs:</strong> one question and a long document split into sequential chunks. <strong>Memory:</strong> a bounded generated text string. There is no vector database and no choice of which chunk to retrieve next in the basic procedure.</p>
@@ -248,7 +308,8 @@ for chunk in sequential_chunks(document):
     memory = generate_updated_memory(input, output_budget=M)
 answer = generate_answer(question + memory)
 </code></pre>
-<p>This is explanatory pseudocode. The real quickstart exposes chunk size and maximum generated memory length separately.</p>
+<p>This is explanatory pseudocode. The real quickstart exposes chunk size and maximum generated memory length separately. Its defaults are 5,000-token chunks and at most 1,024 generated tokens per memory/answer call. It also clips documents over 120,000 tokens to their beginning and end <strong>before</strong> chunking. Thus that particular quickstart does not demonstrate processing every token of an arbitrarily long input.</p>
+<p><strong>Carry-forward:</strong> only the generated memory string connects the chunk calls. A new document/question call initializes it again; trained model parameters remain.</p>
 <h3>Worked example</h3>
 <p>Question: “Which acquisition happened before the director resigned?”</p>
 <pre><code class="language-text">before chunk 1: no previous memory
@@ -270,7 +331,7 @@ final answer:  Orion
 <h2 id="agentfold">10. AgentFold: replace selected step ranges with summaries</h2>
 
 <p><strong>Memory object.</strong> An ordered list of summary blocks, each covering a contiguous range of step IDs, plus the latest interaction kept at higher detail. The context also retains the question and tool definitions.</p>
-<h3>One forward step</h3>
+<h3>One forward step: paper-level data flow</h3>
 <ol>
 <li>Read the question, tools, previous summary blocks, and latest interaction.</li>
 <li>Generate the structured response: a folding directive, a brief action explanation, and an external action alongside the model's deliberation.</li>
@@ -298,7 +359,11 @@ then:
 <p>The paper writes the deep directive as:</p>
 <pre><code class="language-json">{&quot;range&quot;: [4, 6], &quot;summary&quot;: &quot;Candidate A fails the required date constraint.&quot;}
 </code></pre>
-<p>The inspected code instead parses <code>compress_range</code> and <code>compress_text</code> inside a <code>compress</code> tag. Its <code>update_and_sort_steps</code> removes covered entries, inserts the new range/content record, and sorts the remaining blocks by start ID. The example uses a whole-block boundary; arbitrary partial overlap is not a safe assumption about that implementation.</p>
+<p>The inspected code instead parses this payload inside a <code>compress</code> tag:</p>
+<pre><code class="language-json">{&quot;compress_range&quot;: [4, 6], &quot;compress_text&quot;: &quot;Candidate A fails the required date constraint.&quot;}
+</code></pre>
+<p>Its <code>update_and_sort_steps</code> removes covered entries, inserts the new range/content record, and sorts by start ID. The example uses a whole-block boundary; arbitrary partial overlap is not a safe assumption. The implementation executes the tool <strong>before</strong> applying the already-generated fold and assembling the next prompt; the fold's text was generated without that new tool result. At the first step there is no old history to fold. <a href="https://github.com/Alibaba-NLP/DeepResearch/blob/f72f75d8c3eb842f2bbbab096a12206ff66e270f/WebAgent/AgentFold/infer.py">Exact call order and parser</a></p>
+<p><strong>Carry-forward:</strong> the next call receives only the revised step list and latest interaction alongside fixed task context. <code>call_llm_with_tool</code> initializes an empty list for each question; it is not an across-question experience bank.</p>
 <p><strong>Recovery.</strong> Folding changes active context. There is no Memex-style dereference operation in this basic mechanism: omitted details in the replaced steps are no longer available to the next call.</p>
 <h3>Training and feedback</h3>
 <p>Fold-Generator collects structured step/response pairs from strong models, rejects malformed steps and trajectories with excessive environment errors, and uses the validated pairs for supervised fine-tuning. This teaches the joint fold-and-act format; it is not the RL procedure of MemAgent or ContextPilot. At deployment the folding writer sees the current task state and observations, not an injected reference answer. <a href="https://arxiv.org/html/2510.24699">Paper, §3.4</a></p>
@@ -325,14 +390,29 @@ then:
   &quot;source&quot;: {&quot;chunk_ids&quot;: [12], &quot;msg_ids&quot;: [8]}
 }
 </code></pre>
-<p>This illustrates <code>memorize</code>'s arguments, not a paper result. Next, <code>summarizeContext(msg_id=8, summary=...)</code> can shrink the verbose active message. Later, <code>loadMemory(key="appointment_2019")</code> retrieves that keyed record and related memories; <code>readChunk(chunk_id=12)</code> can recover source text.</p>
+<p>This illustrates <code>memorize</code>'s arguments, not a paper result. Next, <code>summarizeContext(msg_id=8, summary=...)</code> can shrink the verbose active message. Later, <code>loadMemory(key="appointment_2019")</code> retrieves that keyed record and directly related memories; <code>readChunk(chunk_id=12)</code> can recover source text. The model chooses the key from the prompt's available-memory listing; this is not an arbitrary semantic query. The pinned schema allows a <code>max_related</code> limit, defaulting to five.</p>
 <p>Notice the two different stores: <strong>the memory is a selected interpretation; the indexed chunk is evidence</strong>. Replacing an active message does not mean these objects are identical.</p>
 <p><strong>Paper/code boundary.</strong> The paper names <code>readMemory</code> and <code>searchContext</code> and describes <code>foldHistory</code>, which offloads historical messages into searchable form. The inspected inference schema instead exposes <code>loadMemory</code> and <code>searchEngine</code>, and does not expose <code>foldHistory</code>. Use the paper to understand the method; use the pinned schema to construct runnable calls. Do not copy a paper tool name into code unverified. <a href="https://arxiv.org/html/2608.28476">Paper, Table 1</a> · <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/infer/tools/context-shaper_tools.json">Actual schema</a></p>
 <h3>What the training algorithm adds</h3>
 <p><strong>SFT:</strong> generate teacher trajectories with rules that encourage suitable reads and force offloading near capacity. Remove these generation-time hints from the final training examples.</p>
-<p><strong>RL:</strong> segment rollouts at context-editing actions. Rank candidate branching points using context-length change and generation-entropy change. Spend remaining rollout budget on continuations branched from high-sensitivity decisions. Score terminal answers for correctness, format, and violations; assign an intermediate snapshot the mean reward of terminal branches sharing it, then use group-relative advantages for policy training. <a href="https://arxiv.org/html/2608.28476">Paper, §4</a> · <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/train/README.md">Training entrypoint and configuration</a></p>
-<p><strong>Credit example.</strong> If a snapshot has descendant terminal rewards <span class="arithmatex">\(1,0,1\)</span>, its estimated value is <span class="arithmatex">\(2/3\)</span>, not necessarily the reward of one arbitrarily chosen complete trajectory. This numerical example illustrates the branch-average rule.</p>
-<p><strong>Writer feedback.</strong> Runtime tools see available context and memory. Gold answers are used by the terminal training scorer, not automatically inserted into every memory-writing call. Giving a frozen model this toolset does not reproduce the trained choice of when and how to use it.</p>
+<p><strong>RL, paper procedure:</strong></p>
+<ol>
+<li>Roll out trajectories; split them into <span class="arithmatex">\(M\)</span> snapshots at context edits.</li>
+<li>Rank candidate edits by the sensitivity below. If the snapshot budget is <span class="arithmatex">\(N&gt;M\)</span>, choose the top <span class="arithmatex">\(N-M\)</span> edits and branch from their <strong>parent states</strong>, allowing different actions—not only different continuations after the same edit.</li>
+<li>Score terminal branches using answer correctness, format, and violation penalties.</li>
+<li>Give each intermediate snapshot the mean reward of its descendant terminals. Normalize rewards within the query's snapshot group into advantages; apply GRPO to snapshot samples.</li>
+</ol>
+<div class="arithmatex">\[
+\Delta C=\left|\frac{L_{\mathrm{after}}-L_{\mathrm{before}}}{L_{\mathrm{before}}}\right|,
+\quad
+\Delta H=H_{\mathrm{after}}-H_{\mathrm{initial}},
+\quad
+S=\alpha\Delta C+\beta\Delta H.
+\]</div>
+<p><span class="arithmatex">\(L\)</span> is context length; <span class="arithmatex">\(H\)</span> averages next-token entropy over the first <span class="arithmatex">\(k\)</span> generated tokens. Entropy is compared with the <strong>trajectory's initial state</strong>, not the immediately preceding step. <a href="https://arxiv.org/html/2608.28476">Paper, §4</a></p>
+<p><strong>Credit example.</strong> Descendant rewards <span class="arithmatex">\(1,0,1\)</span> give a snapshot value <span class="arithmatex">\(2/3\)</span>. This is a branch-average estimate, not proof that every memory action in the snapshot was good.</p>
+<p>The released recipe starts with eight rollouts, retains at most eight samples each, and fills toward a 128-sample query budget through partial branches. These are recipe settings, not definitions of the method. <a href="https://github.com/Tencent/ContextPilot/blob/782cbb6611fb610c4cf6fafda6022b7e89cae191/train/README.md">Training configuration</a></p>
+<p><strong>Writer feedback.</strong> Gold answers score terminal training outputs; they are not automatically supplied to runtime memory tools. Giving a frozen model these tools omits the learned action-selection policy.</p>
 <h2 id="automem">12. AutoMem: optimize the memory scaffold, then train its operator</h2>
 
 <p><strong>Runtime memory object:</strong> a directory of files. <strong>Learned artifacts:</strong> first an improved scaffold—prompts, schema, code, tools—and then a memory-specialist adapter. Those are not the same thing as the contents of the current episode's notebook.</p>
@@ -341,24 +421,30 @@ then:
 <li>Observe the result of the previous world action.</li>
 <li><strong>LOG:</strong> record useful new information in the memory filesystem, using the scaffold's writing operations.</li>
 <li><strong>PLAN:</strong> consult memory through reads/searches before choosing the next world action.</li>
-<li>Execute that action and repeat. After specialist training, the specialist handles LOG and memory consultation; the unchanged base model makes the world-action decision, with the two sharing the conversation. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/README.md">Official implementation overview</a></li>
+<li>Execute that action and repeat. After specialist training, the specialist handles LOG and PLAN's memory consultation; the unchanged base model receives the PLAN consultation and makes the world-action decision. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/README.md">Official implementation overview</a></li>
 </ol>
-<h3>Worked example: separate memory work from acting</h3>
-<pre><code class="language-text">observation: a move toward the northern passage hits a wall
+<h3>Worked example: actual file commands and the model handoff</h3>
+<p>Use the pinned <code>crafter_v5_twomodel</code> scaffold. Suppose a previous northward move had no effect, and <code>navigation.txt</code> already exists. The following contents are invented, but the command syntax is real. Separate rows below are separate model/tool exchanges.</p>
+<pre><code class="language-text">LOG writer receives:
+  previous action + current observation + file index + scaffold warnings
 
-LOG:
-  update the stored local map: that edge is blocked
+memory model -&gt; &lt;|SEARCH|&gt;navigation.txt|junction_4&lt;|END|&gt;
+harness      -&gt; no matching lines
 
-PLAN, memory consultation:
-  read the map and search previous attempts at this junction
+memory model -&gt; &lt;|APPEND|&gt;navigation.txt|Step 18 action 'Move North': no movement at junction_4; north appears blocked.&lt;|END|&gt;
+harness      -&gt; append confirmation
 
-world-action decision:
-  choose a different passage
+memory model -&gt; &lt;|DONE|&gt;
+harness      -&gt; finish LOG; construct PLAN input
 
-next observation:
-  movement succeeds; begin the next LOG phase
+PLAN receives:
+  current observation + goals + file index + scaffold guidance
+
+memory model -&gt; &lt;|SEARCH|&gt;navigation.txt|junction_4&lt;|END|&gt;
+harness      -&gt; the stored failed-move record
 </code></pre>
-<p>The coordinates, filenames, and action vocabulary depend on the evolved scaffold. This is an illustrative trace, not a claim that all released scaffolds share one universal map schema.</p>
+<p>LOG permits reads and writes; PLAN's file operations are read-only. In the two-model code, an action tag from the memory model signals consultation completion; its proposed action tag is <strong>stripped</strong>, and the conversation plus read results passes to the gameplay model. That model can read more or emit, for example, <code>&lt;|ACTION|&gt;Move East&lt;|END|&gt;</code>. The harness validates/dispatches that world action; its result becomes the next LOG input. Hitting iteration limits can invoke a configured fallback. <a href="https://github.com/autoLearnMem/AutoMem/blob/1987b8f6d202212ec3c0c78ab2a01ae02aca4e8b/scaffolds/crafter_v5_twomodel/agents/memory_agent.py">Prompts, parsers, and two-model dispatch</a></p>
+<p><strong>Carry-forward:</strong> this scaffold keeps episode files between steps, but its reset reconstructs the initial files. The optimized scaffold and trained memory specialist carry across episodes; the previous episode's accumulated notebook does not. LOG and PLAN construct their own inputs, so sharing the filesystem does not imply copying every LOG exchange into PLAN.</p>
 <h3>Outer loop 1: improve the scaffold</h3>
 <p>Run the current agent on a fixed seed set. A meta-LLM inspects full episode traces, memory files, and agent code. It identifies failures such as redundant records or ineffective lookups and proposes edits to prompts, storage structure, or tools. Evaluate the revision on the same seed set; keep it when average progression improves. Repeat.</p>
 <h3>Outer loop 2: improve memory proficiency</h3>
@@ -437,6 +523,6 @@ serving query 2: frozen model + same Z + &quot;When should A be avoided?&quot;
 <p>Our earlier V0–V3 proposals remain <strong>controlled adaptations/ablations</strong>, not reproductions or an agreed implementation order. For instance, “solver-written notes + grep + periodic checkpoint” combines choices from multiple systems; it is not exactly ShadowFrog, Claude-Mem, or MemexRL.</p>
 <p>For brainstorming, now ask: <strong>which state transition solves our bottleneck?</strong> A better writer, a better reader, reliable evidence recovery, active-context replacement, and learned KV compression are different changes. Choose the mechanism before simplifying it.</p>
 <p><a href="memory-management.html">Broader survey and results</a> · <a href="inner-loop-memory.html">Focused code-level walkthrough</a> · <a href="memory-baseline-experiments.html">Separate experiment protocols</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></article>
-<footer>Generated 2026-09-21 06:18 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 06:36 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
