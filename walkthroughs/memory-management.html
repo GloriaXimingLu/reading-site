@@ -13,11 +13,11 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <script defer src="../annotate.js"></script>
 </head>
 <body>
-<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: Across Tasks vs Within One Long Task</h1><p class="meta">36 min · 33 works and systems · 2026-09-20</p><p class="meta">Reading and feedback-access revision: 20 September 2026. Pinned ShadowFrog, Claude-Mem, and Codex source checks: 18 September. Broader literature review through 15 September; two-setting framing retained. Frozen APIs, trainable policies, and learned representations remain in scope. Method assignments and proposed experiments are my synthesis; numerical results are authors’ reports, not reproductions.</p>
+<article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Agent Memory: Across Tasks vs Within One Long Task</h1><p class="meta">37 min · 33 works and systems · 2026-09-20</p><p class="meta">Reading and feedback-access revision: 20 September 2026. Pinned ShadowFrog, Claude-Mem, and Codex source checks: 18 September. Broader literature review through 15 September; two-setting framing retained. Frozen APIs, trainable policies, and learned representations remain in scope. Method assignments and proposed experiments are my synthesis; numerical results are authors’ reports, not reproductions.</p>
 
 <h2 id="inner-loop-today">Start today: understand three ways to preserve a solving agent's state</h2>
 
-<p><strong>Start with the <a href="memory-reading-edition.html">concise reading edition</a></strong> for the quick method map, writer-visible feedback, and likely candidates. Then use the <a href="inner-loop-memory.html">focused inner-loop walkthrough</a> for implementation details. These companions distinguish released behavior from proposed adaptations; no implementation order is locked.</p>
+<p><strong>Start with the <a href="memory-reading-edition.html">step-by-step method tutorial</a></strong> for all 14 selected methods: concrete operations, worked examples, training loops, and writer-visible feedback. Then use the <a href="inner-loop-memory.html">focused inner-loop walkthrough</a> for implementation details. These companions distinguish released behavior from proposed adaptations; no implementation order is locked.</p>
 <ul>
 <li><strong>ShadowFrog:</strong> the solver writes source-addressed Markdown discoveries and is reminded to read them before edits. It does not itself implement overflow-triggered compaction or a complete raw trace archive. <a href="inner-loop-memory.html#shadowfrog">Steps and exact boundaries</a>.</li>
 <li><strong>Claude-Mem:</strong> a separate observer converts tool activity into structured notes; the solver searches a compact index and selectively fetches details/evidence. Capture, note writing, and indexing are separate stages, so readiness before reset matters. <a href="inner-loop-memory.html#claude-mem">Steps and implementation caveats</a>.</li>
@@ -58,7 +58,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <tr>
 <td><a href="https://arxiv.org/html/2509.25140v2#S3.SS2">ReasoningBank</a></td>
 <td>Trajectory plus a self-judged success/failure signal</td>
-<td>The judge explicitly operates without a ground-truth reference.</td>
+<td>The paper’s self-judged setting has no reference answer; the released code also offers a ground-truth-reward criterion.</td>
 </tr>
 <tr>
 <td><a href="https://arxiv.org/html/2510.04618#S4">ACE</a></td>
@@ -87,7 +87,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 </tr>
 </tbody>
 </table>
-<p>For MemRL, the paper establishes reward-driven utility updates, but the exact summarizer inputs still require checking the selected benchmark adapter. Do not turn that uncertainty into a blanket “writer sees gold” or “writer never sees gold.”</p>
+<p>For MemRL, the inspected ALFWorld path passes success flags to the utility updater and memory-update layer. Builders consume the task/trajectory; an optional failure-reflection path explicitly receives a failure signal. No separate gold-answer argument appears in those builder interfaces, but other adapters and trajectory contents still need their own audit. The <a href="memory-reading-edition.html#memrl">step-by-step section</a> also distinguishes the paper’s normalized weighted retrieval score from the pinned code’s Q-ranked, epsilon-greedy selector.</p>
 <h3>Timing changes the experiment</h3>
 <p>Across-task feedback can follow this order:</p>
 <p><code>attempt A → record A's score → reveal permitted feedback → update memory → attempt B</code></p>
@@ -423,6 +423,6 @@ end of task A → discard store before an independent task B
 <p>I started from this tracker’s notes on ShadowFrog, PRO-LONG, PlugMem, ReasoningBank, ACE, ContextPilot, Cartridges, and Memory Decoder, then followed primary papers and author repositories. Full method/results sections were checked for the main entries; frontier items explicitly marked “screened” are not full reviews. This is a targeted survey, not an exhaustive systematic review or independent replication.</p>
 <p>Official repositories were checked read-only for concrete files. Examples: ReasoningBank’s <code>third_party/src/minisweagent/memory/</code>; MemRL’s <code>memrl/service/retrievers.py</code>; AutoMem’s <code>scaffolds/</code> and <code>loop2_training_engine/</code>; MemexRL’s <code>src/agents/memory/</code> and <code>training/</code>; MemAgent’s <code>quickstart.py</code> and <code>run_memory_7B.sh</code>; ContextPilot’s <code>infer/</code> and <code>train/</code>. “Code available” means implementation files were found—not that dependencies, checkpoints, and all reported results were reproduced.</p>
 <p>Pin a repository commit before experimenting. Read-only audit snapshots: ShadowFrog <code>6ae4fc8</code>; PRO-LONG <code>9d2f2d4</code>; ReasoningBank <code>ed80611</code>; ACE <code>82709de</code>; MemRL <code>c1b322c</code>; PlugMem <code>3b2ce75</code>; AutoMem <code>1987b8f</code>; MemexRL <code>dbb1f12</code>; MemAgent <code>ef4219b</code>; AgentFold/DeepResearch <code>f72f75d</code>; ContextPilot <code>782cbb6</code>; Cartridges <code>ef34ba9</code>; LLMLingua <code>5a4c78a</code>; Meta-Harness TerminalBench artifact <code>57fefdb</code>; RLM <code>854e688</code>; ICAE <code>469a468</code>.</p></article>
-<footer>Generated 2026-09-20 21:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 06:18 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>

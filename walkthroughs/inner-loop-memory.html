@@ -16,7 +16,7 @@ window.MathJax = {tex: {inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]
 <article class="wide"><a class="crumb" href="../index.html">← all papers</a><h1>Inner-Loop Memory: ShadowFrog, Claude-Mem, and Codex Compaction</h1><p class="meta">17 min · 5 approaches · 2026-09-20</p><p class="meta">A focused companion to the <a href="memory-management.html">broader methods survey</a>. Source/code check: 18 September 2026. Feedback and fidelity clarification: 20 September. This explains existing mechanisms first, then describes optional controlled adaptations. No implementation or experiment has been run. Repository-specific integration notes stay private.</p>
 
 <h2>The mechanisms in one minute</h2>
-<p><strong>Understand the faithful method before choosing a simplification.</strong> Preserve writer inputs/prompts, write timing, schema, retrieval, context replacement, feedback access and persistence rules. Removing a UI or daemon may preserve behavior; replacing a writer, reader or checkpoint policy changes the method. The V0–V3 ladder below is an optional adaptation/ablation design, not a reproduction plan or a locked order. Start with the <a href="memory-reading-edition.html">concise reading edition</a> for the wider map.</p>
+<p><strong>Understand the faithful method before choosing a simplification.</strong> Preserve writer inputs/prompts, write timing, schema, retrieval, context replacement, feedback access and persistence rules. Removing a UI or daemon may preserve behavior; replacing a writer, reader or checkpoint policy changes the method. The V0–V3 ladder below is an optional adaptation/ablation design, not a reproduction plan or a locked order. Start with the <a href="memory-reading-edition.html">step-by-step method tutorial</a> for all 14 selections, including worked state transitions and training procedures.</p>
 <p>One important correction: <strong>notes + grep does not shrink the active conversation.</strong> Notes solve persistence and selective access; a compaction policy decides what leaves the next model input. An agent that keeps appending all messages can still overflow while its note directory works perfectly.</p>
 <table>
 <thead>
@@ -223,6 +223,6 @@ discard this task's memory before a new independent task
 <li><strong>A note should say what remains uncertain and how to verify it.</strong> Fluency and compactness do not guarantee that the next continuation can finish the task.</li>
 </ul>
 <p><a href="memory-management.html">Broader methods survey</a> · <a href="memory-baseline-experiments.html">Two-setting experiment protocols</a> · <a href="memory-benchmarks.html">Benchmark walkthrough</a> · <a href="../qa/memory-management.html">Discussion notes</a></p></article>
-<footer>Generated 2026-09-20 21:22 UTC · <a href="../index.html">Reading Tracker</a></footer>
+<footer>Generated 2026-09-21 06:18 UTC · <a href="../index.html">Reading Tracker</a></footer>
 </body>
 </html>
