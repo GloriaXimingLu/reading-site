@@ -441,7 +441,13 @@
         if (ann.note) row.appendChild(el('p', 'ann-note-text', ann.note));
         row.addEventListener('click', () => {
           const mark = document.querySelector('mark[data-ann-id="' + ann.id + '"]');
-          if (mark) { mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); openPopover(ann.id, mark); }
+          if (mark) {
+            for (let parent = mark.parentElement; parent; parent = parent.parentElement) {
+              if (parent.tagName === 'DETAILS') parent.open = true;
+            }
+            mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            openPopover(ann.id, mark);
+          }
         });
         panel.appendChild(row);
       });
